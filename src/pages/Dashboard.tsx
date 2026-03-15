@@ -95,6 +95,19 @@ export default function Dashboard() {
     await supabase.auth.signOut()
   }
 
+  const startChatWithPrompt = async (prompt: string, topic: string, title: string) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data } = await supabase
+      .from('chats')
+      .insert({ user_id: user.id, title, topic, messages: [] })
+      .select()
+      .single()
+
+    if (data) navigate(`/chat/${data.id}`, { state: { prompt } })
+  }
+
   if (loading || analyzing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -121,7 +134,7 @@ export default function Dashboard() {
           <span className="font-semibold">WealthApp</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/chat')} className="text-sm bg-emerald-400 text-black font-semibold px-3 py-1.5 rounded-lg hover:bg-emerald-300 transition-colors">
+          <button onClick={() => navigate('/chats')} className="text-sm bg-emerald-400 text-black font-semibold px-3 py-1.5 rounded-lg hover:bg-emerald-300 transition-colors">
             Ask AI
           </button>
           <button onClick={() => runAnalysis(profile)} className="text-sm text-gray-400 hover:text-white transition-colors">
@@ -159,14 +172,14 @@ export default function Dashboard() {
         </div>
 
         {/* Ask AI Banner */}
-        <button onClick={() => navigate('/chat')}
+        <button onClick={() => navigate('/chats')}
           className="w-full bg-zinc-900 border border-emerald-400/30 rounded-2xl p-4 flex items-center gap-3 hover:border-emerald-400 transition-colors text-left">
           <div className="w-10 h-10 bg-emerald-400/10 rounded-xl flex items-center justify-center shrink-0">
             <span className="text-emerald-400 font-bold text-sm">AI</span>
           </div>
           <div>
-            <p className="font-semibold text-sm">Ask your financial analyst</p>
-            <p className="text-xs text-gray-400">Get brutally honest advice based on your actual numbers</p>
+            <p className="font-semibold text-sm">Ask your financial advisor</p>
+            <p className="text-xs text-gray-400">Get honest, unbiased advice based on your actual numbers</p>
           </div>
           <span className="ml-auto text-gray-400">→</span>
         </button>
@@ -182,25 +195,39 @@ export default function Dashboard() {
             <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Goals</h3>
             <div className="space-y-3">
               {analysis.goals.map((goal, i) => (
-                <div key={i} className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800 flex items-center gap-5">
-                  <RingProgress
-                    value={goal.percentage}
-                    color={goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold">{goal.name}</p>
-                    <p className="text-sm text-gray-400">{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
-                    {goal.monthlyNeeded > 0 && (
-                      <p className="text-xs text-emerald-400 mt-1">+{formatCurrency(goal.monthlyNeeded)}/mo needed</p>
-                    )}
+                <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
+                  <div className="p-5 flex items-center gap-5">
+                    <RingProgress
+                      value={goal.percentage}
+                      color={goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold">{goal.name}</p>
+                      <p className="text-sm text-gray-400">{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
+                      {goal.monthlyNeeded > 0 && (
+                        <p className="text-xs text-emerald-400 mt-1">+{formatCurrency(goal.monthlyNeeded)}/mo needed</p>
+                      )}
+                    </div>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                      goal.feasibility === 'achievable' ? 'bg-emerald-400/10 text-emerald-400' :
+                      goal.feasibility === 'stretch' ? 'bg-amber-400/10 text-amber-400' :
+                      'bg-red-400/10 text-red-400'
+                    }`}>
+                      {goal.feasibility}
+                    </span>
                   </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    goal.feasibility === 'achievable' ? 'bg-emerald-400/10 text-emerald-400' :
-                    goal.feasibility === 'stretch' ? 'bg-amber-400/10 text-amber-400' :
-                    'bg-red-400/10 text-red-400'
-                  }`}>
-                    {goal.feasibility}
-                  </span>
+                  <div className="px-5 pb-4 border-t border-zinc-800 pt-3">
+                    <button
+                      onClick={() => startChatWithPrompt(
+                        `Give me a detailed plan for my "${goal.name}" goal. I have $${goal.currentAmount} saved toward a $${goal.targetAmount} target. Be specific about what I should do each month.`,
+                        'general',
+                        `${goal.name} Plan`
+                      )}
+                      className="text-xs text-emerald-400 hover:underline"
+                    >
+                      Get advice on this goal →
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -237,12 +264,15 @@ export default function Dashboard() {
 
                 {expandedAction === i && (
                   <div className="px-5 pb-5 border-t border-zinc-800 pt-4">
-                    <p className="text-xs text-gray-400 mb-3">Want more detail on this?</p>
                     <button
-                      onClick={() => navigate('/chat', { state: { prompt: `Give me a detailed step by step plan for: ${action.title}. Be specific to my financial situation.` } })}
+                      onClick={() => startChatWithPrompt(
+                        `Give me a detailed step by step plan for: ${action.title}. Be specific to my financial situation and explain each step clearly.`,
+                        'general',
+                        action.title
+                      )}
                       className="w-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 text-sm font-semibold py-2.5 rounded-xl hover:bg-emerald-400/20 transition-colors"
                     >
-                      Ask AI for detailed steps →
+                      Get detailed steps from AI →
                     </button>
                   </div>
                 )}
