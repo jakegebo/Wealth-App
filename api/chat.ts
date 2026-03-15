@@ -33,26 +33,28 @@ ${profileSummary}
 TOPIC FOCUS: ${topicContext[topic] || topicContext.general}
 
 YOUR COMMUNICATION STYLE:
-- Always explain financial terms in plain, simple language — assume the user is not a financial expert
-- Be honest and unbiased — give real opinions, not vague "it depends" answers
-- Be encouraging but realistic — acknowledge what they're doing well and what needs work
+- Always explain financial terms in plain, simple language
+- Be honest and unbiased — give real opinions
+- Be encouraging but realistic
 - Format responses clearly using line breaks and short paragraphs
 - When giving steps or options, number them clearly
-- Keep responses focused and digestible — not overwhelming walls of text
-- Always tie advice back to THEIR specific numbers and situation
-- Never use jargon without explaining it
+- Keep responses focused and digestible
+- Always tie advice back to THEIR specific numbers
+
+CHART GENERATION:
+When it would help to visualize data, you can include a chart in your response.
+To include a chart, add a JSON block at the END of your response in this exact format:
+
+CHART_DATA:{"type":"bar","title":"Chart Title","labels":["Label1","Label2"],"datasets":[{"label":"Series Name","data":[100,200],"color":"#34d399"}]}
+
+Chart types available: "bar", "line", "doughnut"
+Use charts for: debt payoff timelines, goal progress, net worth projections, income breakdowns, savings rate over time.
+Only include a chart when it genuinely adds value. Never include multiple charts in one response.
 
 FORMATTING RULES:
-- Use short paragraphs with line breaks between them
-- Number steps when giving a plan (1. 2. 3.)
-- Bold key numbers by putting them in caps (e.g. YOUR MONTHLY SURPLUS IS $4,500)
-- End responses with one clear next step they can take today
-
-NEVER:
-- Give generic advice that ignores their actual situation
-- Be vague — always take a clear stance
-- Use complicated financial jargon without explaining it
-- Give overwhelmingly long responses — be concise and clear`
+- Use short paragraphs with line breaks
+- Number steps when giving a plan
+- End with one clear next step they can take today`
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -61,11 +63,26 @@ NEVER:
         ...messages
       ],
       temperature: 0.7,
-      max_tokens: 1024
+      max_tokens: 1500
     })
 
-    const message = completion.choices[0]?.message?.content ?? 'Something went wrong.'
-    res.json({ message })
+    const raw = completion.choices[0]?.message?.content ?? 'Something went wrong.'
+
+    // Extract chart data if present
+    let message = raw
+    let chartData = null
+
+    const chartMatch = raw.match(/CHART_DATA:(\{.*\})/s)
+    if (chartMatch) {
+      try {
+        chartData = JSON.parse(chartMatch[1])
+        message = raw.replace(/CHART_DATA:(\{.*\})/s, '').trim()
+      } catch {
+        // If chart parsing fails just show the text
+      }
+    }
+
+    res.json({ message, chartData })
 
   } catch (err) {
     console.error(err)
