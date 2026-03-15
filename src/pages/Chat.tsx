@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 interface Message {
@@ -9,11 +9,13 @@ interface Message {
 
 export default function Chat() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState<any>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const initialized = useRef(false)
 
   useEffect(() => {
     loadProfile()
@@ -29,19 +31,27 @@ export default function Chat() {
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (data) {
       setProfile(data.profile_data)
-      setMessages([{
-        role: 'assistant',
-        content: `Hey — I've reviewed your finances. Net worth of $${(data.profile_data.assets?.reduce((s: number, a: any) => s + a.value, 0) || 0) - (data.profile_data.debts?.reduce((s: number, d: any) => s + d.balance, 0) || 0)} with $${data.profile_data.monthly_income}/mo coming in. I'm your financial analyst — I'll be straight with you, no sugarcoating. What do you want to know?`
-      }])
+      const netWorth = (data.profile_data.assets?.reduce((s: number, a: any) => s + a.value, 0) || 0) -
+        (data.profile_data.debts?.reduce((s: number, d: any) => s + d.balance, 0) || 0)
+
+      const welcomeMsg = {
+        role: 'assistant' as const,
+        content: `Hey — I've reviewed your finances. Net worth of $${netWorth.toLocaleString()} with $${data.profile_data.monthly_income?.toLocaleString()}/mo coming in. I'm your financial analyst — I'll be straight with you, no sugarcoating. What do you want to know?`
+      }
+
+      const prompt = location.state?.prompt
+      if (prompt && !initialized.current) {
+        initialized.current = true
+        setMessages([welcomeMsg])
+        setTimeout(() => sendMessageWithText(prompt, [welcomeMsg], data.profile_data), 100)
+      } else {
+        setMessages([welcomeMsg])
+      }
     }
   }
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return
-
-    const userMessage = input.trim()
-    setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+  const sendMessageWithText = async (text: string, currentMessages: Message[], profileData: any) => {
+    setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
 
     try {
@@ -49,8 +59,8 @@ export default function Chat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, { role: 'user', content: userMessage }],
-          profile
+          messages: [...currentMessages, { role: 'user', content: text }],
+          profile: profileData
         })
       })
       const data = await response.json()
@@ -61,12 +71,19 @@ export default function Chat() {
     setLoading(false)
   }
 
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return
+    const userMessage = input.trim()
+    setInput('')
+    await sendMessageWithText(userMessage, messages, profile)
+  }
+
   return (
     <div className="min-h-screen bg-black flex flex-col">
       {/* Header */}
       <div className="border-b border-zinc-900 px-4 py-4 flex items-center justify-between max-w-2xl mx-auto w-full">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors">
+          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors text-lg">
             ←
           </button>
           <div className="w-8 h-8 bg-emerald-400 rounded-xl flex items-center justify-center">
@@ -113,10 +130,10 @@ export default function Chat() {
             {[
               "Should I pay off my debt or invest?",
               "Am I on track to retire early?",
-              "What should I do with my extra $4,500/mo?",
+              "What should I do with my extra money?",
               "Be brutally honest about my finances"
             ].map((prompt, i) => (
-              <button key={i} onClick={() => setInput(prompt)}
+              <button key={i} onClick={() => sendMessageWithText(prompt, messages, profile)}
                 className="shrink-0 text-xs bg-zinc-900 border border-zinc-800 rounded-full px-3 py-2 text-gray-300 hover:border-emerald-400 hover:text-emerald-400 transition-colors">
                 {prompt}
               </button>
