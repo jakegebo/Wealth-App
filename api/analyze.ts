@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
     const totalDebtPayments = profile.debts?.reduce((sum: number, d: any) => sum + (d.minimum_payment || 0), 0) ?? 0
     const availableToSave = (profile.monthly_income || 0) - (profile.monthly_expenses || 0) - totalDebtPayments
     const savingsRate = profile.monthly_income > 0 ? (availableToSave / profile.monthly_income) * 100 : 0
-    const existingAssets = profile.assets?.map((a: any) => `${a.name} (${a.category})`).join(', ') || 'none'
+    const existingAssets = profile.assets?.map((a: any) => `${a.name} (${a.category}${a.holdings ? `, holds: ${a.holdings}` : ''})`).join(', ') || 'none'
 
     const prompt = `You are a personal financial coach. Analyze this person's finances and return ONLY a valid JSON object with no markdown, no code blocks, no extra text.
 
@@ -27,7 +27,7 @@ Return exactly this structure:
   "monthlyExpenses": number,
   "availableToSave": number,
   "savingsRate": number,
-  "budgetHealth": "healthy",
+  "budgetHealth": "healthy" | "tight" | "over_budget",
   "overallSummary": "2-3 warm personal sentences",
   "nextActions": [{"priority": 1, "title": "string", "description": "string", "impact": "high", "timeframe": "string"}],
   "goals": [{"name": "string", "targetAmount": 0, "currentAmount": 0, "percentage": 0, "monthlyNeeded": 0, "feasibility": "achievable"}],
@@ -44,14 +44,15 @@ monthlyExpenses: ${profile.monthly_expenses}
 availableToSave: ${availableToSave}
 savingsRate: ${savingsRate.toFixed(1)}
 
-User already has: ${existingAssets}
+User already has these assets: ${existingAssets}
 NEVER suggest opening accounts they already have.
+Reference their actual account names and holdings when giving advice.
 Give 5-7 prioritized next actions.
-Income ideas must be specific to their situation.`
+Income ideas must be specific to their situation and skills.`
 
     const userMsg = `Monthly Income: $${profile.monthly_income}
 Monthly Expenses: $${profile.monthly_expenses}
-Assets: ${profile.assets?.map((a: any) => `${a.name} (${a.category}): $${a.value}`).join(', ') || 'none'}
+Assets: ${profile.assets?.map((a: any) => `${a.name} (${a.category}): $${a.value}${a.holdings ? ` — holds ${a.holdings}` : ''}`).join(', ') || 'none'}
 Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance} at ${d.interest_rate}%`).join(', ') || 'none'}
 Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount}, saved $${g.current_amount}`).join(', ') || 'none'}
 Context: ${profile.additional_context || 'none'}`
