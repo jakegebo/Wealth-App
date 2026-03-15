@@ -1,10 +1,37 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js'
+import { Bar, Line, Doughnut } from 'react-chartjs-2'
+
+ChartJS.register(
+  CategoryScale, LinearScale, BarElement, LineElement,
+  PointElement, ArcElement, Title, Tooltip, Legend, Filler
+)
+
+interface ChartData {
+  type: 'bar' | 'line' | 'doughnut'
+  title: string
+  labels: string[]
+  datasets: { label: string; data: number[]; color: string }[]
+}
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  chartData?: ChartData | null
   timestamp?: string
 }
 
@@ -23,10 +50,53 @@ const TOPIC_ICONS: Record<string, string> = {
 }
 
 const QUICK_PROMPTS: Record<string, string[]> = {
-  debt: ["What's the fastest way to pay off my debt?", "Should I use avalanche or snowball method?", "Can I invest while paying off debt?"],
-  retirement: ["When can I realistically retire?", "How much do I need to retire?", "Should I max my Roth IRA first?"],
-  investment: ["Where should I put my extra money?", "What's the right asset allocation for my age?", "Should I invest in index funds?"],
-  general: ["Give me an honest assessment", "What's my biggest financial mistake?", "What should I focus on this month?"]
+  debt: ["Show me a debt payoff timeline chart", "Should I use avalanche or snowball method?", "Can I invest while paying off debt?"],
+  retirement: ["Show me a retirement projection chart", "When can I realistically retire?", "Should I max my Roth IRA first?"],
+  investment: ["Show me my asset allocation", "Where should I put my extra money?", "Should I invest in index funds?"],
+  general: ["Show me a breakdown of my finances", "What's my biggest financial mistake?", "What should I focus on this month?"]
+}
+
+function InlineChart({ chartData }: { chartData: ChartData }) {
+  const options = {
+    responsive: true,
+    plugins: {
+      legend: {
+        labels: { color: '#9ca3af', font: { size: 11 } }
+      },
+      title: {
+        display: true,
+        text: chartData.title,
+        color: '#f3f4f6',
+        font: { size: 13, weight: 'bold' as const }
+      }
+    },
+    scales: chartData.type !== 'doughnut' ? {
+      x: { ticks: { color: '#6b7280' }, grid: { color: '#27272a' } },
+      y: { ticks: { color: '#6b7280' }, grid: { color: '#27272a' } }
+    } : undefined
+  }
+
+  const data = {
+    labels: chartData.labels,
+    datasets: chartData.datasets.map(d => ({
+      label: d.label,
+      data: d.data,
+      backgroundColor: d.color + '80',
+      borderColor: d.color,
+      borderWidth: 2,
+      fill: chartData.type === 'line',
+      tension: 0.4,
+      pointBackgroundColor: d.color
+    }))
+  }
+
+  return (
+    <div className="mt-3 bg-zinc-950 rounded-xl p-4 border border-zinc-800">
+      {chartData.type === 'bar' && <Bar data={data} options={options} />}
+      {chartData.type === 'line' && <Line data={data} options={options} />}
+      {chartData.type === 'doughnut' && <Doughnut data={data} options={options} />}
+    </div>
+  )
 }
 
 function MessageBubble({ msg }: { msg: Message }) {
@@ -75,6 +145,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             <div className="space-y-0.5">{formatContent(msg.content)}</div>
           )}
         </div>
+        {msg.chartData && <InlineChart chartData={msg.chartData} />}
       </div>
     </div>
   )
@@ -176,10 +247,15 @@ export default function Chat() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, profile: profileData, topic })
+        body: JSON.stringify({ messages: newMessages.map(m => ({ role: m.role, content: m.content })), profile: profileData, topic })
       })
       const data = await response.json()
-      const aiMsg: Message = { role: 'assistant', content: data.message, timestamp: new Date().toISOString() }
+      const aiMsg: Message = {
+        role: 'assistant',
+        content: data.message,
+        chartData: data.chartData || null,
+        timestamp: new Date().toISOString()
+      }
       const finalMessages = [...newMessages, aiMsg]
       setMessages(finalMessages)
       await saveMessages(finalMessages)
