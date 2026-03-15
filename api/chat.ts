@@ -67,8 +67,8 @@ USER'S FINANCIAL PROFILE:
 - Available to save/mo: $${availableToSave}
 - Total Assets: $${totalAssets}
 - Total Debts: $${totalDebts}
-- Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value})`).join(', ') || 'none'}
-- Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance} at ${d.interest_rate}%`).join(', ') || 'none'}
+- Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value}${a.holdings ? `, holds: ${a.holdings}` : ''})`).join(', ') || 'none'}
+- Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance} at ${d.interest_rate}%, min payment $${d.minimum_payment}`).join(', ') || 'none'}
 - Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount}, saved $${g.current_amount}`).join(', ') || 'none'}
 - Additional context: ${profile.additional_context || 'none'}
 ` : ''
@@ -96,9 +96,10 @@ COMMUNICATION STYLE:
 - End with one clear next step
 
 CHART INSTRUCTIONS:
-When the user asks for a chart or when a chart would genuinely help, include one of these exact tags at the END of your response:
+When the user asks for a chart or when a chart would genuinely help, include one of these exact tags at the END of your response.
+For debt payoff, include the exact monthly payment you recommend:
 
-For debt payoff chart: [CHART:debt_payoff]
+For debt payoff chart: [CHART:debt_payoff:PAYMENT_AMOUNT] (replace PAYMENT_AMOUNT with exact dollar amount)
 For retirement projection: [CHART:retirement]
 For goal progress: [CHART:goals]
 For income vs expenses breakdown: [CHART:budget]
@@ -119,18 +120,19 @@ Only use a chart tag when it adds real value. Never include more than one chart 
     let message = completion.choices[0]?.message?.content ?? 'Something went wrong.'
     let chartData = null
 
-    const chartMatch = message.match(/\[CHART:(\w+)\]/)
+    const chartMatch = message.match(/\[CHART:(\w+)(?::(\d+))?\]/)
     if (chartMatch) {
-      message = message.replace(/\[CHART:\w+\]/, '').trim()
+      message = message.replace(/\[CHART:[\w:]+\]/, '').trim()
       const chartType = chartMatch[1]
+      const chartParam = chartMatch[2] ? parseFloat(chartMatch[2]) : null
 
       if (chartType === 'debt_payoff' && profile?.debts?.length > 0) {
         const debt = profile.debts[0]
-        const payment = Math.max(debt.minimum_payment * 1.5, debt.balance / 10)
+        const payment = chartParam || Math.min(availableToSave * 0.8, debt.balance)
         const { labels, data } = calcDebtPayoff(debt.balance, payment, debt.interest_rate)
         chartData = {
           type: 'line',
-          title: `${debt.name} Payoff Timeline`,
+          title: `${debt.name} Payoff at $${payment.toLocaleString()}/mo`,
           labels,
           datasets: [{ label: 'Remaining Balance', data, color: '#f87171' }]
         }
@@ -163,16 +165,17 @@ Only use a chart tag when it adds real value. Never include more than one chart 
       }
 
       else if (chartType === 'budget') {
-        const expenses = profile.monthly_expenses || 0
-        const debtPayments = totalDebtPayments
-        const savings = Math.max(0, availableToSave)
         chartData = {
           type: 'doughnut',
           title: 'Monthly Budget Breakdown',
           labels: ['Living Expenses', 'Debt Payments', 'Available to Save'],
           datasets: [{
             label: 'Monthly Budget',
-            data: [expenses, debtPayments, savings],
+            data: [
+              profile.monthly_expenses || 0,
+              totalDebtPayments,
+              Math.max(0, availableToSave)
+            ],
             color: '#34d399'
           }]
         }
