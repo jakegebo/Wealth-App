@@ -2,20 +2,74 @@ import Groq from 'groq-sdk'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
+function calcDebtPayoff(balance: number, monthlyPayment: number, annualRate: number) {
+  const labels: string[] = []
+  const data: number[] = []
+  let remaining = balance
+  const monthlyRate = annualRate / 100 / 12
+
+  if (monthlyPayment <= 0) monthlyPayment = balance / 12
+
+  let month = 0
+  data.push(Math.round(remaining))
+  labels.push('Now')
+
+  while (remaining > 0 && month < 120) {
+    month++
+    const interest = remaining * monthlyRate
+    remaining = Math.max(0, remaining + interest - monthlyPayment)
+    const interval = balance / monthlyPayment > 24 ? 2 : 1
+    if (month % interval === 0 || remaining === 0) {
+      labels.push(`Mo ${month}`)
+      data.push(Math.round(remaining))
+    }
+    if (remaining === 0) break
+  }
+  return { labels, data }
+}
+
+function calcRetirementProjection(currentSavings: number, monthlySavings: number, years: number = 30) {
+  const labels: string[] = []
+  const optimisticData: number[] = []
+  const conservativeData: number[] = []
+
+  let optimistic = currentSavings
+  let conservative = currentSavings
+
+  for (let y = 1; y <= years; y++) {
+    optimistic = optimistic * 1.07 + monthlySavings * 12
+    conservative = conservative * 1.04 + monthlySavings * 0.7 * 12
+    if (y % 5 === 0 || y === 1 || y === years) {
+      labels.push(`Year ${y}`)
+      optimisticData.push(Math.round(optimistic))
+      conservativeData.push(Math.round(conservative))
+    }
+  }
+  return { labels, optimisticData, conservativeData }
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
     const { messages, profile, topic } = req.body
 
+    const totalAssets = profile?.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+    const totalDebts = profile?.debts?.reduce((s: number, d: any) => s + (d.balance || 0), 0) || 0
+    const totalDebtPayments = profile?.debts?.reduce((s: number, d: any) => s + (d.minimum_payment || 0), 0) || 0
+    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0) - totalDebtPayments
+    const retirementAssets = profile?.assets?.filter((a: any) => a.category === 'retirement')?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+
     const profileSummary = profile ? `
 USER'S FINANCIAL PROFILE:
 - Monthly Income: $${profile.monthly_income}
 - Monthly Expenses: $${profile.monthly_expenses}
-- Available to save/mo: $${(profile.monthly_income - profile.monthly_expenses).toLocaleString()}
-- Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value.toLocaleString()})`).join(', ') || 'none'}
-- Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance.toLocaleString()} at ${d.interest_rate}%`).join(', ') || 'none'}
-- Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount.toLocaleString()}, saved $${g.current_amount.toLocaleString()}`).join(', ') || 'none'}
+- Available to save/mo: $${availableToSave}
+- Total Assets: $${totalAssets}
+- Total Debts: $${totalDebts}
+- Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value})`).join(', ') || 'none'}
+- Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance} at ${d.interest_rate}%`).join(', ') || 'none'}
+- Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount}, saved $${g.current_amount}`).join(', ') || 'none'}
 - Additional context: ${profile.additional_context || 'none'}
 ` : ''
 
@@ -26,35 +80,31 @@ USER'S FINANCIAL PROFILE:
       general: 'Cover any financial topic the user asks about.'
     }
 
-    const systemPrompt = `You are a personal financial advisor — honest, clear, and genuinely helpful. You know this person's exact financial situation and give them specific, actionable advice.
+    const systemPrompt = `You are a personal financial advisor — honest, clear, and genuinely helpful. You know this person's exact financial situation.
 
 ${profileSummary}
 
 TOPIC FOCUS: ${topicContext[topic] || topicContext.general}
 
-YOUR COMMUNICATION STYLE:
-- Always explain financial terms in plain, simple language
+COMMUNICATION STYLE:
+- Explain financial terms in plain simple language
 - Be honest and unbiased — give real opinions
-- Be encouraging but realistic
-- Format responses clearly using line breaks and short paragraphs
-- When giving steps or options, number them clearly
+- Format responses with line breaks and short paragraphs
+- Number steps when giving a plan (1. 2. 3.)
 - Keep responses focused and digestible
-- Always tie advice back to THEIR specific numbers
+- Always reference their actual numbers
+- End with one clear next step
 
-CHART GENERATION:
-When it would help to visualize data, you can include a chart in your response.
-To include a chart, add a JSON block at the END of your response in this exact format:
+CHART INSTRUCTIONS:
+When the user asks for a chart or when a chart would genuinely help, include one of these exact tags at the END of your response:
 
-CHART_DATA:{"type":"bar","title":"Chart Title","labels":["Label1","Label2"],"datasets":[{"label":"Series Name","data":[100,200],"color":"#34d399"}]}
+For debt payoff chart: [CHART:debt_payoff]
+For retirement projection: [CHART:retirement]
+For goal progress: [CHART:goals]
+For income vs expenses breakdown: [CHART:budget]
+For asset allocation: [CHART:assets]
 
-Chart types available: "bar", "line", "doughnut"
-Use charts for: debt payoff timelines, goal progress, net worth projections, income breakdowns, savings rate over time.
-Only include a chart when it genuinely adds value. Never include multiple charts in one response.
-
-FORMATTING RULES:
-- Use short paragraphs with line breaks
-- Number steps when giving a plan
-- End with one clear next step they can take today`
+Only use a chart tag when it adds real value. Never include more than one chart per response.`
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -63,22 +113,82 @@ FORMATTING RULES:
         ...messages
       ],
       temperature: 0.7,
-      max_tokens: 1500
+      max_tokens: 1200
     })
 
-    const raw = completion.choices[0]?.message?.content ?? 'Something went wrong.'
-
-    // Extract chart data if present
-    let message = raw
+    let message = completion.choices[0]?.message?.content ?? 'Something went wrong.'
     let chartData = null
 
-    const chartMatch = raw.match(/CHART_DATA:(\{.*\})/s)
+    const chartMatch = message.match(/\[CHART:(\w+)\]/)
     if (chartMatch) {
-      try {
-        chartData = JSON.parse(chartMatch[1])
-        message = raw.replace(/CHART_DATA:(\{.*\})/s, '').trim()
-      } catch {
-        // If chart parsing fails just show the text
+      message = message.replace(/\[CHART:\w+\]/, '').trim()
+      const chartType = chartMatch[1]
+
+      if (chartType === 'debt_payoff' && profile?.debts?.length > 0) {
+        const debt = profile.debts[0]
+        const payment = Math.max(debt.minimum_payment * 1.5, debt.balance / 10)
+        const { labels, data } = calcDebtPayoff(debt.balance, payment, debt.interest_rate)
+        chartData = {
+          type: 'line',
+          title: `${debt.name} Payoff Timeline`,
+          labels,
+          datasets: [{ label: 'Remaining Balance', data, color: '#f87171' }]
+        }
+      }
+
+      else if (chartType === 'retirement') {
+        const monthlySavings = Math.max(availableToSave * 0.5, 500)
+        const { labels, optimisticData, conservativeData } = calcRetirementProjection(retirementAssets, monthlySavings)
+        chartData = {
+          type: 'line',
+          title: 'Retirement Projection',
+          labels,
+          datasets: [
+            { label: 'Optimistic (7% return)', data: optimisticData, color: '#34d399' },
+            { label: 'Conservative (4% return)', data: conservativeData, color: '#fbbf24' }
+          ]
+        }
+      }
+
+      else if (chartType === 'goals' && profile?.goals?.length > 0) {
+        chartData = {
+          type: 'bar',
+          title: 'Goal Progress',
+          labels: profile.goals.map((g: any) => g.name.slice(0, 20)),
+          datasets: [
+            { label: 'Saved So Far', data: profile.goals.map((g: any) => g.current_amount), color: '#34d399' },
+            { label: 'Target Amount', data: profile.goals.map((g: any) => g.target_amount), color: '#6366f1' }
+          ]
+        }
+      }
+
+      else if (chartType === 'budget') {
+        const expenses = profile.monthly_expenses || 0
+        const debtPayments = totalDebtPayments
+        const savings = Math.max(0, availableToSave)
+        chartData = {
+          type: 'doughnut',
+          title: 'Monthly Budget Breakdown',
+          labels: ['Living Expenses', 'Debt Payments', 'Available to Save'],
+          datasets: [{
+            label: 'Monthly Budget',
+            data: [expenses, debtPayments, savings],
+            color: '#34d399'
+          }]
+        }
+      }
+
+      else if (chartType === 'assets' && profile?.assets?.length > 0) {
+        chartData = {
+          type: 'doughnut',
+          title: 'Asset Allocation',
+          labels: profile.assets.map((a: any) => a.name.slice(0, 20)),
+          datasets: [{
+            label: 'Value',
+            data: profile.assets.map((a: any) => a.value),
+            color: '#34d399'
+          }]
+        }
       }
     }
 
@@ -86,6 +196,6 @@ FORMATTING RULES:
 
   } catch (err) {
     console.error(err)
-    res.status(500).json({ error: 'Failed to get response' })
+    res.status(500).json({ error: 'Failed to analyze finances' })
   }
 }
