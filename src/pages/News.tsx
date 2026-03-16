@@ -297,4 +297,183 @@ export default function News() {
   const handleSearch = (value: string) => {
     setSearchQuery(value)
     setShowDropdown(true)
-    clearTimeout(searchTimeout.curre
+    clearTimeout(searchTimeout.current)
+    if (!value.trim()) {
+      setSearchResults([])
+      return
+    }
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await fetch(`/api/stocks?search=${encodeURIComponent(value)}`)
+        const data = await res.json()
+        setSearchResults(data.results || [])
+      } catch { setSearchResults([]) }
+      setSearching(false)
+    }, 400)
+  }
+
+  const addToWatchlist = (symbol: string) => {
+    const upper = symbol.toUpperCase().trim()
+    if (!upper || watchlist.includes(upper)) return
+    setWatchlist(prev => [...prev, upper])
+    setSearchQuery('')
+    setSearchResults([])
+    setShowDropdown(false)
+  }
+
+  const removeFromWatchlist = (symbol: string) => {
+    setWatchlist(prev => prev.filter(s => s !== symbol))
+    setStocks(prev => prev.filter(s => s.symbol !== symbol))
+  }
+
+  return (
+    <div className="min-h-screen bg-black">
+      <div className="border-b border-zinc-900 px-6 py-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors">←</button>
+            <div>
+              <h1 className="font-semibold">Financial News</h1>
+              <p className="text-xs text-gray-500">Live updates across markets</p>
+            </div>
+          </div>
+          <button onClick={() => fetchNews(activeSection, 1, true)}
+            className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-900 transition-colors">
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
+
+        {/* Watchlist */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Watchlist</h2>
+            <div ref={searchRef} className="relative flex gap-2">
+              <div className="relative">
+                <input
+                  value={searchQuery}
+                  onChange={e => handleSearch(e.target.value)}
+                  onFocus={() => setShowDropdown(true)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && searchQuery.trim()) {
+                      // Add exactly what user typed, not first suggestion
+                      addToWatchlist(searchQuery)
+                    }
+                  }}
+                  placeholder="Search any stock..."
+                  className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-400 w-40"
+                />
+                {showDropdown && (searchResults.length > 0 || searching) && (
+                  <div className="absolute top-full mt-1 left-0 w-64 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-20 shadow-xl">
+                    {searching ? (
+                      <div className="px-3 py-3 text-xs text-gray-500">Searching...</div>
+                    ) : searchResults.map(result => (
+                      <button key={result.symbol} onClick={() => addToWatchlist(result.symbol)}
+                        className="w-full px-3 py-2.5 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800 last:border-0 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-white">{result.symbol}</span>
+                        <span className="text-xs text-gray-400 truncate ml-2">{result.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => addToWatchlist(searchQuery)}
+                className="bg-emerald-400 text-black text-xs font-semibold px-3 py-1.5 rounded-xl hover:bg-emerald-300 transition-colors whitespace-nowrap">
+                + Add
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {loadingStocks && stocks.length === 0 ? (
+              DEFAULT_WATCHLIST.map(s => (
+                <div key={s} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 min-w-[140px] shrink-0 animate-pulse">
+                  <div className="h-4 bg-zinc-800 rounded mb-2 w-16" />
+                  <div className="h-6 bg-zinc-800 rounded w-20" />
+                  <div className="h-3 bg-zinc-800 rounded w-12 mt-1" />
+                </div>
+              ))
+            ) : stocks.length > 0 ? (
+              stocks.map(quote => {
+                const isPos = quote.change >= 0
+                return (
+                  <div key={quote.symbol} className="relative group shrink-0">
+                    <button onClick={() => setSelectedStock(quote)}
+                      className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 min-w-[140px] text-left hover:border-emerald-400/50 transition-colors w-full">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-bold text-sm">{quote.symbol}</p>
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${isPos ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                          {isPos ? '+' : ''}{parseFloat(quote.changePercent)?.toFixed(2)}%
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold">${quote.price?.toFixed(2)}</p>
+                      <p className={`text-xs mt-0.5 ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {isPos ? '+' : ''}{quote.change?.toFixed(2)} today
+                      </p>
+                    </button>
+                    <button onClick={() => removeFromWatchlist(quote.symbol)}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-700 rounded-full text-gray-400 text-xs hidden group-hover:flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors z-10">
+                      ×
+                    </button>
+                  </div>
+                )
+              })
+            ) : (
+              <p className="text-gray-500 text-sm py-4">Search and add stocks to your watchlist</p>
+            )}
+          </div>
+        </div>
+
+        {/* News */}
+        <div>
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+            {SECTIONS.map(section => (
+              <button key={section.key} onClick={() => { setActiveSection(section.key); setPage(1) }}
+                className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${activeSection === section.key ? 'bg-emerald-400 text-black' : 'bg-zinc-900 text-gray-400 hover:text-white border border-zinc-800'}`}>
+                {section.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
+            {loadingNews ? (
+              <div className="p-4 space-y-4">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="flex gap-3 animate-pulse">
+                    <div className="w-24 shrink-0 bg-zinc-800 rounded-xl" style={{ height: '72px' }} />
+                    <div className="flex-1 space-y-2 py-1">
+                      <div className="h-4 bg-zinc-800 rounded w-full" />
+                      <div className="h-4 bg-zinc-800 rounded w-3/4" />
+                      <div className="h-3 bg-zinc-800 rounded w-1/4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : articles.length > 0 ? (
+              <>
+                {articles.map((article, i) => <ArticleCard key={i} article={article} />)}
+                {hasMore && (
+                  <div className="p-4 border-t border-zinc-800 text-center">
+                    <button onClick={loadMore} disabled={loadingMore}
+                      className="bg-zinc-800 hover:bg-zinc-700 text-gray-300 text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                      {loadingMore ? 'Loading...' : 'Load More Articles'}
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-8 text-center text-gray-500 text-sm">
+                No articles found. Try refreshing.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {selectedStock && <StockDetail quote={selectedStock} onClose={() => setSelectedStock(null)} />}
+    </div>
+  )
+}
