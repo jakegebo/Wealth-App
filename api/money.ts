@@ -8,57 +8,78 @@ export default async function handler(req: any, res: any) {
   try {
     const { action, profile, messages, topic } = req.body
 
-    // Generate fresh income ideas
     if (action === 'generate_ideas') {
       const completion = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [{
-          role: 'user',
-          content: `Generate 6 specific income ideas for this person. Return ONLY a JSON array, no other text:
-["idea1", "idea2", "idea3", "idea4", "idea5", "idea6"]
+          role: 'system',
+          content: `You generate income ideas. Return ONLY a JSON object with this exact structure:
+{"ideas": ["idea one as a complete sentence", "idea two as a complete sentence", "idea three", "idea four", "idea five", "idea six"]}
 
-Person's profile:
+Each idea must be a plain string sentence. NO objects, NO nested data, NO keys like name/description. Just plain sentences.`
+        }, {
+          role: 'user',
+          content: `Generate 6 specific income ideas for this person:
 - Monthly income: $${profile.monthly_income}
-- Monthly expenses: $${profile.monthly_expenses}  
-- Available to invest/save: $${(profile.monthly_income - profile.monthly_expenses).toLocaleString()}/mo
+- Monthly expenses: $${profile.monthly_expenses}
+- Available to invest: $${((profile.monthly_income || 0) - (profile.monthly_expenses || 0)).toLocaleString()}/mo
 - Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value})`).join(', ') || 'none'}
 - Context: ${profile.additional_context || 'none'}
 
-RULES:
-- Be very specific to their situation and income level
-- NO generic ideas like "take surveys" or "drive for Uber" 
-- Focus on: leveraging their professional skills, investing their surplus, passive income, building assets
-- Each idea should be actionable and realistic for their income level
-- Mix of: immediate side hustles, medium term opportunities, long term passive income
-- Make each idea different from the last batch they may have seen`
+Rules:
+- Each idea is a single descriptive sentence
+- Be specific to their income level and situation
+- No generic ideas like surveys or Uber
+- Mix of: professional skills monetization, investing surplus, passive income, digital products
+- Make them actionable and realistic`
         }],
         temperature: 0.9,
-        max_tokens: 500,
+        max_tokens: 600,
         response_format: { type: 'json_object' }
       })
 
       const raw = completion.choices[0]?.message?.content ?? '{"ideas":[]}'
       try {
         const parsed = JSON.parse(raw)
-        const ideas = Array.isArray(parsed) ? parsed : parsed.ideas || Object.values(parsed)[0] || []
+        // Handle various response formats and ensure all items are strings
+        let ideas: string[] = []
+        if (Array.isArray(parsed)) {
+          ideas = parsed
+        } else if (Array.isArray(parsed.ideas)) {
+          ideas = parsed.ideas
+        } else {
+          // Try to extract any array from the response
+          const vals = Object.values(parsed)
+          for (const v of vals) {
+            if (Array.isArray(v)) { ideas = v; break }
+          }
+        }
+        // Convert any objects to strings
+        ideas = ideas.map((idea: any) => {
+          if (typeof idea === 'string') return idea
+          if (typeof idea === 'object' && idea !== null) {
+            return idea.name || idea.title || idea.description || JSON.stringify(idea)
+          }
+          return String(idea)
+        }).filter(Boolean)
+
         return res.json({ ideas })
       } catch {
         return res.json({ ideas: [] })
       }
     }
 
-    // Make Money chat
     if (action === 'chat') {
       const profileSummary = `
 PERSON'S FINANCIAL PROFILE:
 - Monthly Income: $${profile.monthly_income}
 - Monthly Expenses: $${profile.monthly_expenses}
-- Available to invest/save: $${(profile.monthly_income - profile.monthly_expenses).toLocaleString()}/mo
+- Available to invest/save: $${((profile.monthly_income || 0) - (profile.monthly_expenses || 0)).toLocaleString()}/mo
 - Assets: ${profile.assets?.map((a: any) => `${a.name} ($${a.value})`).join(', ') || 'none'}
 - Context: ${profile.additional_context || 'none'}
 `
       const topicPrompts: Record<string, string> = {
-        surplus: `Focus on the best ways to deploy their monthly surplus of $${(profile.monthly_income - profile.monthly_expenses).toLocaleString()} to build wealth faster.`,
+        surplus: `Focus on the best ways to deploy their monthly surplus of $${((profile.monthly_income || 0) - (profile.monthly_expenses || 0)).toLocaleString()} to build wealth faster.`,
         sidehustle: 'Focus on realistic side hustles that leverage their existing skills and can generate income within 30-90 days.',
         passive: 'Focus on building passive income streams — dividends, real estate, digital products, etc. Be realistic about timelines and capital required.',
         ideas: 'Help them explore and develop specific income ideas. Be a strategic thinking partner.'
@@ -75,10 +96,9 @@ YOUR STYLE:
 - Give specific, actionable ideas tailored to their exact situation
 - Always reference their actual numbers
 - Be direct about what has the highest ROI for their time and money
-- Explain HOW to actually execute each idea, not just what to do
+- Explain HOW to actually execute each idea
 - Be realistic about timelines and effort required
-- Format responses clearly with line breaks
-- Number steps when giving a plan
+- Format responses with line breaks and numbered steps
 - End with one specific action they can take TODAY`
 
       const completion = await groq.chat.completions.create({
