@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,6 +27,7 @@ interface Article {
 
 interface StockQuote {
   symbol: string
+  name?: string
   price: number
   change: number
   changePercent: string
@@ -48,7 +50,6 @@ const SECTIONS = [
 ]
 
 const PERIODS = ['1D', '1W', '1M', '1Y', '5Y', '10Y', 'ALL']
-
 const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA']
 
 function timeAgo(dateStr: string) {
@@ -174,7 +175,10 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
       <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="p-5 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-zinc-950 z-10">
           <div>
-            <h2 className="text-xl font-bold">{quote.symbol}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold">{quote.symbol}</h2>
+              {quote.name && <span className="text-sm text-gray-400">{quote.name}</span>}
+            </div>
             <div className="flex items-center gap-3 mt-1">
               <span className="text-2xl font-bold">${quote.price?.toFixed(2)}</span>
               <span className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -244,11 +248,18 @@ export default function News() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const searchTimeout = useRef<any>(null)
 
   useEffect(() => {
+    loadWatchlist()
     fetchNews(activeSection, 1, true)
+  }, [])
+
+  useEffect(() => {
+    fetchNews(activeSection, 1, true)
+    setPage(1)
   }, [activeSection])
 
   useEffect(() => {
@@ -262,6 +273,19 @@ export default function News() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
+
+  const loadWatchlist = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    setUserId(user.id)
+    const { data } = await supabase.from('profiles').select('watchlist').eq('user_id', user.id).single()
+    if (data?.watchlist) setWatchlist(data.watchlist)
+  }
+
+  const saveWatchlist = async (list: string[]) => {
+    if (!userId) return
+    await supabase.from('profiles').update({ watchlist: list }).eq('user_id', userId)
+  }
 
   const fetchNews = async (category: string, pageNum: number, reset = false) => {
     if (reset) setLoadingNews(true)
@@ -298,10 +322,7 @@ export default function News() {
     setSearchQuery(value)
     setShowDropdown(true)
     clearTimeout(searchTimeout.current)
-    if (!value.trim()) {
-      setSearchResults([])
-      return
-    }
+    if (!value.trim()) { setSearchResults([]); return }
     searchTimeout.current = setTimeout(async () => {
       setSearching(true)
       try {
@@ -316,15 +337,19 @@ export default function News() {
   const addToWatchlist = (symbol: string) => {
     const upper = symbol.toUpperCase().trim()
     if (!upper || watchlist.includes(upper)) return
-    setWatchlist(prev => [...prev, upper])
+    const newList = [...watchlist, upper]
+    setWatchlist(newList)
+    saveWatchlist(newList)
     setSearchQuery('')
     setSearchResults([])
     setShowDropdown(false)
   }
 
   const removeFromWatchlist = (symbol: string) => {
-    setWatchlist(prev => prev.filter(s => s !== symbol))
+    const newList = watchlist.filter(s => s !== symbol)
+    setWatchlist(newList)
     setStocks(prev => prev.filter(s => s.symbol !== symbol))
+    saveWatchlist(newList)
   }
 
   return (
@@ -346,7 +371,6 @@ export default function News() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
-
         {/* Watchlist */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -357,14 +381,9 @@ export default function News() {
                   value={searchQuery}
                   onChange={e => handleSearch(e.target.value)}
                   onFocus={() => setShowDropdown(true)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && searchQuery.trim()) {
-                      // Add exactly what user typed, not first suggestion
-                      addToWatchlist(searchQuery)
-                    }
-                  }}
-                  placeholder="Search any stock..."
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-400 w-40"
+                  onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) addToWatchlist(searchQuery) }}
+                  placeholder="Search any stock, ETF..."
+                  className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-400 w-44"
                 />
                 {showDropdown && (searchResults.length > 0 || searching) && (
                   <div className="absolute top-full mt-1 left-0 w-64 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-20 shadow-xl">
@@ -372,9 +391,9 @@ export default function News() {
                       <div className="px-3 py-3 text-xs text-gray-500">Searching...</div>
                     ) : searchResults.map(result => (
                       <button key={result.symbol} onClick={() => addToWatchlist(result.symbol)}
-                        className="w-full px-3 py-2.5 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800 last:border-0 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-white">{result.symbol}</span>
-                        <span className="text-xs text-gray-400 truncate ml-2">{result.name}</span>
+                        className="w-full px-3 py-2.5 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800 last:border-0 flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold text-white shrink-0">{result.symbol}</span>
+                        <span className="text-xs text-gray-400 truncate">{result.name}</span>
                       </button>
                     ))}
                   </div>
@@ -465,9 +484,7 @@ export default function News() {
                 )}
               </>
             ) : (
-              <div className="p-8 text-center text-gray-500 text-sm">
-                No articles found. Try refreshing.
-              </div>
+              <div className="p-8 text-center text-gray-500 text-sm">No articles found. Try refreshing.</div>
             )}
           </div>
         </div>
