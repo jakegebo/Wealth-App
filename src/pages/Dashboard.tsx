@@ -66,7 +66,7 @@ function RingProgress({ value, size = 80, color = '#34d399' }: { value: number; 
           style={{ transition: 'stroke-dashoffset 1s ease' }} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-sm font-bold">{Math.round(value)}%</span>
+        <span className="text-sm font-bold">{Math.round(Math.min(100, value))}%</span>
       </div>
     </div>
   )
@@ -91,7 +91,6 @@ export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null)
   const [newsArticles, setNewsArticles] = useState<Article[]>([])
   const [stocks, setStocks] = useState<StockQuote[]>([])
-  const [watchlist, setWatchlist] = useState<string[]>([])
 
   useEffect(() => {
     loadProfile()
@@ -109,7 +108,6 @@ export default function Dashboard() {
     setChatRefs(data.chat_refs || {})
 
     const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL']
-    setWatchlist(wl)
     fetchStocks(wl)
     fetchNews()
 
@@ -183,7 +181,6 @@ export default function Dashboard() {
 
   const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
-  // Asset allocation chart data
   const assetData = profile?.assets?.length > 0 ? {
     labels: profile.assets.map((a: any) => a.name.slice(0, 15)),
     datasets: [{
@@ -194,7 +191,6 @@ export default function Dashboard() {
     }]
   } : null
 
-  // Budget breakdown chart
   const budgetData = {
     labels: ['Expenses', 'Debt Payments', 'Available to Save'],
     datasets: [{
@@ -209,13 +205,12 @@ export default function Dashboard() {
     }]
   }
 
-  // Goals bar chart
   const goalsBarData = analysis.goals.length > 0 ? {
     labels: analysis.goals.map(g => g.name.slice(0, 15)),
     datasets: [
       {
         label: 'Saved',
-        data: analysis.goals.map(g => g.currentAmount),
+        data: analysis.goals.map(g => Math.min(g.currentAmount, g.targetAmount)),
         backgroundColor: '#34d39966',
         borderColor: '#34d399',
         borderWidth: 2,
@@ -274,6 +269,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <button onClick={() => navigate('/news')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">📰 News</button>
             <button onClick={() => navigate('/retirement')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">🏖️ Retire</button>
+            <button onClick={() => navigate('/money')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">💰 Money</button>
             <button onClick={() => navigate('/chats')} className="bg-emerald-400 text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-emerald-300 transition-colors">Ask AI</button>
             <button onClick={() => runAnalysis(profile)} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">↻</button>
             <button onClick={() => navigate('/onboarding')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">Edit</button>
@@ -284,10 +280,8 @@ export default function Dashboard() {
 
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
 
-        {/* Top row — Net Worth + Stock Ticker */}
+        {/* Top row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-          {/* Net Worth */}
           <div className="lg:col-span-2 bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
             <div className="flex items-start justify-between">
               <div>
@@ -295,21 +289,10 @@ export default function Dashboard() {
                 <h2 className="text-5xl font-bold text-emerald-400">{formatCurrency(analysis.netWorth)}</h2>
                 <p className="text-gray-400 text-sm mt-3 leading-relaxed max-w-lg">{analysis.overallSummary}</p>
               </div>
-              <div className="text-right shrink-0 ml-4">
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-xs text-gray-500">Assets</p>
-                    <p className="font-bold text-white text-lg">{formatCurrency(analysis.totalAssets)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Debts</p>
-                    <p className="font-bold text-rose-400 text-lg">{formatCurrency(analysis.totalLiabilities)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Save/mo</p>
-                    <p className="font-bold text-emerald-400 text-lg">{formatCurrency(analysis.availableToSave)}</p>
-                  </div>
-                </div>
+              <div className="text-right shrink-0 ml-4 space-y-2">
+                <div><p className="text-xs text-gray-500">Assets</p><p className="font-bold text-white text-lg">{formatCurrency(analysis.totalAssets)}</p></div>
+                <div><p className="text-xs text-gray-500">Debts</p><p className="font-bold text-rose-400 text-lg">{formatCurrency(analysis.totalLiabilities)}</p></div>
+                <div><p className="text-xs text-gray-500">Save/mo</p><p className="font-bold text-emerald-400 text-lg">{formatCurrency(analysis.availableToSave)}</p></div>
               </div>
             </div>
           </div>
@@ -350,40 +333,26 @@ export default function Dashboard() {
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-          {/* Asset Allocation */}
           {assetData && (
             <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
               <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Asset Allocation</p>
-              <div style={{ height: '200px' }}>
-                <Doughnut data={assetData} options={doughnutOptions} />
-              </div>
+              <div style={{ height: '200px' }}><Doughnut data={assetData} options={doughnutOptions} /></div>
             </div>
           )}
-
-          {/* Budget Breakdown */}
           <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
             <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Monthly Budget</p>
-            <div style={{ height: '200px' }}>
-              <Doughnut data={budgetData} options={doughnutOptions} />
-            </div>
+            <div style={{ height: '200px' }}><Doughnut data={budgetData} options={doughnutOptions} /></div>
           </div>
-
-          {/* Goals Progress */}
           {goalsBarData && (
             <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
               <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Goals Progress</p>
-              <div style={{ height: '200px' }}>
-                <Bar data={goalsBarData} options={barOptions} />
-              </div>
+              <div style={{ height: '200px' }}><Bar data={goalsBarData} options={barOptions} /></div>
             </div>
           )}
         </div>
 
-        {/* Main content grid */}
+        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-          {/* Left — Action Plan + Debt */}
           <div className="lg:col-span-2 space-y-4">
 
             {/* Action Plan */}
@@ -477,7 +446,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Right — Goals + AI + Income */}
+          {/* Right column */}
           <div className="space-y-4">
 
             {/* Ask AI */}
@@ -498,45 +467,77 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Goals</h3>
                 <div className="space-y-3">
-                  {analysis.goals.map((goal, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                      <div className="p-4 flex items-center gap-4">
-                        <RingProgress value={goal.percentage} size={70}
-                          color={goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'} />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm">{goal.name}</p>
-                          <p className="text-xs text-gray-400">{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
-                          {goal.monthlyNeeded > 0 && <p className="text-xs text-emerald-400 mt-1">+{formatCurrency(goal.monthlyNeeded)}/mo</p>}
+                  {analysis.goals.map((goal, i) => {
+                    const isAchieved = goal.currentAmount >= goal.targetAmount
+                    const surplus = goal.currentAmount - goal.targetAmount
+
+                    return (
+                      <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
+                        <div className="p-4 flex items-center gap-4">
+                          {isAchieved ? (
+                            <div className="w-[70px] h-[70px] bg-emerald-400/10 rounded-full flex items-center justify-center shrink-0">
+                              <span className="text-2xl">✓</span>
+                            </div>
+                          ) : (
+                            <RingProgress value={goal.percentage} size={70}
+                              color={goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-sm">{goal.name}</p>
+                              {isAchieved && <span className="text-xs bg-emerald-400/10 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">Achieved ✓</span>}
+                            </div>
+                            <p className="text-xs text-gray-400">{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
+                            {isAchieved && surplus > 0 && (
+                              <p className="text-xs text-emerald-400 mt-0.5">+{formatCurrency(surplus)} surplus</p>
+                            )}
+                            {!isAchieved && goal.monthlyNeeded > 0 && (
+                              <p className="text-xs text-emerald-400 mt-1">+{formatCurrency(goal.monthlyNeeded)}/mo</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="px-4 pb-3 border-t border-zinc-800 pt-2">
+                          {isAchieved ? (
+                            <button onClick={() => openPersistentChat(
+                              `goal_surplus_${i}`,
+                              `I've exceeded my "${goal.name}" goal — I have ${formatCurrency(surplus)} more than my target of ${formatCurrency(goal.targetAmount)}. What are the smartest ways to put this surplus money to work given my overall financial situation?`,
+                              'general',
+                              `${goal.name} — Surplus Strategy`
+                            )}
+                              className="text-xs text-emerald-400 hover:underline font-semibold">
+                              Put this money to work →
+                            </button>
+                          ) : (
+                            <button onClick={() => openPersistentChat(
+                              `goal_${i}`,
+                              `Give me a detailed plan for my "${goal.name}" goal. I have ${formatCurrency(goal.currentAmount)} saved toward a ${formatCurrency(goal.targetAmount)} target.`,
+                              'general',
+                              `${goal.name} Plan`
+                            )}
+                              className="text-xs text-emerald-400 hover:underline">
+                              {chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get advice →'}
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div className="px-4 pb-3 border-t border-zinc-800 pt-2">
-                        <button onClick={() => openPersistentChat(`goal_${i}`, `Give me a detailed plan for my "${goal.name}" goal. I have ${formatCurrency(goal.currentAmount)} saved toward a ${formatCurrency(goal.targetAmount)} target.`, 'general', `${goal.name} Plan`)}
-                          className="text-xs text-emerald-400 hover:underline">
-                          {chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get advice →'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Income Ideas */}
-            {analysis.incomeIdeas.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Income Ideas</h3>
-                <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                  {analysis.incomeIdeas.map((idea, i) => (
-                    <button key={i}
-                      onClick={() => openPersistentChat(`income_${i}`, `Tell me more about this income idea: "${idea}". Include average income potential, realistic timeline, what skills I need, and whether this is passive or active income.`, 'general', idea.slice(0, 40))}
-                      className="w-full flex items-start gap-3 p-4 text-left hover:bg-zinc-800/50 transition-colors border-b border-zinc-800 last:border-0">
-                      <span className="text-emerald-400 mt-0.5 shrink-0">→</span>
-                      <p className="text-gray-300 text-sm">{idea}</p>
-                    </button>
-                  ))}
-                </div>
+            {/* Income Ideas — link to Money page */}
+            <button onClick={() => navigate('/money')}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3 hover:border-emerald-400/30 transition-colors text-left">
+              <div className="w-10 h-10 bg-amber-400/10 rounded-xl flex items-center justify-center shrink-0">
+                <span className="text-amber-400 text-lg">💰</span>
               </div>
-            )}
+              <div>
+                <p className="font-semibold text-sm">Make More Money</p>
+                <p className="text-xs text-gray-400">Ideas, strategies & AI coaching</p>
+              </div>
+              <span className="ml-auto text-gray-400">→</span>
+            </button>
           </div>
         </div>
       </div>
