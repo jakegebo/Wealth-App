@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from '../contexts/ThemeContext'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -51,7 +52,7 @@ interface StockQuote {
 
 const CHART_COLORS = ['#34d399', '#60a5fa', '#f59e0b', '#f87171', '#a78bfa', '#fb7185']
 
-function RingProgress({ value, size = 80, color = '#34d399' }: { value: number; size?: number; color?: string }) {
+function RingProgress({ value, size = 80, color }: { value: number; size?: number; color: string }) {
   const strokeWidth = 7
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
@@ -60,13 +61,13 @@ function RingProgress({ value, size = 80, color = '#34d399' }: { value: number; 
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#27272a" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth}
           strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
           style={{ transition: 'stroke-dashoffset 1s ease' }} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-sm font-bold">{Math.round(Math.min(100, value))}%</span>
+        <span style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>{Math.round(Math.min(100, value))}%</span>
       </div>
     </div>
   )
@@ -82,6 +83,7 @@ function timeAgo(dateStr: string) {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { preferences, theme, accent } = useTheme()
   const [profile, setProfile] = useState<any>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,31 +94,21 @@ export default function Dashboard() {
   const [newsArticles, setNewsArticles] = useState<Article[]>([])
   const [stocks, setStocks] = useState<StockQuote[]>([])
 
-  useEffect(() => {
-    loadProfile()
-  }, [])
+  useEffect(() => { loadProfile() }, [])
 
   const loadProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setUserId(user.id)
-
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (!data) { navigate('/onboarding'); return }
-
     setProfile(data.profile_data)
     setChatRefs(data.chat_refs || {})
-
     const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL']
     fetchStocks(wl)
     fetchNews()
-
-    if (data.analysis) {
-      setAnalysis(data.analysis)
-      setLoading(false)
-    } else {
-      await runAnalysis(data.profile_data)
-    }
+    if (data.analysis) { setAnalysis(data.analysis); setLoading(false) }
+    else await runAnalysis(data.profile_data)
   }
 
   const fetchNews = async () => {
@@ -166,12 +158,14 @@ export default function Dashboard() {
     }
   }
 
+  const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
+
   if (loading || analyzing) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">{analyzing ? 'Analyzing your finances...' : 'Loading...'}</p>
+      <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '40px', height: '40px', border: `2px solid ${accent.primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+          <p style={{ color: theme.textMuted }}>{analyzing ? 'Analyzing your finances...' : 'Loading...'}</p>
         </div>
       </div>
     )
@@ -181,234 +175,217 @@ export default function Dashboard() {
 
   const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
+  const s = {
+    card: { background: theme.bgSecondary, border: `0.5px solid ${theme.border}`, borderRadius: '16px', padding: '20px' } as React.CSSProperties,
+    cardSm: { background: theme.bgSecondary, border: `0.5px solid ${theme.border}`, borderRadius: '14px', padding: '16px' } as React.CSSProperties,
+    label: { fontSize: '11px', color: theme.textMuted, fontWeight: '600', textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
+    text: { color: theme.text },
+    muted: { color: theme.textMuted },
+    accent: { color: accent.primary },
+    accentBtn: { background: accent.primary, color: accent.text, border: 'none', borderRadius: '12px', padding: '8px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' } as React.CSSProperties,
+    ghostBtn: { background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '13px', padding: '8px 12px', borderRadius: '10px' } as React.CSSProperties,
+  }
+
   const assetData = profile?.assets?.length > 0 ? {
     labels: profile.assets.map((a: any) => a.name.slice(0, 15)),
-    datasets: [{
-      data: profile.assets.map((a: any) => a.value),
-      backgroundColor: CHART_COLORS.map(c => c + 'cc'),
-      borderColor: CHART_COLORS,
-      borderWidth: 2
-    }]
+    datasets: [{ data: profile.assets.map((a: any) => a.value), backgroundColor: CHART_COLORS.map(c => c + 'cc'), borderColor: CHART_COLORS, borderWidth: 2 }]
   } : null
 
   const budgetData = {
-    labels: ['Expenses', 'Debt Payments', 'Available to Save'],
-    datasets: [{
-      data: [
-        analysis.monthlyExpenses,
-        analysis.monthlyIncome - analysis.monthlyExpenses - analysis.availableToSave,
-        Math.max(0, analysis.availableToSave)
-      ],
-      backgroundColor: ['#f87171cc', '#fbbf24cc', '#34d399cc'],
-      borderColor: ['#f87171', '#fbbf24', '#34d399'],
-      borderWidth: 2
-    }]
+    labels: ['Expenses', 'Debt Payments', 'Available'],
+    datasets: [{ data: [analysis.monthlyExpenses, analysis.monthlyIncome - analysis.monthlyExpenses - analysis.availableToSave, Math.max(0, analysis.availableToSave)], backgroundColor: ['#f87171cc', '#fbbf24cc', accent.primary + 'cc'], borderColor: ['#f87171', '#fbbf24', accent.primary], borderWidth: 2 }]
   }
 
   const goalsBarData = analysis.goals.length > 0 ? {
     labels: analysis.goals.map(g => g.name.slice(0, 15)),
     datasets: [
-      {
-        label: 'Saved',
-        data: analysis.goals.map(g => Math.min(g.currentAmount, g.targetAmount)),
-        backgroundColor: '#34d39966',
-        borderColor: '#34d399',
-        borderWidth: 2,
-        borderRadius: 6
-      },
-      {
-        label: 'Target',
-        data: analysis.goals.map(g => g.targetAmount),
-        backgroundColor: '#6366f166',
-        borderColor: '#6366f1',
-        borderWidth: 2,
-        borderRadius: 6
-      }
+      { label: 'Saved', data: analysis.goals.map(g => Math.min(g.currentAmount, g.targetAmount)), backgroundColor: accent.primary + '66', borderColor: accent.primary, borderWidth: 2, borderRadius: 6 },
+      { label: 'Target', data: analysis.goals.map(g => g.targetAmount), backgroundColor: '#6366f166', borderColor: '#6366f1', borderWidth: 2, borderRadius: 6 }
     ]
   } : null
 
   const doughnutOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     plugins: {
-      legend: { position: 'right' as const, labels: { color: '#9ca3af', font: { size: 11 }, padding: 12, usePointStyle: true } },
-      tooltip: {
-        backgroundColor: '#18181b', borderColor: '#3f3f46', borderWidth: 1,
-        callbacks: { label: (ctx: any) => ` ${ctx.label}: ${formatCurrency(ctx.parsed)}` }
-      }
+      legend: { position: 'right' as const, labels: { color: theme.textMuted, font: { size: 11 }, padding: 10, usePointStyle: true } },
+      tooltip: { backgroundColor: theme.bgTertiary, borderColor: theme.border, borderWidth: 1, callbacks: { label: (ctx: any) => ` ${ctx.label}: ${formatCurrency(ctx.parsed)}` } }
     }
   }
 
   const barOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: '#9ca3af', font: { size: 11 }, usePointStyle: true } },
-      tooltip: {
-        backgroundColor: '#18181b', borderColor: '#3f3f46', borderWidth: 1,
-        callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` }
-      }
+      legend: { labels: { color: theme.textMuted, font: { size: 11 }, usePointStyle: true } },
+      tooltip: { backgroundColor: theme.bgTertiary, borderColor: theme.border, borderWidth: 1, callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}` } }
     },
     scales: {
-      x: { ticks: { color: '#6b7280' }, grid: { color: '#27272a' } },
-      y: { ticks: { color: '#6b7280', callback: (v: any) => formatCurrency(v) }, grid: { color: '#27272a' } }
+      x: { ticks: { color: theme.textMuted }, grid: { color: theme.border } },
+      y: { ticks: { color: theme.textMuted, callback: (v: any) => formatCurrency(v) }, grid: { color: theme.border } }
     }
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div style={{ minHeight: '100vh', background: theme.bg }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       {/* Header */}
-      <div className="border-b border-zinc-900 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-400 rounded-xl flex items-center justify-center">
-              <span className="text-black font-bold text-sm">W</span>
+      <div style={{ borderBottom: `0.5px solid ${theme.border}`, padding: '14px 24px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '30px', height: '30px', background: accent.primary, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: accent.text, fontWeight: '700', fontSize: '13px' }}>W</span>
             </div>
-            <span className="font-semibold">WealthApp</span>
+            <span style={{ color: theme.text, fontWeight: '500', fontSize: '15px' }}>WealthApp</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => navigate('/news')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">📰 News</button>
-            <button onClick={() => navigate('/retirement')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">🏖️ Retire</button>
-            <button onClick={() => navigate('/money')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">💰 Money</button>
-            <button onClick={() => navigate('/chats')} className="bg-emerald-400 text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-emerald-300 transition-colors">Ask AI</button>
-            <button onClick={() => runAnalysis(profile)} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">↻</button>
-            <button onClick={() => navigate('/onboarding')} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">Edit</button>
-            <button onClick={handleSignOut} className="px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">Sign out</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {[
+              { label: '📰', path: '/news', title: 'News' },
+              { label: '🏖️', path: '/retirement', title: 'Retire' },
+              { label: '💰', path: '/money', title: 'Money' },
+            ].map(item => (
+              <button key={item.path} onClick={() => navigate(item.path)} style={s.ghostBtn} title={item.title}>
+                {item.label} <span style={{ fontSize: '12px' }}>{item.title}</span>
+              </button>
+            ))}
+            <button onClick={() => navigate('/chats')} style={s.accentBtn}>Ask AI</button>
+            <button onClick={() => runAnalysis(profile)} style={s.ghostBtn} title="Refresh">↻</button>
+            <button onClick={() => navigate('/settings')} style={s.ghostBtn} title="Settings">⚙</button>
+            <button onClick={() => navigate('/onboarding')} style={s.ghostBtn}>Edit</button>
+            <button onClick={handleSignOut} style={s.ghostBtn}>Sign out</button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 py-6 space-y-5">
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-        {/* Top row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-400 text-sm mb-1">Total Net Worth</p>
-                <h2 className="text-5xl font-bold text-emerald-400">{formatCurrency(analysis.netWorth)}</h2>
-                <p className="text-gray-400 text-sm mt-3 leading-relaxed max-w-lg">{analysis.overallSummary}</p>
-              </div>
-              <div className="text-right shrink-0 ml-4 space-y-2">
-                <div><p className="text-xs text-gray-500">Assets</p><p className="font-bold text-white text-lg">{formatCurrency(analysis.totalAssets)}</p></div>
-                <div><p className="text-xs text-gray-500">Debts</p><p className="font-bold text-rose-400 text-lg">{formatCurrency(analysis.totalLiabilities)}</p></div>
-                <div><p className="text-xs text-gray-500">Save/mo</p><p className="font-bold text-emerald-400 text-lg">{formatCurrency(analysis.availableToSave)}</p></div>
+        {/* Net Worth — always visible */}
+        {isVisible('networth') && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '16px' }}>
+            <div style={{ ...s.card, background: `linear-gradient(135deg, ${theme.bgSecondary}, ${theme.bgTertiary})` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ ...s.label, marginBottom: '4px' }}>Total Net Worth</p>
+                  <h2 style={{ fontSize: '48px', fontWeight: '500', color: accent.primary, letterSpacing: '-1px', margin: '0 0 12px' }}>{formatCurrency(analysis.netWorth)}</h2>
+                  <p style={{ color: theme.textMuted, fontSize: '13px', maxWidth: '500px', lineHeight: '1.6' }}>{analysis.overallSummary}</p>
+                </div>
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div><p style={{ ...s.muted, fontSize: '10px' }}>Assets</p><p style={{ ...s.text, fontSize: '16px', fontWeight: '600' }}>{formatCurrency(analysis.totalAssets)}</p></div>
+                  <div><p style={{ ...s.muted, fontSize: '10px' }}>Debts</p><p style={{ color: '#f87171', fontSize: '16px', fontWeight: '600' }}>{formatCurrency(analysis.totalLiabilities)}</p></div>
+                  <div><p style={{ ...s.muted, fontSize: '10px' }}>Save/mo</p><p style={{ color: accent.primary, fontSize: '16px', fontWeight: '600' }}>{formatCurrency(analysis.availableToSave)}</p></div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Stock Ticker */}
-          <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Watchlist</p>
-              <button onClick={() => navigate('/news')} className="text-xs text-emerald-400 hover:underline">View all →</button>
-            </div>
-            <div className="space-y-3">
-              {stocks.length > 0 ? stocks.slice(0, 5).map(stock => {
-                const isPos = stock.change >= 0
-                return (
-                  <div key={stock.symbol} className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">{stock.symbol}</span>
-                    <div className="text-right">
-                      <p className="text-sm font-bold">${stock.price?.toFixed(2)}</p>
-                      <p className={`text-xs ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%
-                      </p>
-                    </div>
-                  </div>
-                )
-              }) : (
-                <div className="space-y-3">
-                  {[1,2,3,4,5].map(i => (
-                    <div key={i} className="flex justify-between animate-pulse">
-                      <div className="h-4 bg-zinc-800 rounded w-16" />
-                      <div className="h-4 bg-zinc-800 rounded w-20" />
+            {/* Watchlist */}
+            {isVisible('watchlist') && (
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <p style={s.label}>Watchlist</p>
+                  <button onClick={() => navigate('/news')} style={{ ...s.ghostBtn, fontSize: '11px', color: accent.primary, padding: '2px 6px' }}>View all →</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {stocks.length > 0 ? stocks.slice(0, 5).map(stock => {
+                    const isPos = stock.change >= 0
+                    return (
+                      <div key={stock.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ ...s.text, fontSize: '13px', fontWeight: '500' }}>{stock.symbol}</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ ...s.text, fontSize: '13px', fontWeight: '600', margin: 0 }}>${stock.price?.toFixed(2)}</p>
+                          <p style={{ color: isPos ? '#34d399' : '#f87171', fontSize: '11px', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
+                        </div>
+                      </div>
+                    )
+                  }) : [1,2,3,4,5].map(i => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div style={{ height: '14px', background: theme.bgTertiary, borderRadius: '4px', width: '50px' }} />
+                      <div style={{ height: '14px', background: theme.bgTertiary, borderRadius: '4px', width: '60px' }} />
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {assetData && (
-            <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-              <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Asset Allocation</p>
-              <div style={{ height: '200px' }}><Doughnut data={assetData} options={doughnutOptions} /></div>
+        {/* Charts */}
+        {isVisible('charts') && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            {assetData && (
+              <div style={s.cardSm}>
+                <p style={{ ...s.label, marginBottom: '12px' }}>Asset Allocation</p>
+                <div style={{ height: '180px' }}><Doughnut data={assetData} options={doughnutOptions} /></div>
+              </div>
+            )}
+            <div style={s.cardSm}>
+              <p style={{ ...s.label, marginBottom: '12px' }}>Monthly Budget</p>
+              <div style={{ height: '180px' }}><Doughnut data={budgetData} options={doughnutOptions} /></div>
             </div>
-          )}
-          <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-            <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Monthly Budget</p>
-            <div style={{ height: '200px' }}><Doughnut data={budgetData} options={doughnutOptions} /></div>
+            {goalsBarData && (
+              <div style={s.cardSm}>
+                <p style={{ ...s.label, marginBottom: '12px' }}>Goals Progress</p>
+                <div style={{ height: '180px' }}><Bar data={goalsBarData} options={barOptions} /></div>
+              </div>
+            )}
           </div>
-          {goalsBarData && (
-            <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-              <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Goals Progress</p>
-              <div style={{ height: '200px' }}><Bar data={goalsBarData} options={barOptions} /></div>
-            </div>
-          )}
-        </div>
+        )}
 
-        {/* Main grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-4">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
             {/* Action Plan */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Action Plan</h3>
-              <div className="space-y-3">
-                {analysis.nextActions.map((action, i) => (
-                  <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                    <button onClick={() => setExpandedAction(expandedAction === i ? null : i)}
-                      className="w-full p-5 text-left hover:bg-zinc-800/50 transition-colors">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="w-6 h-6 rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold flex items-center justify-center">{action.priority}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${action.impact === 'high' ? 'bg-violet-400/10 text-violet-400' : action.impact === 'medium' ? 'bg-amber-400/10 text-amber-400' : 'bg-zinc-700 text-gray-400'}`}>
-                          {action.impact} impact
-                        </span>
-                        <span className="text-xs text-gray-500 ml-auto">{action.timeframe}</span>
-                        <span className="text-gray-500 text-xs ml-2">{expandedAction === i ? '▲' : '▼'}</span>
-                      </div>
-                      <p className="font-semibold text-sm">{action.title}</p>
-                      <p className="text-gray-400 text-sm mt-1">{action.description}</p>
-                    </button>
-                    {expandedAction === i && (
-                      <div className="px-5 pb-5 border-t border-zinc-800 pt-4 space-y-3">
-                        {chatRefs[`action_${i}`] && (
-                          <div className="bg-zinc-800/50 rounded-xl p-3">
-                            <p className="text-xs text-emerald-400 font-semibold mb-1">Previously discussed</p>
-                            <p className="text-xs text-gray-400">You have an existing plan. Click below to continue.</p>
-                          </div>
-                        )}
-                        <button onClick={() => openPersistentChat(`action_${i}`, `Give me a detailed step by step plan for: ${action.title}. Be specific to my financial situation.`, 'general', action.title)}
-                          className="w-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 text-sm font-semibold py-2.5 rounded-xl hover:bg-emerald-400/20 transition-colors">
-                          {chatRefs[`action_${i}`] ? 'Continue plan →' : 'Get detailed steps →'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Debt Payoff */}
-            {analysis.debts.length > 0 && (
+            {isVisible('actions') && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Debt Payoff Plan</h3>
-                <div className="space-y-3">
+                <p style={{ ...s.label, marginBottom: '10px' }}>Action Plan</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {analysis.nextActions.map((action, i) => (
+                    <div key={i} style={{ background: theme.bgSecondary, border: `0.5px solid ${theme.border}`, borderRadius: '14px', overflow: 'hidden' }}>
+                      <button onClick={() => setExpandedAction(expandedAction === i ? null : i)}
+                        style={{ width: '100%', padding: '16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: accent.bg, color: accent.primary, fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `0.5px solid ${accent.border}` }}>{action.priority}</span>
+                          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: action.impact === 'high' ? 'rgba(167,139,250,0.1)' : action.impact === 'medium' ? 'rgba(251,191,36,0.1)' : theme.bgTertiary, color: action.impact === 'high' ? '#a78bfa' : action.impact === 'medium' ? '#fbbf24' : theme.textMuted }}>{action.impact} impact</span>
+                          <span style={{ ...s.muted, fontSize: '11px', marginLeft: 'auto' }}>{action.timeframe}</span>
+                          <span style={{ ...s.muted, fontSize: '11px' }}>{expandedAction === i ? '▲' : '▼'}</span>
+                        </div>
+                        <p style={{ ...s.text, fontSize: '14px', fontWeight: '600', margin: '0 0 4px' }}>{action.title}</p>
+                        <p style={{ ...s.muted, fontSize: '13px', margin: 0 }}>{action.description}</p>
+                      </button>
+                      {expandedAction === i && (
+                        <div style={{ padding: '0 16px 16px', borderTop: `0.5px solid ${theme.border}`, paddingTop: '12px' }}>
+                          {chatRefs[`action_${i}`] && (
+                            <div style={{ background: accent.bg, border: `0.5px solid ${accent.border}`, borderRadius: '10px', padding: '10px', marginBottom: '10px' }}>
+                              <p style={{ ...s.accent, fontSize: '11px', fontWeight: '600', margin: '0 0 2px' }}>Previously discussed</p>
+                              <p style={{ ...s.muted, fontSize: '11px', margin: 0 }}>You have an existing plan. Click below to continue.</p>
+                            </div>
+                          )}
+                          <button onClick={() => openPersistentChat(`action_${i}`, `Give me a detailed step by step plan for: ${action.title}. Be specific to my financial situation.`, 'general', action.title)}
+                            style={{ width: '100%', background: accent.bg, border: `0.5px solid ${accent.border}`, color: accent.primary, fontSize: '13px', fontWeight: '600', padding: '10px', borderRadius: '10px', cursor: 'pointer' }}>
+                            {chatRefs[`action_${i}`] ? 'Continue plan →' : 'Get detailed steps →'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Debt */}
+            {isVisible('debt') && analysis.debts.length > 0 && (
+              <div>
+                <p style={{ ...s.label, marginBottom: '10px' }}>Debt Payoff Plan</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {analysis.debts.map((debt, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-                      <div className="flex justify-between items-start mb-2">
-                        <p className="font-semibold">{debt.name}</p>
-                        <span className="text-xs bg-rose-400/10 text-rose-400 px-2 py-0.5 rounded-full">{debt.interestRate}% APR</span>
+                    <div key={i} style={s.card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <p style={{ ...s.text, fontWeight: '600', margin: 0 }}>{debt.name}</p>
+                        <span style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171', fontSize: '11px', padding: '2px 8px', borderRadius: '20px' }}>{debt.interestRate}% APR</span>
                       </div>
-                      <p className="text-gray-400 text-sm mb-3">{debt.strategy}</p>
-                      <div className="flex gap-6 text-sm">
-                        <div><p className="text-xs text-gray-500">Balance</p><p className="font-semibold">{formatCurrency(debt.balance)}</p></div>
-                        <div><p className="text-xs text-gray-500">Pay monthly</p><p className="font-semibold text-emerald-400">{formatCurrency(debt.recommendedPayment)}</p></div>
-                        <div><p className="text-xs text-gray-500">Paid off in</p><p className="font-semibold">{debt.monthsToPayoff}mo</p></div>
+                      <p style={{ ...s.muted, fontSize: '12px', marginBottom: '10px' }}>{debt.strategy}</p>
+                      <div style={{ display: 'flex', gap: '20px' }}>
+                        <div><p style={{ ...s.muted, fontSize: '10px' }}>Balance</p><p style={{ ...s.text, fontWeight: '600' }}>{formatCurrency(debt.balance)}</p></div>
+                        <div><p style={{ ...s.muted, fontSize: '10px' }}>Pay monthly</p><p style={{ color: accent.primary, fontWeight: '600' }}>{formatCurrency(debt.recommendedPayment)}</p></div>
+                        <div><p style={{ ...s.muted, fontSize: '10px' }}>Paid off in</p><p style={{ ...s.text, fontWeight: '600' }}>{debt.monthsToPayoff}mo</p></div>
                       </div>
                     </div>
                   ))}
@@ -416,27 +393,23 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* News Preview */}
-            {newsArticles.length > 0 && (
+            {/* News */}
+            {isVisible('news') && newsArticles.length > 0 && (
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Latest News</h3>
-                  <button onClick={() => navigate('/news')} className="text-xs text-emerald-400 hover:underline">View all →</button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <p style={s.label}>Latest News</p>
+                  <button onClick={() => navigate('/news')} style={{ ...s.ghostBtn, fontSize: '11px', color: accent.primary, padding: '2px 6px' }}>View all →</button>
                 </div>
-                <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
+                <div style={{ background: theme.bgSecondary, border: `0.5px solid ${theme.border}`, borderRadius: '14px', overflow: 'hidden' }}>
                   {newsArticles.map((article, i) => (
                     <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                      className="flex gap-3 p-4 hover:bg-zinc-800/50 transition-colors border-b border-zinc-800 last:border-0 group">
-                      {article.image && (
-                        <img src={article.image} alt="" className="w-16 h-12 object-cover rounded-lg shrink-0 bg-zinc-800"
-                          onError={e => (e.currentTarget.style.display = 'none')} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white group-hover:text-emerald-400 transition-colors line-clamp-2 leading-snug">{article.title}</p>
-                        <div className="flex gap-2 mt-1">
-                          <span className="text-xs text-emerald-400/70">{article.source}</span>
-                          <span className="text-gray-700">·</span>
-                          <span className="text-xs text-gray-600">{timeAgo(article.publishedAt)}</span>
+                      style={{ display: 'flex', gap: '12px', padding: '14px', borderBottom: i < newsArticles.length - 1 ? `0.5px solid ${theme.border}` : 'none', textDecoration: 'none' }}>
+                      {article.image && <img src={article.image} alt="" style={{ width: '60px', height: '46px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} onError={e => (e.currentTarget.style.display = 'none')} />}
+                      <div>
+                        <p style={{ ...s.text, fontSize: '13px', fontWeight: '500', margin: '0 0 4px', lineHeight: '1.4' }}>{article.title}</p>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <span style={{ color: accent.primary, fontSize: '11px' }}>{article.source}</span>
+                          <span style={{ ...s.muted, fontSize: '11px' }}>· {timeAgo(article.publishedAt)}</span>
                         </div>
                       </div>
                     </a>
@@ -447,74 +420,59 @@ export default function Dashboard() {
           </div>
 
           {/* Right column */}
-          <div className="space-y-4">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
             {/* Ask AI */}
             <button onClick={() => navigate('/chats')}
-              className="w-full bg-zinc-900 border border-emerald-400/30 rounded-2xl p-4 flex items-center gap-3 hover:border-emerald-400 transition-colors text-left">
-              <div className="w-10 h-10 bg-emerald-400/10 rounded-xl flex items-center justify-center shrink-0">
-                <span className="text-emerald-400 font-bold text-sm">AI</span>
+              style={{ ...s.card, display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', border: `0.5px solid ${accent.border}`, textAlign: 'left' }}>
+              <div style={{ width: '38px', height: '38px', background: accent.bg, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ color: accent.primary, fontWeight: '700', fontSize: '12px' }}>AI</span>
               </div>
               <div>
-                <p className="font-semibold text-sm">Ask your advisor</p>
-                <p className="text-xs text-gray-400">Honest advice on your finances</p>
+                <p style={{ ...s.text, fontWeight: '600', fontSize: '13px', margin: 0 }}>Ask your advisor</p>
+                <p style={{ ...s.muted, fontSize: '11px', margin: 0 }}>Honest advice on your finances</p>
               </div>
-              <span className="ml-auto text-gray-400">→</span>
+              <span style={{ ...s.muted, marginLeft: 'auto' }}>→</span>
             </button>
 
             {/* Goals */}
-            {analysis.goals.length > 0 && (
+            {isVisible('goals') && analysis.goals.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Goals</h3>
-                <div className="space-y-3">
+                <p style={{ ...s.label, marginBottom: '10px' }}>Goals</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {analysis.goals.map((goal, i) => {
                     const isAchieved = goal.currentAmount >= goal.targetAmount
                     const surplus = goal.currentAmount - goal.targetAmount
-
+                    const goalColor = goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'
                     return (
-                      <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                        <div className="p-4 flex items-center gap-4">
+                      <div key={i} style={{ background: theme.bgSecondary, border: `0.5px solid ${theme.border}`, borderRadius: '14px', overflow: 'hidden' }}>
+                        <div style={{ padding: '14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                           {isAchieved ? (
-                            <div className="w-[70px] h-[70px] bg-emerald-400/10 rounded-full flex items-center justify-center shrink-0">
-                              <span className="text-2xl">✓</span>
+                            <div style={{ width: '64px', height: '64px', background: 'rgba(52,211,153,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <span style={{ fontSize: '20px' }}>✓</span>
                             </div>
                           ) : (
-                            <RingProgress value={goal.percentage} size={70}
-                              color={goal.feasibility === 'achievable' ? '#34d399' : goal.feasibility === 'stretch' ? '#fbbf24' : '#f87171'} />
+                            <RingProgress value={goal.percentage} size={64} color={goalColor} />
                           )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-sm">{goal.name}</p>
-                              {isAchieved && <span className="text-xs bg-emerald-400/10 text-emerald-400 px-2 py-0.5 rounded-full font-semibold">Achieved ✓</span>}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <p style={{ ...s.text, fontWeight: '600', fontSize: '13px', margin: 0 }}>{goal.name}</p>
+                              {isAchieved && <span style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', fontSize: '10px', padding: '2px 6px', borderRadius: '20px' }}>Achieved ✓</span>}
                             </div>
-                            <p className="text-xs text-gray-400">{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
-                            {isAchieved && surplus > 0 && (
-                              <p className="text-xs text-emerald-400 mt-0.5">+{formatCurrency(surplus)} surplus</p>
-                            )}
-                            {!isAchieved && goal.monthlyNeeded > 0 && (
-                              <p className="text-xs text-emerald-400 mt-1">+{formatCurrency(goal.monthlyNeeded)}/mo</p>
-                            )}
+                            <p style={{ ...s.muted, fontSize: '11px', margin: '2px 0 0' }}>{formatCurrency(goal.currentAmount)} of {formatCurrency(goal.targetAmount)}</p>
+                            {isAchieved && surplus > 0 && <p style={{ color: '#34d399', fontSize: '11px', margin: '2px 0 0' }}>+{formatCurrency(surplus)} surplus</p>}
+                            {!isAchieved && goal.monthlyNeeded > 0 && <p style={{ color: accent.primary, fontSize: '11px', margin: '2px 0 0' }}>+{formatCurrency(goal.monthlyNeeded)}/mo</p>}
                           </div>
                         </div>
-                        <div className="px-4 pb-3 border-t border-zinc-800 pt-2">
+                        <div style={{ padding: '8px 14px 12px', borderTop: `0.5px solid ${theme.border}` }}>
                           {isAchieved ? (
-                            <button onClick={() => openPersistentChat(
-                              `goal_surplus_${i}`,
-                              `I've exceeded my "${goal.name}" goal — I have ${formatCurrency(surplus)} more than my target of ${formatCurrency(goal.targetAmount)}. What are the smartest ways to put this surplus money to work given my overall financial situation?`,
-                              'general',
-                              `${goal.name} — Surplus Strategy`
-                            )}
-                              className="text-xs text-emerald-400 hover:underline font-semibold">
+                            <button onClick={() => openPersistentChat(`goal_surplus_${i}`, `I've exceeded my "${goal.name}" goal — I have ${formatCurrency(surplus)} more than my target. What are the smartest ways to put this surplus to work?`, 'general', `${goal.name} — Surplus`)}
+                              style={{ background: 'none', border: 'none', color: accent.primary, fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: 0 }}>
                               Put this money to work →
                             </button>
                           ) : (
-                            <button onClick={() => openPersistentChat(
-                              `goal_${i}`,
-                              `Give me a detailed plan for my "${goal.name}" goal. I have ${formatCurrency(goal.currentAmount)} saved toward a ${formatCurrency(goal.targetAmount)} target.`,
-                              'general',
-                              `${goal.name} Plan`
-                            )}
-                              className="text-xs text-emerald-400 hover:underline">
+                            <button onClick={() => openPersistentChat(`goal_${i}`, `Give me a detailed plan for my "${goal.name}" goal. I have ${formatCurrency(goal.currentAmount)} saved toward ${formatCurrency(goal.targetAmount)}.`, 'general', `${goal.name} Plan`)}
+                              style={{ background: 'none', border: 'none', color: accent.primary, fontSize: '12px', cursor: 'pointer', padding: 0 }}>
                               {chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get advice →'}
                             </button>
                           )}
@@ -526,18 +484,18 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Income Ideas — link to Money page */}
-            <button onClick={() => navigate('/money')}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3 hover:border-emerald-400/30 transition-colors text-left">
-              <div className="w-10 h-10 bg-amber-400/10 rounded-xl flex items-center justify-center shrink-0">
-                <span className="text-amber-400 text-lg">💰</span>
-              </div>
-              <div>
-                <p className="font-semibold text-sm">Make More Money</p>
-                <p className="text-xs text-gray-400">Ideas, strategies & AI coaching</p>
-              </div>
-              <span className="ml-auto text-gray-400">→</span>
-            </button>
+            {/* Income */}
+            {isVisible('income') && (
+              <button onClick={() => navigate('/money')}
+                style={{ ...s.card, display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ width: '38px', height: '38px', background: 'rgba(251,191,36,0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '18px' }}>💰</div>
+                <div>
+                  <p style={{ ...s.text, fontWeight: '600', fontSize: '13px', margin: 0 }}>Make More Money</p>
+                  <p style={{ ...s.muted, fontSize: '11px', margin: 0 }}>Ideas, strategies & AI coaching</p>
+                </div>
+                <span style={{ ...s.muted, marginLeft: 'auto' }}>→</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
