@@ -1,70 +1,98 @@
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const avKey = process.env.ALPHA_VANTAGE_KEY
   const { symbols, symbol, period } = req.query
 
   try {
-    // Historical data for a single stock
+    // Historical chart data for single stock
     if (symbol && period) {
       const sym = (symbol as string).toUpperCase()
 
-      let url = ''
-      let dataKey = ''
-
-      if (period === '1D') {
-        url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${sym}&interval=5min&apikey=${avKey}`
-        dataKey = 'Time Series (5min)'
-      } else if (period === '1W' || period === '1M') {
-        url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${sym}&apikey=${avKey}`
-        dataKey = 'Time Series (Daily)'
-      } else {
-        url = `https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=${sym}&apikey=${avKey}`
-        dataKey = 'Weekly Time Series'
+      const rangeMap: Record<string, { range: string; interval: string }> = {
+        '1D': { range: '1d', interval: '5m' },
+        '1W': { range: '5d', interval: '15m' },
+        '1M': { range: '1mo', interval: '1d' },
+        '1Y': { range: '1y', interval: '1wk' },
+        '5Y': { range: '5y', interval: '1mo' },
+        '10Y': { range: '10y', interval: '3mo' },
+        'ALL': { range: 'max', interval: '3mo' }
       }
 
-      const response = await fetch(url)
+      const { range, interval } = rangeMap[period as string] || rangeMap['1M']
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${range}&interval=${interval}`
+
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      })
       const data = await response.json()
-      const series = data[dataKey]
 
-      if (!series) return res.json({ labels: [], prices: [] })
+      const result = data?.chart?.result?.[0]
+      if (!result) return res.json({ labels: [], prices: [] })
 
-      const entries = Object.entries(series)
-        .slice(0, period === '1D' ? 78 : period === '1W' ? 7 : period === '1M' ? 30 : period === '1Y' ? 52 : period === '5Y' ? 260 : period === '10Y' ? 520 : 1000)
-        .reverse()
+      const timestamps = result.timestamp || []
+      const closes = result.indicators?.quote?.[0]?.close || []
 
-      const labels = entries.map(([date]) =>
-        period === '1D' ? date.split(' ')[1].slice(0, 5) : date
-      )
-      const prices = entries.map(([, val]: any) => parseFloat(val['4. close']))
+      const labels = timestamps.map((ts: number) => {
+        const d = new Date(ts * 1000)
+        if (period === '1D' || period === '1W') {
+          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        }
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: period === '5Y' || period === '10Y' || period === 'ALL' ? 'numeric' : undefined })
+      })
 
-      return res.json({ labels, prices })
+      const prices = closes.map((p: number | null) => p ? parseFloat(p.toFixed(2)) : null).filter(Boolean)
+
+      return res.json({ labels: labels.slice(0, prices.length), prices })
     }
 
-    // Quote data for watchlist
+    // Watchlist quotes
     if (symbols) {
-      const symbolList = (symbols as string).split(',').slice(0, 15)
+      const symbolList = (symbols as string).split(',').map((s: string) => s.trim().toUpperCase()).slice(0, 20)
 
       const quotes = await Promise.all(
         symbolList.map(async (sym: string) => {
-          const response = await fetch(
-            `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${sym.trim()}&apikey=${avKey}`
-          )
-          const data = await response.json()
-          const quote = data['Global Quote']
-          if (!quote || !quote['05. price']) return null
-          return {
-            symbol: quote['01. symbol'],
-            price: parseFloat(quote['05. price']),
-            change: parseFloat(quote['09. change']),
-            changePercent: quote['10. change percent']?.replace('%', ''),
-            high: parseFloat(quote['03. high']),
-            low: parseFloat(quote['04. low']),
-            volume: parseInt(quote['06. volume'])
+          try {
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=1d&interval=1d`
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+            const data = await response.json()
+            const result = data?.chart?.result?.[0]
+            if (!result) return null
+
+            const meta = result.meta
+            return {
+              symbol: sym,
+              price: parseFloat(meta.regularMarketPrice?.toFixed(2)),
+              change: parseFloat((meta.regularMarketPrice - meta.previousClose).toFixed(2)),
+              changePercent: (((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100).toFixed(2),
+              high: parseFloat(meta.regularMarketDayHigh?.toFixed(2)),
+              low: parseFloat(meta.regularMarketDayLow?.toFixed(2)),
+              volume: meta.regularMarketVolume || 0
+            }
+          } catch {
+            return null
           }
         })
       )
+
       return res.json({ quotes: quotes.filter(Boolean) })
+    }
+
+    // Search for stocks
+    if (req.query.search) {
+      const query = req.query.search as string
+      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&lang=en-US&region=US&quotesCount=8&newsCount=0`
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      const data = await response.json()
+
+      const results = (data.quotes || [])
+        .filter((q: any) => q.symbol && q.shortname && q.quoteType === 'EQUITY')
+        .slice(0, 8)
+        .map((q: any) => ({
+          symbol: q.symbol,
+          name: q.shortname || q.longname
+        }))
+
+      return res.json({ results })
     }
 
     return res.status(400).json({ error: 'Missing parameters' })
