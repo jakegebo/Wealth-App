@@ -102,13 +102,11 @@ export default function Dashboard() {
   const openPersistentChat = async (key: string, prompt: string, topic: string, title: string) => {
     if (!userId) return
 
-    // If chat already exists for this key, reopen it
     if (chatRefs[key]) {
       navigate(`/chat/${chatRefs[key]}`)
       return
     }
 
-    // Otherwise create a new one and save the reference
     const { data } = await supabase
       .from('chats')
       .insert({ user_id: userId, title, topic, messages: [] })
@@ -150,6 +148,10 @@ export default function Dashboard() {
             <span className="font-semibold">WealthApp</span>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('/retirement')}
+              className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">
+              🏖️ Retirement
+            </button>
             <button onClick={() => navigate('/chats')}
               className="bg-emerald-400 text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-emerald-300 transition-colors">
               Ask AI
@@ -195,6 +197,21 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+
+            {/* Retirement Preview Card */}
+            <button onClick={() => navigate('/retirement')}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-left hover:border-emerald-400/30 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🏖️</span>
+                  <div>
+                    <p className="font-semibold text-sm">Retirement Planner</p>
+                    <p className="text-xs text-gray-400">Track your path to financial freedom</p>
+                  </div>
+                </div>
+                <span className="text-gray-400 text-sm">→</span>
+              </div>
+            </button>
 
             {/* Summary */}
             <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
