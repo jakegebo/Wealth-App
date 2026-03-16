@@ -8,6 +8,7 @@ import Chat from './pages/Chat'
 import Chats from './pages/Chats'
 import Retirement from './pages/Retirement'
 import News from './pages/News'
+import Money from './pages/Money'
 
 export default function App() {
   const [user, setUser] = useState<any>(null)
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/chat/:id" element={user ? <Chat /> : <Navigate to="/login" />} />
         <Route path="/retirement" element={user ? <Retirement /> : <Navigate to="/login" />} />
         <Route path="/news" element={user ? <News /> : <Navigate to="/login" />} />
+        <Route path="/money" element={user ? <Money /> : <Navigate to="/login" />} />
         <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
       </Routes>
     </BrowserRouter>
