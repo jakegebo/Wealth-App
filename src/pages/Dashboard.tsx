@@ -148,9 +148,13 @@ export default function Dashboard() {
             <span className="font-semibold">WealthApp</span>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => navigate('/news')}
+              className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">
+              📰 News
+            </button>
             <button onClick={() => navigate('/retirement')}
               className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-zinc-900 transition-colors">
-              🏖️ Retirement
+              🏖️ Retire
             </button>
             <button onClick={() => navigate('/chats')}
               className="bg-emerald-400 text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-emerald-300 transition-colors">
@@ -198,20 +202,29 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Retirement Preview Card */}
-            <button onClick={() => navigate('/retirement')}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-left hover:border-emerald-400/30 transition-colors">
-              <div className="flex items-center justify-between">
+            {/* Quick nav cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => navigate('/retirement')}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left hover:border-emerald-400/30 transition-colors">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">🏖️</span>
                   <div>
-                    <p className="font-semibold text-sm">Retirement Planner</p>
-                    <p className="text-xs text-gray-400">Track your path to financial freedom</p>
+                    <p className="font-semibold text-sm">Retirement</p>
+                    <p className="text-xs text-gray-400">Track your path</p>
                   </div>
                 </div>
-                <span className="text-gray-400 text-sm">→</span>
-              </div>
-            </button>
+              </button>
+              <button onClick={() => navigate('/news')}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left hover:border-emerald-400/30 transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📰</span>
+                  <div>
+                    <p className="font-semibold text-sm">News</p>
+                    <p className="text-xs text-gray-400">Markets & finance</p>
+                  </div>
+                </div>
+              </button>
+            </div>
 
             {/* Summary */}
             <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
