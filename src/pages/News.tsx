@@ -42,15 +42,14 @@ interface SearchResult {
 }
 
 const SECTIONS = [
-  { key: 'markets', label: '📈 Markets' },
-  { key: 'economy', label: '🏦 Economy' },
-  { key: 'crypto', label: '₿ Crypto' },
-  { key: 'realestate', label: '🏠 Real Estate' },
-  { key: 'ai', label: '🤖 AI & Tech' },
+  { key: 'markets', label: 'Markets' },
+  { key: 'economy', label: 'Economy' },
+  { key: 'crypto', label: 'Crypto' },
+  { key: 'realestate', label: 'Real Estate' },
+  { key: 'ai', label: 'AI & Tech' },
 ]
 
 const PERIODS = ['1D', '1W', '1M', '1Y', '5Y', '10Y', 'ALL']
-const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA']
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -60,33 +59,6 @@ function timeAgo(dateStr: string) {
   if (mins < 60) return `${mins}m ago`
   if (hours < 24) return `${hours}h ago`
   return `${days}d ago`
-}
-
-function ArticleCard({ article }: { article: Article }) {
-  return (
-    <a href={article.url} target="_blank" rel="noopener noreferrer"
-      className="flex gap-4 p-4 hover:bg-zinc-800/50 transition-colors border-b border-zinc-800 last:border-0 group">
-      {article.image && (
-        <img src={article.image} alt=""
-          className="w-24 object-cover rounded-xl shrink-0 bg-zinc-800"
-          style={{ height: '72px' }}
-          onError={e => (e.currentTarget.style.display = 'none')} />
-      )}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-white leading-snug group-hover:text-emerald-400 transition-colors line-clamp-2">
-          {article.title}
-        </p>
-        {article.description && (
-          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{article.description}</p>
-        )}
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs font-medium text-emerald-400/70">{article.source}</span>
-          <span className="text-gray-700">·</span>
-          <span className="text-xs text-gray-600">{timeAgo(article.publishedAt)}</span>
-        </div>
-      </div>
-    </a>
-  )
 }
 
 function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => void }) {
@@ -131,8 +103,8 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
     datasets: [{
       label: quote.symbol,
       data: chartData.prices,
-      borderColor: isPositive ? '#34d399' : '#f87171',
-      backgroundColor: isPositive ? '#34d39915' : '#f8717115',
+      borderColor: isPositive ? 'var(--success)' : 'var(--danger)',
+      backgroundColor: isPositive ? 'rgba(122,158,110,0.08)' : 'rgba(192,57,43,0.06)',
       fill: true,
       tension: 0.3,
       pointRadius: 0,
@@ -148,83 +120,103 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: '#18181b',
-        borderColor: '#3f3f46',
+        backgroundColor: '#f2ede6',
+        borderColor: '#ddd4c4',
         borderWidth: 1,
-        titleColor: '#f3f4f6',
-        bodyColor: '#9ca3af',
+        titleColor: '#1a1208',
+        bodyColor: '#9e8e7e',
         padding: 10,
         callbacks: { label: (ctx: any) => ` $${ctx.parsed.y?.toFixed(2)}` }
       }
     },
     scales: {
-      x: { ticks: { color: '#6b7280', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#27272a' } },
-      y: { ticks: { color: '#6b7280', font: { size: 10 }, callback: (v: any) => `$${v}` }, grid: { color: '#27272a' }, position: 'right' as const }
+      x: { ticks: { color: '#9e8e7e', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#ede8e3' } },
+      y: { ticks: { color: '#9e8e7e', font: { size: 10 }, callback: (v: any) => `$${v}` }, grid: { color: '#ede8e3' }, position: 'right' as const }
     }
   }
 
   const formatAnalysis = (text: string) => text.split('\n').map((line, i) => {
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-bold text-white mt-3 mb-1">{line.slice(2, -2)}</p>
-    if (line.startsWith('- ')) return <div key={i} className="flex gap-2 text-sm text-gray-300 mt-1"><span className="text-emerald-400 shrink-0">→</span><span>{line.slice(2)}</span></div>
-    if (line === '') return <div key={i} className="h-1" />
-    return <p key={i} className="text-sm text-gray-300">{line}</p>
+    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
+    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.slice(2)}</span></div>
+    if (line === '') return <div key={i} style={{ height: '4px' }} />
+    return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-700)' }}>{line}</p>
   })
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="p-5 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-zinc-950 z-10">
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
+        </div>
+
+        <div style={{ padding: '16px 20px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold">{quote.symbol}</h2>
-              {quote.name && <span className="text-sm text-gray-400">{quote.name}</span>}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{quote.symbol}</h2>
+              {quote.name && <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{quote.name}</span>}
             </div>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-2xl font-bold">${quote.price?.toFixed(2)}</span>
-              <span className={`text-sm font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '4px' }}>
+              <span style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>${quote.price?.toFixed(2)}</span>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
                 {isPositive ? '+' : ''}{quote.change?.toFixed(2)} ({parseFloat(quote.changePercent)?.toFixed(2)}%)
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-gray-400 hover:text-white transition-colors text-lg">×</button>
+          <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', color: 'var(--sand-700)' }}>×</button>
         </div>
 
-        <div className="p-5 space-y-5">
-          <div className="flex gap-1.5">
+        <div style={{ overflowY: 'auto', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Period selector */}
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--sand-200)', borderRadius: '12px', padding: '3px' }}>
             {PERIODS.map(p => (
               <button key={p} onClick={() => setPeriod(p)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${period === p ? 'bg-emerald-400 text-black' : 'bg-zinc-900 text-gray-400 hover:text-white'}`}>
+                style={{ flex: 1, padding: '6px 4px', borderRadius: '9px', border: 'none', fontSize: '11px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', background: period === p ? 'var(--sand-50)' : 'transparent', color: period === p ? 'var(--sand-900)' : 'var(--sand-500)' }}>
                 {p}
               </button>
             ))}
           </div>
 
-          <div style={{ height: '220px' }}>
+          {/* Chart */}
+          <div style={{ height: '200px' }}>
             {loadingChart ? (
-              <div className="h-full flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '24px', height: '24px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               </div>
-            ) : lineData ? (
-              <Line data={lineData} options={chartOptions} />
-            ) : (
-              <div className="h-full flex items-center justify-center text-gray-500 text-sm">Chart data unavailable</div>
+            ) : lineData ? <Line data={lineData} options={chartOptions} /> : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: 'var(--sand-500)', fontSize: '13px' }}>Chart unavailable</p>
+              </div>
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-zinc-900 rounded-xl p-3"><p className="text-xs text-gray-500">High</p><p className="font-semibold text-sm">${quote.high?.toFixed(2)}</p></div>
-            <div className="bg-zinc-900 rounded-xl p-3"><p className="text-xs text-gray-500">Low</p><p className="font-semibold text-sm">${quote.low?.toFixed(2)}</p></div>
-            <div className="bg-zinc-900 rounded-xl p-3"><p className="text-xs text-gray-500">Volume</p><p className="font-semibold text-sm">{quote.volume > 1000000 ? `${(quote.volume / 1000000).toFixed(1)}M` : `${(quote.volume / 1000).toFixed(0)}K`}</p></div>
+          {/* Stats */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+            {[
+              { label: 'High', value: `$${quote.high?.toFixed(2)}` },
+              { label: 'Low', value: `$${quote.low?.toFixed(2)}` },
+              { label: 'Volume', value: quote.volume > 1000000 ? `${(quote.volume / 1000000).toFixed(1)}M` : `${(quote.volume / 1000).toFixed(0)}K` }
+            ].map((item, i) => (
+              <div key={i} className="card-muted" style={{ textAlign: 'center', padding: '10px' }}>
+                <p className="label" style={{ marginBottom: '3px', fontSize: '9px' }}>{item.label}</p>
+                <p style={{ fontSize: '13px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{item.value}</p>
+              </div>
+            ))}
           </div>
 
-          <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800">
-            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3">AI Analysis</p>
+          {/* AI Analysis */}
+          <div className="card-muted">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <div style={{ width: '22px', height: '22px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+              </div>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Analysis</p>
+            </div>
             {loadingAnalysis ? (
-              <div className="space-y-2">{[1,2,3,4].map(i => <div key={i} className="h-4 bg-zinc-800 rounded animate-pulse" />)}</div>
-            ) : (
-              <div>{formatAnalysis(analysis)}</div>
-            )}
-            <p className="text-xs text-gray-600 mt-3">Not financial advice. Do your own research.</p>
+              <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
+                {[0,150,300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              </div>
+            ) : <div>{formatAnalysis(analysis)}</div>}
+            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0' }}>Not financial advice.</p>
           </div>
         </div>
       </div>
@@ -236,7 +228,7 @@ export default function News() {
   const navigate = useNavigate()
   const [articles, setArticles] = useState<Article[]>([])
   const [stocks, setStocks] = useState<StockQuote[]>([])
-  const [watchlist, setWatchlist] = useState<string[]>(DEFAULT_WATCHLIST)
+  const [watchlist, setWatchlist] = useState<string[]>(['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA'])
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -297,15 +289,9 @@ export default function News() {
       if (reset) setArticles(newArticles)
       else setArticles(prev => [...prev, ...newArticles])
       setHasMore(newArticles.length >= 8)
-    } catch (err) { console.error(err) }
+    } catch { }
     setLoadingNews(false)
     setLoadingMore(false)
-  }
-
-  const loadMore = () => {
-    const next = page + 1
-    setPage(next)
-    fetchNews(activeSection, next)
   }
 
   const fetchStocks = async () => {
@@ -314,7 +300,7 @@ export default function News() {
       const res = await fetch(`/api/stocks?symbols=${watchlist.join(',')}`)
       const data = await res.json()
       setStocks(data.quotes || [])
-    } catch (err) { console.error(err) }
+    } catch { }
     setLoadingStocks(false)
   }
 
@@ -329,7 +315,7 @@ export default function News() {
         const res = await fetch(`/api/stocks?search=${encodeURIComponent(value)}`)
         const data = await res.json()
         setSearchResults(data.results || [])
-      } catch { setSearchResults([]) }
+      } catch { }
       setSearching(false)
     }, 400)
   }
@@ -353,140 +339,126 @@ export default function News() {
   }
 
   return (
-    <div className="min-h-screen bg-black">
-      <div className="border-b border-zinc-900 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors">←</button>
+    <div style={{ minHeight: '100vh', background: 'var(--sand-100)' }}>
+      <div style={{ background: 'var(--sand-50)', borderBottom: '0.5px solid var(--sand-300)', padding: '52px 20px 16px' }}>
+        <div style={{ maxWidth: '680px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button onClick={() => navigate(-1)}
+              style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px' }}>←</button>
             <div>
-              <h1 className="font-semibold">Financial News</h1>
-              <p className="text-xs text-gray-500">Live updates across markets</p>
+              <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Markets & News</h1>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Live updates</p>
             </div>
           </div>
           <button onClick={() => fetchNews(activeSection, 1, true)}
-            className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-900 transition-colors">
-            ↻ Refresh
-          </button>
+            style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)', fontSize: '14px' }}>↻</button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
+      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
         {/* Watchlist */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Watchlist</h2>
-            <div ref={searchRef} className="relative flex gap-2">
-              <div className="relative">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <p className="label">Watchlist</p>
+            <div ref={searchRef} style={{ position: 'relative', display: 'flex', gap: '6px' }}>
+              <div style={{ position: 'relative' }}>
                 <input
                   value={searchQuery}
                   onChange={e => handleSearch(e.target.value)}
                   onFocus={() => setShowDropdown(true)}
-                  onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) addToWatchlist(searchQuery) }}
-                  placeholder="Search any stock, ETF..."
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-emerald-400 w-44"
+                  onKeyDown={e => e.key === 'Enter' && addToWatchlist(searchQuery)}
+                  placeholder="Search symbol..."
+                  style={{ width: '140px', fontSize: '12px', padding: '6px 12px', borderRadius: '20px' }}
                 />
                 {showDropdown && (searchResults.length > 0 || searching) && (
-                  <div className="absolute top-full mt-1 left-0 w-64 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden z-20 shadow-xl">
+                  <div style={{ position: 'absolute', top: '100%', left: 0, width: '240px', background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', overflow: 'hidden', zIndex: 20, marginTop: '4px', boxShadow: '0 8px 24px rgba(26,18,8,0.1)' }}>
                     {searching ? (
-                      <div className="px-3 py-3 text-xs text-gray-500">Searching...</div>
-                    ) : searchResults.map(result => (
-                      <button key={result.symbol} onClick={() => addToWatchlist(result.symbol)}
-                        className="w-full px-3 py-2.5 text-left hover:bg-zinc-800 transition-colors border-b border-zinc-800 last:border-0 flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold text-white shrink-0">{result.symbol}</span>
-                        <span className="text-xs text-gray-400 truncate">{result.name}</span>
+                      <div style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--sand-500)' }}>Searching...</div>
+                    ) : searchResults.map(r => (
+                      <button key={r.symbol} onClick={() => addToWatchlist(r.symbol)}
+                        style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--sand-200)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: '8px', fontFamily: 'inherit' }}>
+                        <span style={{ fontWeight: '600', fontSize: '13px', color: 'var(--sand-900)' }}>{r.symbol}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--sand-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              <button onClick={() => addToWatchlist(searchQuery)}
-                className="bg-emerald-400 text-black text-xs font-semibold px-3 py-1.5 rounded-xl hover:bg-emerald-300 transition-colors whitespace-nowrap">
-                + Add
-              </button>
+              <button onClick={() => addToWatchlist(searchQuery)} className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '20px' }}>Add</button>
             </div>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
             {loadingStocks && stocks.length === 0 ? (
-              DEFAULT_WATCHLIST.map(s => (
-                <div key={s} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 min-w-[140px] shrink-0 animate-pulse">
-                  <div className="h-4 bg-zinc-800 rounded mb-2 w-16" />
-                  <div className="h-6 bg-zinc-800 rounded w-20" />
-                  <div className="h-3 bg-zinc-800 rounded w-12 mt-1" />
-                </div>
+              ['SPY','QQQ','AAPL'].map(s => (
+                <div key={s} style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', minWidth: '120px', height: '80px', flexShrink: 0, animation: 'pulse 1.5s infinite' }} />
               ))
-            ) : stocks.length > 0 ? (
-              stocks.map(quote => {
-                const isPos = quote.change >= 0
-                return (
-                  <div key={quote.symbol} className="relative group shrink-0">
-                    <button onClick={() => setSelectedStock(quote)}
-                      className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 min-w-[140px] text-left hover:border-emerald-400/50 transition-colors w-full">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-bold text-sm">{quote.symbol}</p>
-                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${isPos ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
-                          {isPos ? '+' : ''}{parseFloat(quote.changePercent)?.toFixed(2)}%
-                        </span>
-                      </div>
-                      <p className="text-xl font-bold">${quote.price?.toFixed(2)}</p>
-                      <p className={`text-xs mt-0.5 ${isPos ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {isPos ? '+' : ''}{quote.change?.toFixed(2)} today
-                      </p>
-                    </button>
-                    <button onClick={() => removeFromWatchlist(quote.symbol)}
-                      className="absolute -top-1 -right-1 w-5 h-5 bg-zinc-700 rounded-full text-gray-400 text-xs hidden group-hover:flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors z-10">
-                      ×
-                    </button>
-                  </div>
-                )
-              })
-            ) : (
-              <p className="text-gray-500 text-sm py-4">Search and add stocks to your watchlist</p>
-            )}
+            ) : stocks.map(quote => {
+              const isPos = quote.change >= 0
+              return (
+                <div key={quote.symbol} style={{ position: 'relative', flexShrink: 0 }}>
+                  <button onClick={() => setSelectedStock(quote)}
+                    style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '12px 16px', minWidth: '120px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 4px' }}>{quote.symbol}</p>
+                    <p style={{ fontSize: '17px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-0.3px' }}>${quote.price?.toFixed(2)}</p>
+                    <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(quote.changePercent)?.toFixed(2)}%</p>
+                  </button>
+                  <button onClick={() => removeFromWatchlist(quote.symbol)}
+                    style={{ position: 'absolute', top: '-5px', right: '-5px', width: '18px', height: '18px', background: 'var(--sand-500)', color: '#fff', border: 'none', borderRadius: '50%', fontSize: '10px', cursor: 'pointer', display: 'none', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseEnter={e => (e.currentTarget.style.display = 'flex')}
+                    onMouseLeave={e => (e.currentTarget.style.display = 'none')}>
+                    ×
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
 
         {/* News */}
         <div>
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
-            {SECTIONS.map(section => (
-              <button key={section.key} onClick={() => { setActiveSection(section.key); setPage(1) }}
-                className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${activeSection === section.key ? 'bg-emerald-400 text-black' : 'bg-zinc-900 text-gray-400 hover:text-white border border-zinc-800'}`}>
-                {section.label}
+          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '12px' }}>
+            {SECTIONS.map(s => (
+              <button key={s.key} onClick={() => setActiveSection(s.key)}
+                style={{ flexShrink: 0, padding: '7px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: 'inherit', border: 'none', transition: 'all 0.2s', background: activeSection === s.key ? 'var(--accent)' : 'var(--sand-200)', color: activeSection === s.key ? 'var(--sand-50)' : 'var(--sand-600)' }}>
+                {s.label}
               </button>
             ))}
           </div>
 
-          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-            {loadingNews ? (
-              <div className="p-4 space-y-4">
-                {[1,2,3,4].map(i => (
-                  <div key={i} className="flex gap-3 animate-pulse">
-                    <div className="w-24 shrink-0 bg-zinc-800 rounded-xl" style={{ height: '72px' }} />
-                    <div className="flex-1 space-y-2 py-1">
-                      <div className="h-4 bg-zinc-800 rounded w-full" />
-                      <div className="h-4 bg-zinc-800 rounded w-3/4" />
-                      <div className="h-3 bg-zinc-800 rounded w-1/4" />
-                    </div>
+          {loadingNews ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[1,2,3,4].map(i => (
+                <div key={i} style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', height: '80px', animation: 'pulse 1.5s infinite' }} />
+              ))}
+            </div>
+          ) : (
+            <div className="card" style={{ padding: '4px 0' }}>
+              {articles.map((article, i) => (
+                <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'flex', gap: '12px', padding: '14px 18px', borderBottom: i < articles.length - 1 ? '0.5px solid var(--sand-200)' : 'none', textDecoration: 'none' }}>
+                  {article.image && (
+                    <img src={article.image} alt="" style={{ width: '64px', height: '50px', objectFit: 'cover', borderRadius: '10px', flexShrink: 0, background: 'var(--sand-200)' }}
+                      onError={e => (e.currentTarget.style.display = 'none')} />
+                  )}
+                  <div>
+                    <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 4px', lineHeight: '1.4' }}>{article.title}</p>
+                    {article.description && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '0 0 4px', lineHeight: '1.4' }}>{article.description}</p>}
+                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>{article.source} · {timeAgo(article.publishedAt)}</p>
                   </div>
-                ))}
-              </div>
-            ) : articles.length > 0 ? (
-              <>
-                {articles.map((article, i) => <ArticleCard key={i} article={article} />)}
-                {hasMore && (
-                  <div className="p-4 border-t border-zinc-800 text-center">
-                    <button onClick={loadMore} disabled={loadingMore}
-                      className="bg-zinc-800 hover:bg-zinc-700 text-gray-300 text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
-                      {loadingMore ? 'Loading...' : 'Load More Articles'}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="p-8 text-center text-gray-500 text-sm">No articles found. Try refreshing.</div>
-            )}
-          </div>
+                </a>
+              ))}
+              {hasMore && (
+                <div style={{ padding: '12px 18px', textAlign: 'center', borderTop: '0.5px solid var(--sand-200)' }}>
+                  <button onClick={() => { const next = page + 1; setPage(next); fetchNews(activeSection, next) }}
+                    disabled={loadingMore} className="btn-ghost" style={{ fontSize: '12px' }}>
+                    {loadingMore ? 'Loading...' : 'Load more'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
