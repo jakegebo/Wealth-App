@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -8,76 +7,99 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAuth = async () => {
+    if (!email || !password) return
     setLoading(true)
     setError('')
-    setMessage('')
 
-    if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) setError(error.message)
-      else setMessage('Check your email to confirm your account!')
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
+    try {
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email, password })
+        if (error) setError(error.message)
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) setError(error.message)
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
     }
     setLoading(false)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div className="w-12 h-12 bg-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-black font-bold text-xl">W</span>
+    <div style={{ minHeight: '100vh', background: 'var(--sand-100)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+
+      {/* Logo */}
+      <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+        <div style={{ width: '56px', height: '56px', background: 'var(--accent)', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <span style={{ color: 'var(--sand-50)', fontWeight: '700', fontSize: '22px' }}>W</span>
+        </div>
+        <h1 style={{ fontSize: '26px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 6px', letterSpacing: '-0.5px' }}>WealthApp</h1>
+        <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: 0 }}>Your personal AI financial advisor</p>
+      </div>
+
+      {/* Form */}
+      <div style={{ width: '100%', maxWidth: '380px' }}>
+        <div className="card" style={{ padding: '28px', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 20px', textAlign: 'center' }}>
+            {isSignUp ? 'Create account' : 'Welcome back'}
+          </h2>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', marginBottom: '6px' }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+                placeholder="you@example.com"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', marginBottom: '6px' }}>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+                placeholder="••••••••"
+                style={{ width: '100%' }}
+              />
+            </div>
           </div>
-          <h1 className="text-2xl font-bold">WealthApp</h1>
-          <p className="text-gray-400 mt-1 text-sm">Your financial companion</p>
+
+          {error && (
+            <div style={{ background: 'rgba(192,57,43,0.08)', border: '0.5px solid rgba(192,57,43,0.2)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--danger)', margin: 0 }}>{error}</p>
+            </div>
+          )}
+
+          <button onClick={handleAuth} disabled={loading || !email || !password} className="btn-primary"
+            style={{ width: '100%', padding: '13px', fontSize: '15px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: loading || !email || !password ? 0.6 : 1 }}>
+            {loading ? (
+              <>
+                <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                {isSignUp ? 'Creating account...' : 'Signing in...'}
+              </>
+            ) : isSignUp ? 'Create account' : 'Sign in'}
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-400 transition-colors"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-400 transition-colors"
-            required
-          />
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-          {message && <p className="text-emerald-400 text-sm">{message}</p>}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-400 text-black font-semibold py-3 rounded-xl hover:bg-emerald-300 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Loading...' : isSignUp ? 'Create Account' : 'Sign In'}
+        <div style={{ textAlign: 'center' }}>
+          <button onClick={() => { setIsSignUp(!isSignUp); setError('') }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '13px', color: 'var(--sand-500)' }}>
+            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
           </button>
-        </form>
-
-        <p className="text-center text-gray-400 text-sm mt-6">
-          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-emerald-400 hover:underline"
-          >
-            {isSignUp ? 'Sign in' : 'Sign up'}
-          </button>
-        </p>
+        </div>
       </div>
+
+      {/* Footer */}
+      <p style={{ fontSize: '11px', color: 'var(--sand-400)', marginTop: '48px', textAlign: 'center', maxWidth: '280px', lineHeight: '1.5' }}>
+        Your financial data is encrypted and never shared with third parties.
+      </p>
     </div>
   )
 }
