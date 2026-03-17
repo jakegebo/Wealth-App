@@ -32,6 +32,10 @@ interface Analysis {
   debts: Debt[]
 }
 
+interface GoalAdvice {
+  [goalName: string]: string
+}
+
 function ProgressBar({ value, color = 'var(--accent)' }: { value: number; color?: string }) {
   return (
     <div className="progress-bar" style={{ marginTop: '8px' }}>
@@ -49,12 +53,10 @@ function UpdateModal({ goal, onClose, onSave }: {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-      onClick={onClose}>
-      <div className="animate-scale" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', padding: '24px', width: '100%', maxWidth: '680px' }}
-        onClick={e => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div className="animate-scale" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', padding: '24px', width: '100%', maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
         <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px', margin: '0 auto 20px' }} />
-        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 4px' }}>Update progress</h3>
+        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 4px', color: 'var(--sand-900)' }}>Update progress</h3>
         <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: '0 0 20px' }}>{goal.name} · target {fmt(goal.targetAmount)}</p>
         <label style={{ display: 'block', fontSize: '12px', color: 'var(--sand-500)', marginBottom: '6px', fontWeight: '500' }}>Current amount saved</label>
         <input
@@ -84,6 +86,8 @@ export default function Plan() {
   const [updatingGoal, setUpdatingGoal] = useState<Goal | null>(null)
   const [expandedDebt, setExpandedDebt] = useState<number | null>(null)
   const [expandedAction, setExpandedAction] = useState<number | null>(null)
+  const [goalAdvice, setGoalAdvice] = useState<GoalAdvice>({})
+  const [loadingAdvice, setLoadingAdvice] = useState<string | null>(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -96,8 +100,40 @@ export default function Plan() {
       setProfile(data.profile_data)
       setChatRefs(data.chat_refs || {})
       if (data.analysis) setAnalysis(data.analysis)
+      if (data.goal_advice) setGoalAdvice(data.goal_advice)
     }
     setLoading(false)
+  }
+
+  const fetchGoalAdvice = async (goal: Goal) => {
+    if (goalAdvice[goal.name] || loadingAdvice === goal.name) return
+    setLoadingAdvice(goal.name)
+
+    const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `Give me a 2-3 sentence advice recap for my "${goal.name}" goal. I have ${fmt(goal.currentAmount)} saved toward a ${fmt(goal.targetAmount)} target (${Math.round(goal.percentage)}% complete). I can save ${fmt(goal.monthlyNeeded)}/mo toward this. Be direct and specific — what's the single most important thing I should do right now? Keep it under 60 words.`
+          }],
+          profile,
+          topic: 'general'
+        })
+      })
+      const data = await res.json()
+      const advice = data.message || ''
+      const newAdvice = { ...goalAdvice, [goal.name]: advice }
+      setGoalAdvice(newAdvice)
+
+      if (userId) {
+        await supabase.from('profiles').update({ goal_advice: newAdvice }).eq('user_id', userId)
+      }
+    } catch { }
+    setLoadingAdvice(null)
   }
 
   const saveGoalProgress = async (goal: Goal, newAmount: number) => {
@@ -109,7 +145,12 @@ export default function Plan() {
     setProfile(updatedProfile)
     await supabase.from('profiles').update({ profile_data: updatedProfile }).eq('user_id', userId)
 
-    // Re-run analysis with updated data
+    // Clear cached advice for this goal so it regenerates
+    const newAdvice = { ...goalAdvice }
+    delete newAdvice[goal.name]
+    setGoalAdvice(newAdvice)
+    await supabase.from('profiles').update({ goal_advice: newAdvice }).eq('user_id', userId)
+
     const res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -169,13 +210,14 @@ export default function Plan() {
               const isAchieved = goal.currentAmount >= goal.targetAmount
               const surplus = goal.currentAmount - goal.targetAmount
               const goalColor = goal.feasibility === 'achievable' ? 'var(--success)' : goal.feasibility === 'stretch' ? 'var(--warning)' : 'var(--danger)'
+              const advice = goalAdvice[goal.name]
 
               return (
                 <div key={i} className="card animate-fade" style={{ animationDelay: `${i * 0.05}s`, opacity: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <p style={{ fontSize: '15px', fontWeight: '500', margin: 0 }}>{goal.name}</p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: '15px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>{goal.name}</p>
                         {isAchieved && (
                           <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--success)', background: 'rgba(122,158,110,0.1)', padding: '2px 8px', borderRadius: '20px' }}>Achieved ✓</span>
                         )}
@@ -185,7 +227,7 @@ export default function Plan() {
                         {isAchieved && surplus > 0 && <span style={{ color: 'var(--success)' }}> · +{fmt(surplus)} surplus</span>}
                       </p>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <p style={{ fontSize: '20px', fontWeight: '300', color: isAchieved ? 'var(--success)' : 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px' }}>
                         {isAchieved ? '✓' : `${Math.round(goal.percentage)}%`}
                       </p>
@@ -194,8 +236,52 @@ export default function Plan() {
                       )}
                     </div>
                   </div>
+
                   {!isAchieved && <ProgressBar value={goal.percentage} color={goalColor} />}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '0.5px solid var(--sand-200)' }}>
+
+                  {/* Goal Advice Recap */}
+                  <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)' }}>
+                    {advice ? (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                        <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                          <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>{advice}</p>
+                          <button
+                            onClick={() => {
+                              const newAdvice = { ...goalAdvice }
+                              delete newAdvice[goal.name]
+                              setGoalAdvice(newAdvice)
+                              setTimeout(() => fetchGoalAdvice(goal), 100)
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '10px', cursor: 'pointer', padding: '4px 0 0', fontFamily: 'inherit' }}>
+                            ↻ Refresh advice
+                          </button>
+                        </div>
+                      </div>
+                    ) : loadingAdvice === goal.name ? (
+                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                        <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                        </div>
+                        {[0, 150, 300].map(d => (
+                          <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />
+                        ))}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => fetchGoalAdvice(goal)}
+                        style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '12px', cursor: 'pointer', padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '18px', height: '18px', background: 'var(--sand-300)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ color: 'var(--sand-600)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                        </div>
+                        Get AI advice recap
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '10px', borderTop: '0.5px solid var(--sand-200)' }}>
                     <button
                       onClick={() => openChat(
                         isAchieved ? `goal_surplus_${i}` : `goal_${i}`,
@@ -205,7 +291,7 @@ export default function Plan() {
                         isAchieved ? `${goal.name} — Surplus` : `${goal.name} Plan`
                       )}
                       style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
-                      {isAchieved ? 'Put this money to work →' : chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get advice →'}
+                      {isAchieved ? 'Put this money to work →' : chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get full advice →'}
                     </button>
                     <button
                       onClick={() => setUpdatingGoal(goal)}
@@ -291,7 +377,7 @@ export default function Plan() {
                   style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <p style={{ fontSize: '15px', fontWeight: '500', margin: '0 0 3px' }}>{debt.name}</p>
+                      <p style={{ fontSize: '15px', fontWeight: '500', margin: '0 0 3px', color: 'var(--sand-900)' }}>{debt.name}</p>
                       <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>{fmt(debt.balance)} · {debt.interestRate}% APR</p>
                     </div>
                     <div style={{ textAlign: 'right' }}>
@@ -302,7 +388,7 @@ export default function Plan() {
                 </button>
                 {expandedDebt === i && (
                   <div className="animate-fade" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '0.5px solid var(--sand-200)' }}>
-                    <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: '0 0 12px', lineHeight: '1.5' }}>{debt.strategy}</p>
+                    <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5' }}>{debt.strategy}</p>
                   </div>
                 )}
               </div>
@@ -311,7 +397,6 @@ export default function Plan() {
         </div>
       )}
 
-      {/* Update Modal */}
       {updatingGoal && (
         <UpdateModal
           goal={updatingGoal}
@@ -319,7 +404,6 @@ export default function Plan() {
           onSave={(newAmount) => saveGoalProgress(updatingGoal, newAmount)}
         />
       )}
-
     </div>
   )
 }
