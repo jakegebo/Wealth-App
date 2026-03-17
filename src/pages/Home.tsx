@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
+import NetWorthChart from '../components/NetWorthChart'
 
 interface Analysis {
   netWorth: number
@@ -88,7 +89,6 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   availableToSave: number
 }) {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-
   const titles = { assets: 'Asset Breakdown', debts: 'Debt Overview', savings: 'Savings Power' }
   const colors = { assets: 'var(--sand-900)', debts: 'var(--danger)', savings: 'var(--success)' }
 
@@ -101,22 +101,15 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', padding: '0', width: '100%', maxWidth: '680px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-
-        {/* Handle */}
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
           <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
         </div>
-
-        {/* Header */}
         <div style={{ padding: '16px 24px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: colors[type] }}>{titles[type]}</h2>
           <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
         </div>
-
         <div style={{ overflowY: 'auto', padding: '20px 24px', flex: 1 }}>
-
-          {/* Stats */}
           {type === 'assets' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(totalAssets)}</p>
@@ -135,7 +128,6 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               ))}
             </div>
           )}
-
           {type === 'debts' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--danger)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(totalLiabilities)}</p>
@@ -151,7 +143,6 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               ))}
             </div>
           )}
-
           {type === 'savings' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--success)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(availableToSave)}<span style={{ fontSize: '16px', color: 'var(--sand-500)' }}>/mo</span></p>
@@ -171,8 +162,6 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               </div>
             </div>
           )}
-
-          {/* AI Analysis */}
           <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -182,7 +171,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
             </div>
             {loading ? (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
-                {[0,150,300].map(d => (
+                {[0, 150, 300].map(d => (
                   <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />
                 ))}
               </div>
@@ -209,6 +198,7 @@ export default function Home() {
   const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
   const [firstName, setFirstName] = useState('')
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -224,8 +214,28 @@ export default function Home() {
     const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL']
     fetchStocks(wl)
     fetchNews()
-    if (data.analysis) { setAnalysis(data.analysis); setLoading(false) }
-    else runAnalysis(data.profile_data)
+    if (data.analysis) {
+      setAnalysis(data.analysis)
+      setLoading(false)
+      saveNetWorthHistory(user.id, data.analysis)
+    } else {
+      runAnalysis(data.profile_data)
+    }
+  }
+
+  const saveNetWorthHistory = async (uid: string, analysisData: Analysis) => {
+    try {
+      await fetch('/api/networth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: uid,
+          netWorth: analysisData.netWorth,
+          totalAssets: analysisData.totalAssets,
+          totalLiabilities: analysisData.totalLiabilities
+        })
+      })
+    } catch { }
   }
 
   const fetchStocks = async (symbols: string[]) => {
@@ -247,11 +257,18 @@ export default function Home() {
   const runAnalysis = async (profileData: any) => {
     setAnalyzing(true)
     try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profileData) })
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData)
+      })
       const result = await res.json()
       setAnalysis(result)
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) await supabase.from('profiles').update({ analysis: result, updated_at: new Date().toISOString() }).eq('user_id', user.id)
+      if (user) {
+        await supabase.from('profiles').update({ analysis: result, updated_at: new Date().toISOString() }).eq('user_id', user.id)
+        saveNetWorthHistory(user.id, result)
+      }
     } catch { }
     setAnalyzing(false)
     setLoading(false)
@@ -260,13 +277,11 @@ export default function Home() {
   const openMiniDash = async (type: 'assets' | 'debts' | 'savings') => {
     if (!analysis || !profile) return
     setMiniDash({ type, analysis: '', loading: true })
-
     const prompts = {
-      assets: `Analyze this person's asset allocation: ${JSON.stringify(profile.assets)}. Total assets: $${analysis.totalAssets}. Net worth: $${analysis.netWorth}. Give specific advice on: 1) Is the allocation well diversified? 2) What's over/under-weighted? 3) Top 2-3 specific actions to optimize. Be concise and specific.`,
-      debts: `Analyze these debts: ${JSON.stringify(profile.debts)}. Monthly income: $${profile.monthly_income}. Give specific advice on: 1) Priority order to pay off 2) Best payoff strategy 3) How much to allocate monthly. Be concise and specific.`,
-      savings: `This person has $${analysis.availableToSave}/mo to save. Income: $${profile.monthly_income}, Expenses: $${profile.monthly_expenses}. Assets: ${JSON.stringify(profile.assets)}. Give specific advice on: 1) How to optimally deploy this $${analysis.availableToSave}/mo 2) What accounts to prioritize 3) Specific dollar amounts to each bucket. Be concise and specific.`
+      assets: `Analyze this person's asset allocation: ${JSON.stringify(profile.assets)}. Total: $${analysis.totalAssets}. Give specific advice on diversification and top 2-3 actions to optimize. Be concise.`,
+      debts: `Analyze these debts: ${JSON.stringify(profile.debts)}. Income: $${profile.monthly_income}. Give priority payoff order and best strategy. Be concise.`,
+      savings: `Person has $${analysis.availableToSave}/mo to save. Income: $${profile.monthly_income}, Expenses: $${profile.monthly_expenses}. Assets: ${JSON.stringify(profile.assets)}. Give specific dollar allocation advice. Be concise.`
     }
-
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -276,7 +291,7 @@ export default function Home() {
       const data = await res.json()
       setMiniDash({ type, analysis: data.message || '', loading: false })
     } catch {
-      setMiniDash({ type, analysis: 'Unable to load analysis. Please try again.', loading: false })
+      setMiniDash({ type, analysis: 'Unable to load analysis.', loading: false })
     }
   }
 
@@ -338,10 +353,26 @@ export default function Home() {
 
       {/* Net Worth Hero */}
       <div className="card animate-fade" style={{ marginBottom: '12px', padding: '24px' }}>
-        <p className="label" style={{ marginBottom: '6px' }}>Net Worth</p>
-        <div style={{ fontSize: '44px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-2px', lineHeight: '1', marginBottom: '20px' }}>
-          <CountUp value={analysis.netWorth} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+          <div>
+            <p className="label" style={{ marginBottom: '6px' }}>Net Worth</p>
+            <div style={{ fontSize: '44px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-2px', lineHeight: '1' }}>
+              <CountUp value={analysis.netWorth} />
+            </div>
+          </div>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            style={{ background: showHistory ? 'var(--accent-light)' : 'var(--sand-200)', border: showHistory ? '0.5px solid var(--accent-border)' : 'none', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: '11px', fontWeight: '600', color: showHistory ? 'var(--accent)' : 'var(--sand-600)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {showHistory ? 'Hide history' : 'Show history'}
+          </button>
         </div>
+
+        {/* Net Worth History Chart */}
+        {showHistory && userId && (
+          <div className="animate-fade" style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '0.5px solid var(--sand-200)' }}>
+            <NetWorthChart userId={userId} />
+          </div>
+        )}
 
         {/* Clickable stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
@@ -372,17 +403,13 @@ export default function Home() {
           <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.5', margin: '0 0 16px' }}>
             {topAction.description}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>
-              {topAction.timeframe}
-            </span>
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>
-              {topAction.impact} impact
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.timeframe}</span>
+            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.impact} impact</span>
           </div>
           <button
             onClick={() => openChat('action_0', `Give me a step by step plan for: ${topAction.title}. ${topAction.description}`, topAction.title)}
-            style={{ marginTop: '14px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
+            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
             {chatRefs['action_0'] ? 'Continue plan →' : 'Make it happen →'}
           </button>
         </div>
@@ -453,7 +480,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Mini Dashboard Sheet */}
       {miniDash && (
         <MiniDashboardSheet
           type={miniDash.type}
@@ -467,7 +493,6 @@ export default function Home() {
           availableToSave={analysis.availableToSave}
         />
       )}
-
     </div>
   )
 }
