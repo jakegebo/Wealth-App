@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -60,13 +61,12 @@ function formatMessage(content: string) {
 
 export default function Retirement() {
   const navigate = useNavigate()
-  const [profile, setProfile] = useState<any>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [plan, setPlan] = useState<RetirementPlan | null>(null)
-  const [built, setBuilt] = useState(false)
+  const { userId, profileData: profile, updateProfile } = useProfile()
+  const [plan, setPlan] = useState<RetirementPlan | null>(profile?.retirement_plan || null)
+  const [built, setBuilt] = useState(!!profile?.retirement_plan)
   const [building, setBuilding] = useState(false)
-  const [currentAge, setCurrentAge] = useState(23)
-  const [targetAge, setTargetAge] = useState(52)
+  const [currentAge, setCurrentAge] = useState(profile?.retirement_plan?.currentAge || 23)
+  const [targetAge, setTargetAge] = useState(profile?.retirement_plan?.targetAge || 52)
   const [chatMessages, setChatMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
@@ -74,24 +74,15 @@ export default function Retirement() {
   const [activeTab, setActiveTab] = useState<'overview' | 'projections' | 'strategy' | 'chat'>('overview')
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { loadData() }, [])
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
-
-  const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (data) {
-      setProfile(data.profile_data)
-      if (data.profile_data?.retirement_plan) {
-        setPlan(data.profile_data.retirement_plan)
-        setBuilt(true)
-        setCurrentAge(data.profile_data.retirement_plan.currentAge || 23)
-        setTargetAge(data.profile_data.retirement_plan.targetAge || 52)
-      }
+  useEffect(() => {
+    if (profile?.retirement_plan && !plan) {
+      setPlan(profile.retirement_plan)
+      setBuilt(true)
+      setCurrentAge(profile.retirement_plan.currentAge || 23)
+      setTargetAge(profile.retirement_plan.targetAge || 52)
     }
-  }
+  }, [profile])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
   const buildPlan = async () => {
     if (!profile || !userId) return
@@ -127,7 +118,7 @@ export default function Retirement() {
 
     // Save to profile
     const updatedProfile = { ...profile, retirement_plan: newPlan }
-    await supabase.from('profiles').update({ profile_data: updatedProfile }).eq('user_id', userId)
+    await updateProfile({ profile_data: updatedProfile })
 
     // Get AI strategy
     const initialMsg: Message = {

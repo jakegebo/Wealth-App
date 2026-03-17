@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Chat {
   id: string
@@ -37,21 +38,16 @@ function timeAgo(dateStr: string) {
 
 export default function Chats() {
   const navigate = useNavigate()
+  const { userId } = useProfile()
   const [chats, setChats] = useState<Chat[]>([])
   const [loading, setLoading] = useState(true)
-  const [userId, setUserId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
 
-  useEffect(() => { loadChats() }, [])
-
-  const loadChats = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('chats').select('*').eq('user_id', user.id).order('updated_at', { ascending: false })
-    setChats(data || [])
-    setLoading(false)
-  }
+  useEffect(() => {
+    if (!userId) return
+    supabase.from('chats').select('*').eq('user_id', userId).order('updated_at', { ascending: false })
+      .then(({ data }) => { setChats(data || []); setLoading(false) })
+  }, [userId])
 
   const createChat = async (topic: string, title: string, prompt: string) => {
     if (!userId) return

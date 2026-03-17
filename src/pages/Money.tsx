@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -40,11 +41,8 @@ function formatContent(content: string) {
 
 export default function Money() {
   const navigate = useNavigate()
-  const [profile, setProfile] = useState<any>(null)
-  const [userId, setUserId] = useState<string | null>(null)
+  const { userId, profileData: profile, chatRefs, savedIdeas, incomeIdeas, loading: profileLoading, updateProfile } = useProfile()
   const [ideas, setIdeas] = useState<string[]>([])
-  const [savedIdeas, setSavedIdeas] = useState<string[]>([])
-  const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
   const [loadingIdeas, setLoadingIdeas] = useState(false)
   const [activeTab, setActiveTab] = useState<'ideas' | 'saved' | 'chat'>('ideas')
   const [activeTopic, setActiveTopic] = useState('ideas')
@@ -52,21 +50,11 @@ export default function Money() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
 
-  useEffect(() => { loadData() }, [])
-
-  const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (data) {
-      setProfile(data.profile_data)
-      setSavedIdeas(data.saved_income_ideas || [])
-      setChatRefs(data.chat_refs || {})
-      if (data.income_ideas?.length > 0) setIdeas(data.income_ideas)
-      else generateIdeas(data.profile_data)
-    }
-  }
+  useEffect(() => {
+    if (profileLoading) return
+    if (incomeIdeas.length > 0) setIdeas(incomeIdeas)
+    else if (profile) generateIdeas(profile)
+  }, [profileLoading])
 
   const generateIdeas = async (profileData?: any) => {
     const p = profileData || profile
@@ -81,15 +69,14 @@ export default function Money() {
       const data = await res.json()
       const newIdeas = data.ideas || []
       setIdeas(newIdeas)
-      if (userId) await supabase.from('profiles').update({ income_ideas: newIdeas }).eq('user_id', userId)
+      await updateProfile({ income_ideas: newIdeas })
     } catch { }
     setLoadingIdeas(false)
   }
 
   const toggleSaved = async (idea: string) => {
     const newSaved = savedIdeas.includes(idea) ? savedIdeas.filter(i => i !== idea) : [...savedIdeas, idea]
-    setSavedIdeas(newSaved)
-    if (userId) await supabase.from('profiles').update({ saved_income_ideas: newSaved }).eq('user_id', userId)
+    await updateProfile({ saved_income_ideas: newSaved })
   }
 
   const openIdeaChat = async (idea: string) => {
@@ -98,9 +85,7 @@ export default function Money() {
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
     const { data } = await supabase.from('chats').insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] }).select().single()
     if (data) {
-      const newRefs = { ...chatRefs, [key]: data.id }
-      setChatRefs(newRefs)
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
+      await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt: `I want to explore this income idea: "${idea}". Give me: 1) Realistic income potential, 2) Time to first dollar, 3) Exact steps to start, 4) Skills/resources needed.` } })
     }
   }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -133,12 +134,11 @@ export default function Chat() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const { userId, profileData: profile } = useProfile()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [title, setTitle] = useState('Chat')
-  const [profile, setProfile] = useState<any>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const initialized = useRef(false)
@@ -149,16 +149,7 @@ export default function Chat() {
   }, [messages, loading])
 
   const loadChat = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-
-    const [chatRes, profileRes] = await Promise.all([
-      supabase.from('chats').select('*').eq('id', id).single(),
-      supabase.from('profiles').select('profile_data').eq('user_id', user.id).single()
-    ])
-
-    if (profileRes.data) setProfile(profileRes.data.profile_data)
+    const chatRes = await supabase.from('chats').select('*').eq('id', id).single()
     if (chatRes.data) {
       setTitle(chatRes.data.title || 'Chat')
       setMessages(chatRes.data.messages || [])
@@ -166,7 +157,7 @@ export default function Chat() {
       if (!initialized.current && location.state?.prompt &&
         (!chatRes.data.messages || chatRes.data.messages.length === 0)) {
         initialized.current = true
-        await sendMessage(location.state.prompt, chatRes.data.messages || [], profileRes.data?.profile_data)
+        await sendMessage(location.state.prompt, chatRes.data.messages || [], profile)
       }
     }
   }

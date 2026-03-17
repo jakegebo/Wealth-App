@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
+import { useProfile } from '../contexts/ProfileContext'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -84,39 +85,26 @@ function timeAgo(dateStr: string) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const { preferences, theme, accent } = useTheme()
-  const [profile, setProfile] = useState<any>(null)
-  const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { userId, profileData: profile, analysis, chatRefs, watchlist, hasProfile, loading: profileLoading, updateProfile } = useProfile()
   const [analyzing, setAnalyzing] = useState(false)
   const [expandedAction, setExpandedAction] = useState<number | null>(null)
-  const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
-  const [userId, setUserId] = useState<string | null>(null)
   const [newsArticles, setNewsArticles] = useState<Article[]>([])
   const [stocks, setStocks] = useState<StockQuote[]>([])
 
-  useEffect(() => { loadProfile() }, [])
-
-  const loadProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (!data) { navigate('/onboarding'); return }
-    setProfile(data.profile_data)
-    setChatRefs(data.chat_refs || {})
-    const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL']
-    fetchStocks(wl)
+  useEffect(() => {
+    if (profileLoading) return
+    if (!hasProfile) { navigate('/onboarding'); return }
+    fetchStocks(watchlist)
     fetchNews()
-    if (data.analysis) { setAnalysis(data.analysis); setLoading(false) }
-    else await runAnalysis(data.profile_data)
-  }
+    if (!analysis && profile) runAnalysis(profile)
+  }, [profileLoading])
 
   const fetchNews = async () => {
     try {
       const res = await fetch('/api/news?category=markets&page=1')
       const data = await res.json()
       setNewsArticles((data.articles || []).slice(0, 4))
-    } catch { }
+    } catch (err) { console.error('Failed to fetch news:', err) }
   }
 
   const fetchStocks = async (symbols: string[]) => {
@@ -124,7 +112,7 @@ export default function Dashboard() {
       const res = await fetch(`/api/stocks?symbols=${symbols.slice(0, 5).join(',')}`)
       const data = await res.json()
       setStocks(data.quotes || [])
-    } catch { }
+    } catch (err) { console.error('Failed to fetch stocks:', err) }
   }
 
   const runAnalysis = async (profileData: any) => {
@@ -136,12 +124,9 @@ export default function Dashboard() {
         body: JSON.stringify(profileData)
       })
       const result = await response.json()
-      setAnalysis(result)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) await supabase.from('profiles').update({ analysis: result, updated_at: new Date().toISOString() }).eq('user_id', user.id)
-    } catch (err) { console.error(err) }
+      await updateProfile({ analysis: result })
+    } catch (err) { console.error('Analysis failed:', err) }
     setAnalyzing(false)
-    setLoading(false)
   }
 
   const handleSignOut = async () => { await supabase.auth.signOut() }
@@ -151,16 +136,14 @@ export default function Dashboard() {
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
     const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic, messages: [] }).select().single()
     if (data) {
-      const newRefs = { ...chatRefs, [key]: data.id }
-      setChatRefs(newRefs)
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
+      await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt } })
     }
   }
 
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
 
-  if (loading || analyzing) {
+  if (profileLoading || analyzing) {
     return (
       <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>

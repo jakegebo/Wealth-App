@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { ProfileProvider } from './contexts/ProfileContext'
 import BottomNav from './components/BottomNav'
 import FAB from './components/FAB'
 import Login from './pages/Login'
@@ -56,6 +57,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      <ProfileProvider>
       <BrowserRouter>
         <Layout user={user}>
           <Routes>
@@ -74,6 +76,7 @@ export default function App() {
           </Routes>
         </Layout>
       </BrowserRouter>
+      </ProfileProvider>
     </ThemeProvider>
   )
 }

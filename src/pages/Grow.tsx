@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Article {
   title: string
@@ -47,17 +48,13 @@ function timeAgo(dateStr: string) {
 export default function Grow() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const [profile, setProfile] = useState<any>(null)
-  const [userId, setUserId] = useState<string | null>(null)
+  const { userId, profileData: profile, chatRefs, watchlist, savedIdeas, incomeIdeas, loading: profileLoading, updateProfile } = useProfile()
   const [ideas, setIdeas] = useState<string[]>([])
-  const [savedIdeas, setSavedIdeas] = useState<string[]>([])
-  const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
   const [loadingIdeas, setLoadingIdeas] = useState(false)
   const [articles, setArticles] = useState<Article[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
   const [activeSection, setActiveSection] = useState('markets')
   const [stocks, setStocks] = useState<StockQuote[]>([])
-  const [watchlist, setWatchlist] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showSearch, setShowSearch] = useState(false)
@@ -67,25 +64,13 @@ export default function Grow() {
   const [loadingMore, setLoadingMore] = useState(false)
   const searchTimeout = { current: 0 as any }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (profileLoading) return
+    fetchStocks(watchlist)
+    if (incomeIdeas.length > 0) setIdeas(incomeIdeas)
+    else if (profile) generateIdeas(profile)
+  }, [profileLoading])
   useEffect(() => { fetchNews(activeSection, 1, true); setPage(1) }, [activeSection])
-
-  const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (data) {
-      setProfile(data.profile_data)
-      setSavedIdeas(data.saved_income_ideas || [])
-      setChatRefs(data.chat_refs || {})
-      const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL', 'MSFT']
-      setWatchlist(wl)
-      fetchStocks(wl)
-      if (data.income_ideas?.length > 0) setIdeas(data.income_ideas)
-      else generateIdeas(data.profile_data)
-    }
-  }
 
   const generateIdeas = async (profileData?: any) => {
     const p = profileData || profile
@@ -98,8 +83,9 @@ export default function Grow() {
         body: JSON.stringify({ action: 'generate_ideas', profile: p })
       })
       const data = await res.json()
-      setIdeas(data.ideas || [])
-      if (userId) await supabase.from('profiles').update({ income_ideas: data.ideas }).eq('user_id', userId)
+      const newIdeas = data.ideas || []
+      setIdeas(newIdeas)
+      await updateProfile({ income_ideas: newIdeas })
     } catch { }
     setLoadingIdeas(false)
   }
@@ -146,25 +132,22 @@ export default function Grow() {
     const upper = symbol.toUpperCase().trim()
     if (!upper || watchlist.includes(upper)) return
     const newList = [...watchlist, upper]
-    setWatchlist(newList)
     setSearchQuery('')
     setSearchResults([])
     setShowSearch(false)
     fetchStocks(newList)
-    if (userId) await supabase.from('profiles').update({ watchlist: newList }).eq('user_id', userId)
+    await updateProfile({ watchlist: newList })
   }
 
   const removeFromWatchlist = async (symbol: string) => {
     const newList = watchlist.filter(s => s !== symbol)
-    setWatchlist(newList)
     setStocks(prev => prev.filter(s => s.symbol !== symbol))
-    if (userId) await supabase.from('profiles').update({ watchlist: newList }).eq('user_id', userId)
+    await updateProfile({ watchlist: newList })
   }
 
   const toggleSaved = async (idea: string) => {
     const newSaved = savedIdeas.includes(idea) ? savedIdeas.filter(i => i !== idea) : [...savedIdeas, idea]
-    setSavedIdeas(newSaved)
-    if (userId) await supabase.from('profiles').update({ saved_income_ideas: newSaved }).eq('user_id', userId)
+    await updateProfile({ saved_income_ideas: newSaved })
   }
 
   const openIdeaChat = async (idea: string) => {
@@ -173,9 +156,7 @@ export default function Grow() {
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
     const { data } = await supabase.from('chats').insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] }).select().single()
     if (data) {
-      const newRefs = { ...chatRefs, [key]: data.id }
-      setChatRefs(newRefs)
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
+      await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt: `I want to explore this income idea: "${idea}". Give me: 1) Realistic income potential, 2) Time to first dollar, 3) Exact steps to start, 4) Skills/resources needed.` } })
     }
   }

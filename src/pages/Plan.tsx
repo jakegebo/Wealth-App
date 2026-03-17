@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Goal {
   name: string
@@ -78,32 +79,11 @@ function UpdateModal({ goal, onClose, onSave }: {
 export default function Plan() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  const [profile, setProfile] = useState<any>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(true)
+  const { userId, profileData: profile, analysis, chatRefs, goalAdvice, loading, updateProfile } = useProfile()
   const [updatingGoal, setUpdatingGoal] = useState<Goal | null>(null)
   const [expandedDebt, setExpandedDebt] = useState<number | null>(null)
   const [expandedAction, setExpandedAction] = useState<number | null>(null)
-  const [goalAdvice, setGoalAdvice] = useState<GoalAdvice>({})
   const [loadingAdvice, setLoadingAdvice] = useState<string | null>(null)
-
-  useEffect(() => { loadData() }, [])
-
-  const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (data) {
-      setProfile(data.profile_data)
-      setChatRefs(data.chat_refs || {})
-      if (data.analysis) setAnalysis(data.analysis)
-      if (data.goal_advice) setGoalAdvice(data.goal_advice)
-    }
-    setLoading(false)
-  }
 
   const fetchGoalAdvice = async (goal: Goal) => {
     if (goalAdvice[goal.name] || loadingAdvice === goal.name) return
@@ -126,12 +106,7 @@ export default function Plan() {
       })
       const data = await res.json()
       const advice = data.message || ''
-      const newAdvice = { ...goalAdvice, [goal.name]: advice }
-      setGoalAdvice(newAdvice)
-
-      if (userId) {
-        await supabase.from('profiles').update({ goal_advice: newAdvice }).eq('user_id', userId)
-      }
+      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: advice } })
     } catch { }
     setLoadingAdvice(null)
   }
@@ -142,14 +117,9 @@ export default function Plan() {
       g.name === goal.name ? { ...g, current_amount: newAmount } : g
     ) || []
     const updatedProfile = { ...profile, goals: updatedGoals }
-    setProfile(updatedProfile)
-    await supabase.from('profiles').update({ profile_data: updatedProfile }).eq('user_id', userId)
-
-    // Clear cached advice for this goal so it regenerates
     const newAdvice = { ...goalAdvice }
     delete newAdvice[goal.name]
-    setGoalAdvice(newAdvice)
-    await supabase.from('profiles').update({ goal_advice: newAdvice }).eq('user_id', userId)
+    await updateProfile({ profile_data: updatedProfile, goal_advice: newAdvice })
 
     const res = await fetch('/api/analyze', {
       method: 'POST',
@@ -157,8 +127,7 @@ export default function Plan() {
       body: JSON.stringify(updatedProfile)
     })
     const result = await res.json()
-    setAnalysis(result)
-    await supabase.from('profiles').update({ analysis: result }).eq('user_id', userId)
+    await updateProfile({ analysis: result })
     setUpdatingGoal(null)
   }
 
@@ -167,9 +136,7 @@ export default function Plan() {
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
     const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
     if (data) {
-      const newRefs = { ...chatRefs, [key]: data.id }
-      setChatRefs(newRefs)
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
+      await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt } })
     }
   }
@@ -249,10 +216,10 @@ export default function Plan() {
                         <div style={{ flex: 1 }}>
                           <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>{advice}</p>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               const newAdvice = { ...goalAdvice }
                               delete newAdvice[goal.name]
-                              setGoalAdvice(newAdvice)
+                              await updateProfile({ goal_advice: newAdvice })
                               setTimeout(() => fetchGoalAdvice(goal), 100)
                             }}
                             style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '10px', cursor: 'pointer', padding: '4px 0 0', fontFamily: 'inherit' }}>

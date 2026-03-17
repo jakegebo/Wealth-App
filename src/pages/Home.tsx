@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
+import { useProfile } from '../contexts/ProfileContext'
 import NetWorthChart from '../components/NetWorthChart'
 
 interface Analysis {
@@ -188,40 +189,26 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
 export default function Home() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  const [profile, setProfile] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const { userId, userEmail, profileData: profile, analysis, chatRefs, watchlist, hasProfile, loading: profileLoading, updateProfile } = useProfile()
+  const firstName = userEmail.split('@')[0] || 'there'
   const [analyzing, setAnalyzing] = useState(false)
   const [stocks, setStocks] = useState<StockQuote[]>([])
   const [news, setNews] = useState<Article[]>([])
-  const [userId, setUserId] = useState<string | null>(null)
-  const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
-  const [firstName, setFirstName] = useState('')
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [analysisError, setAnalysisError] = useState(false)
 
-  useEffect(() => { loadData() }, [])
-
-  const loadData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    setFirstName(user.email?.split('@')[0] || 'there')
-    const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
-    if (!data) { navigate('/onboarding'); return }
-    setProfile(data.profile_data)
-    setChatRefs(data.chat_refs || {})
-    const wl = data.watchlist || ['SPY', 'QQQ', 'AAPL']
-    fetchStocks(wl)
+  useEffect(() => {
+    if (profileLoading) return
+    if (!hasProfile) { navigate('/onboarding'); return }
+    fetchStocks(watchlist)
     fetchNews()
-    if (data.analysis) {
-      setAnalysis(data.analysis)
-      setLoading(false)
-      saveNetWorthHistory(user.id, data.analysis)
-    } else {
-      runAnalysis(data.profile_data)
+    if (analysis) {
+      saveNetWorthHistory(userId!, analysis)
+    } else if (profile) {
+      runAnalysis(profile)
     }
-  }
+  }, [profileLoading])
 
   const saveNetWorthHistory = async (uid: string, analysisData: Analysis) => {
     try {
@@ -235,7 +222,7 @@ export default function Home() {
           totalLiabilities: analysisData.totalLiabilities
         })
       })
-    } catch { }
+    } catch (err) { console.error('Failed to save net worth history:', err) }
   }
 
   const fetchStocks = async (symbols: string[]) => {
@@ -243,7 +230,7 @@ export default function Home() {
       const res = await fetch(`/api/stocks?symbols=${symbols.slice(0, 4).join(',')}`)
       const data = await res.json()
       setStocks(data.quotes || [])
-    } catch { }
+    } catch (err) { console.error('Failed to fetch stocks:', err) }
   }
 
   const fetchNews = async () => {
@@ -251,11 +238,12 @@ export default function Home() {
       const res = await fetch('/api/news?category=markets&page=1')
       const data = await res.json()
       setNews((data.articles || []).slice(0, 3))
-    } catch { }
+    } catch (err) { console.error('Failed to fetch news:', err) }
   }
 
   const runAnalysis = async (profileData: any) => {
     setAnalyzing(true)
+    setAnalysisError(false)
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -263,15 +251,13 @@ export default function Home() {
         body: JSON.stringify(profileData)
       })
       const result = await res.json()
-      setAnalysis(result)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        await supabase.from('profiles').update({ analysis: result, updated_at: new Date().toISOString() }).eq('user_id', user.id)
-        saveNetWorthHistory(user.id, result)
-      }
-    } catch { }
+      await updateProfile({ analysis: result })
+      if (userId) saveNetWorthHistory(userId, result)
+    } catch (err) {
+      console.error('Analysis failed:', err)
+      setAnalysisError(true)
+    }
     setAnalyzing(false)
-    setLoading(false)
   }
 
   const openMiniDash = async (type: 'assets' | 'debts' | 'savings') => {
@@ -300,9 +286,7 @@ export default function Home() {
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
     const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
     if (data) {
-      const newRefs = { ...chatRefs, [key]: data.id }
-      setChatRefs(newRefs)
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
+      await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt } })
     }
   }
@@ -310,12 +294,27 @@ export default function Home() {
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
-  if (loading || analyzing) {
+  if (profileLoading || analyzing) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: '36px', height: '36px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
           <p style={{ color: 'var(--sand-600)', fontSize: '14px' }}>{analyzing ? 'Analyzing your finances...' : 'Loading...'}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (analysisError) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
+        <div style={{ textAlign: 'center', padding: '0 32px' }}>
+          <p style={{ fontSize: '16px', fontWeight: '500', color: 'var(--sand-900)', marginBottom: '8px' }}>Couldn't load your analysis</p>
+          <p style={{ fontSize: '14px', color: 'var(--sand-500)', marginBottom: '24px' }}>Check your connection and try again.</p>
+          <button onClick={() => profile && runAnalysis(profile)}
+            style={{ background: 'var(--accent)', color: 'var(--sand-50)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '10px 24px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Retry
+          </button>
         </div>
       </div>
     )

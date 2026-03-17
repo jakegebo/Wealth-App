@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,7 +78,7 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
       const data = await res.json()
       if (data.prices?.length > 0) setChartData(data)
       else setChartData(null)
-    } catch { setChartData(null) }
+    } catch (err) { console.error('Failed to fetch chart:', err); setChartData(null) }
     setLoadingChart(false)
   }
 
@@ -92,7 +92,7 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
       })
       const data = await res.json()
       setAnalysis(data.analysis || '')
-    } catch { setAnalysis('Analysis unavailable.') }
+    } catch (err) { console.error('Failed to fetch stock analysis:', err); setAnalysis('Analysis unavailable.') }
     setLoadingAnalysis(false)
   }
 
@@ -226,9 +226,9 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
 
 export default function News() {
   const navigate = useNavigate()
+  const { watchlist, loading: profileLoading, updateProfile } = useProfile()
   const [articles, setArticles] = useState<Article[]>([])
   const [stocks, setStocks] = useState<StockQuote[]>([])
-  const [watchlist, setWatchlist] = useState<string[]>(['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA'])
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -240,12 +240,10 @@ export default function News() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const searchTimeout = useRef<any>(null)
 
   useEffect(() => {
-    loadWatchlist()
     fetchNews(activeSection, 1, true)
   }, [])
 
@@ -255,8 +253,8 @@ export default function News() {
   }, [activeSection])
 
   useEffect(() => {
-    if (watchlist.length > 0) fetchStocks()
-  }, [watchlist])
+    if (!profileLoading && watchlist.length > 0) fetchStocks()
+  }, [profileLoading, watchlist])
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -265,19 +263,6 @@ export default function News() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
-
-  const loadWatchlist = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    setUserId(user.id)
-    const { data } = await supabase.from('profiles').select('watchlist').eq('user_id', user.id).single()
-    if (data?.watchlist) setWatchlist(data.watchlist)
-  }
-
-  const saveWatchlist = async (list: string[]) => {
-    if (!userId) return
-    await supabase.from('profiles').update({ watchlist: list }).eq('user_id', userId)
-  }
 
   const fetchNews = async (category: string, pageNum: number, reset = false) => {
     if (reset) setLoadingNews(true)
@@ -289,7 +274,7 @@ export default function News() {
       if (reset) setArticles(newArticles)
       else setArticles(prev => [...prev, ...newArticles])
       setHasMore(newArticles.length >= 8)
-    } catch { }
+    } catch (err) { console.error('Failed to fetch news:', err) }
     setLoadingNews(false)
     setLoadingMore(false)
   }
@@ -300,7 +285,7 @@ export default function News() {
       const res = await fetch(`/api/stocks?symbols=${watchlist.join(',')}`)
       const data = await res.json()
       setStocks(data.quotes || [])
-    } catch { }
+    } catch (err) { console.error('Failed to fetch stocks:', err) }
     setLoadingStocks(false)
   }
 
@@ -315,7 +300,7 @@ export default function News() {
         const res = await fetch(`/api/stocks?search=${encodeURIComponent(value)}`)
         const data = await res.json()
         setSearchResults(data.results || [])
-      } catch { }
+      } catch (err) { console.error('Stock search failed:', err) }
       setSearching(false)
     }, 400)
   }
@@ -324,8 +309,7 @@ export default function News() {
     const upper = symbol.toUpperCase().trim()
     if (!upper || watchlist.includes(upper)) return
     const newList = [...watchlist, upper]
-    setWatchlist(newList)
-    saveWatchlist(newList)
+    updateProfile({ watchlist: newList })
     setSearchQuery('')
     setSearchResults([])
     setShowDropdown(false)
@@ -333,9 +317,8 @@ export default function News() {
 
   const removeFromWatchlist = (symbol: string) => {
     const newList = watchlist.filter(s => s !== symbol)
-    setWatchlist(newList)
     setStocks(prev => prev.filter(s => s.symbol !== symbol))
-    saveWatchlist(newList)
+    updateProfile({ watchlist: newList })
   }
 
   return (
