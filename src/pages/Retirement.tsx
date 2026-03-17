@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import {
@@ -16,391 +16,514 @@ import { Line } from 'react-chartjs-2'
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Title, Tooltip, Legend, Filler)
 
-const ROTH_IRA_LIMIT = 7000
-const K401_LIMIT = 23000
-
-function calcProjection(currentSavings: number, monthlySavings: number, years: number) {
-  const labels: string[] = []
-  const optimistic: number[] = []
-  const moderate: number[] = []
-  const conservative: number[] = []
-
-  let opt = currentSavings
-  let mod = currentSavings
-  let con = currentSavings
-
-  for (let y = 1; y <= years; y++) {
-    opt = opt * 1.10 + monthlySavings * 12
-    mod = mod * 1.07 + monthlySavings * 12
-    con = con * 1.04 + monthlySavings * 12
-
-    if (y % 5 === 0 || y === 1 || y === years) {
-      labels.push(`Year ${y}`)
-      optimistic.push(Math.round(opt))
-      moderate.push(Math.round(mod))
-      conservative.push(Math.round(con))
-    }
-  }
-  return { labels, optimistic, moderate, conservative }
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
 }
 
-function calcRetirementAge(currentAge: number, currentSavings: number, monthlySavings: number, targetAmount: number) {
-  let savings = currentSavings
-  let years = 0
-  while (savings < targetAmount && years < 60) {
-    savings = savings * 1.07 + monthlySavings * 12
-    years++
-  }
-  return currentAge + years
+interface RetirementPlan {
+  currentAge: number
+  targetAge: number
+  currentSavings: number
+  monthlyContribution: number
+  targetNestEgg: number
+  projectedNestEgg: number
+  onTrack: boolean
+  yearsToRetirement: number
+  monthlyInRetirement: number
+  shortfall: number
+}
+
+function formatMessage(content: string) {
+  return content.split('\n').map((line, i) => {
+    if (line.match(/^\d+\./)) {
+      const num = line.split('.')[0]
+      const text = line.split('.').slice(1).join('.').trim()
+      return (
+        <div key={i} style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+          <span style={{ color: 'var(--accent)', fontWeight: '700', minWidth: '16px', fontSize: '13px' }}>{num}.</span>
+          <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{text}</span>
+        </div>
+      )
+    }
+    if (line.startsWith('- ')) return (
+      <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span>
+        <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
+      </div>
+    )
+    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
+    if (line === '') return <div key={i} style={{ height: '6px' }} />
+    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
+  })
 }
 
 export default function Retirement() {
   const navigate = useNavigate()
   const [profile, setProfile] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [currentAge, setCurrentAge] = useState(25)
-  const [targetAge, setTargetAge] = useState(55)
-  const [monthlyInRetirement, setMonthlyInRetirement] = useState(5000)
-  const [chatRef, setChatRef] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [plan, setPlan] = useState<RetirementPlan | null>(null)
+  const [built, setBuilt] = useState(false)
+  const [building, setBuilding] = useState(false)
+  const [currentAge, setCurrentAge] = useState(23)
+  const [targetAge, setTargetAge] = useState(52)
+  const [chatMessages, setChatMessages] = useState<Message[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [showChat, setShowChat] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'projections' | 'strategy' | 'chat'>('overview')
+  const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    loadProfile()
-  }, [])
+  useEffect(() => { loadData() }, [])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
-  const loadProfile = async () => {
+  const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setUserId(user.id)
-
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (data) {
       setProfile(data.profile_data)
-      setChatRef(data.chat_refs?.retirement || null)
+      if (data.profile_data?.retirement_plan) {
+        setPlan(data.profile_data.retirement_plan)
+        setBuilt(true)
+        setCurrentAge(data.profile_data.retirement_plan.currentAge || 23)
+        setTargetAge(data.profile_data.retirement_plan.targetAge || 52)
+      }
     }
-    setLoading(false)
   }
 
-  const openRetirementChat = async () => {
-    if (!userId) return
+  const buildPlan = async () => {
+    if (!profile || !userId) return
+    setBuilding(true)
 
-    if (chatRef) {
-      navigate(`/chat/${chatRef}`)
-      return
+    const totalAssets = profile.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+    const retirementAssets = profile.assets?.filter((a: any) => ['retirement', 'investment'].includes(a.category))
+      .reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+    const availableToSave = (profile.monthly_income || 0) - (profile.monthly_expenses || 0)
+    const yearsToRetirement = targetAge - currentAge
+    const targetNestEgg = availableToSave * 12 * 25
+    const monthlyContribution = Math.min(availableToSave, availableToSave * 0.7)
+
+    // Project at 7% average return
+    const projectedNestEgg = retirementAssets * Math.pow(1.07, yearsToRetirement) +
+      monthlyContribution * 12 * ((Math.pow(1.07, yearsToRetirement) - 1) / 0.07)
+
+    const newPlan: RetirementPlan = {
+      currentAge,
+      targetAge,
+      currentSavings: retirementAssets,
+      monthlyContribution,
+      targetNestEgg,
+      projectedNestEgg,
+      onTrack: projectedNestEgg >= targetNestEgg,
+      yearsToRetirement,
+      monthlyInRetirement: targetNestEgg / (30 * 12),
+      shortfall: Math.max(0, targetNestEgg - projectedNestEgg)
     }
 
-    const { data } = await supabase
-      .from('chats')
-      .insert({
-        user_id: userId,
-        title: 'Retirement Plan',
-        topic: 'retirement',
-        messages: []
+    setPlan(newPlan)
+    setBuilt(true)
+
+    // Save to profile
+    const updatedProfile = { ...profile, retirement_plan: newPlan }
+    await supabase.from('profiles').update({ profile_data: updatedProfile }).eq('user_id', userId)
+
+    // Get AI strategy
+    const initialMsg: Message = {
+      role: 'user',
+      content: `Build me a comprehensive retirement plan. I'm ${currentAge} years old, want to retire at ${targetAge}. 
+I have $${retirementAssets.toLocaleString()} saved for retirement already.
+Monthly income: $${profile.monthly_income}, expenses: $${profile.monthly_expenses}, available to save: $${availableToSave}/month.
+Assets: ${profile.assets?.map((a: any) => `${a.name}: $${a.value}`).join(', ')}.
+Projected nest egg at retirement: $${Math.round(projectedNestEgg).toLocaleString()}.
+Give me a clear, specific retirement strategy with exact numbers and steps.`
+    }
+
+    setChatMessages([initialMsg])
+    setChatLoading(true)
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [initialMsg], profile, topic: 'retirement' })
       })
-      .select()
-      .single()
+      const data = await res.json()
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
+    } catch { }
 
-    if (data) {
-      const { data: profileData } = await supabase.from('profiles').select('chat_refs').eq('user_id', userId).single()
-      const newRefs = { ...(profileData?.chat_refs || {}), retirement: data.id }
-      await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
-      setChatRef(data.id)
-      navigate(`/chat/${data.id}`, {
-        state: {
-          prompt: `I want to build a detailed retirement plan. I'm ${currentAge} years old, want to retire at ${targetAge}, and need $${monthlyInRetirement.toLocaleString()}/month in retirement. Based on my current savings and income, what do I need to do to hit this goal?`
-        }
+    setChatLoading(false)
+    setBuilding(false)
+    setActiveTab('overview')
+  }
+
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return
+    const userMsg: Message = { role: 'user', content: chatInput.trim() }
+    const newMessages = [...chatMessages, userMsg]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages, profile, topic: 'retirement' })
       })
-    }
+      const data = await res.json()
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
+    } catch { }
+
+    setChatLoading(false)
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+
+  // Chart data
+  const buildChartData = () => {
+    if (!plan) return null
+    const years = Array.from({ length: plan.yearsToRetirement + 1 }, (_, i) => i)
+    const labels = years.map(y => `Age ${plan.currentAge + y}`)
+
+    const conservative = years.map(y => Math.round(
+      plan.currentSavings * Math.pow(1.04, y) +
+      plan.monthlyContribution * 12 * ((Math.pow(1.04, y) - 1) / 0.04)
+    ))
+    const moderate = years.map(y => Math.round(
+      plan.currentSavings * Math.pow(1.07, y) +
+      plan.monthlyContribution * 12 * ((Math.pow(1.07, y) - 1) / 0.07)
+    ))
+    const aggressive = years.map(y => Math.round(
+      plan.currentSavings * Math.pow(1.10, y) +
+      plan.monthlyContribution * 12 * ((Math.pow(1.10, y) - 1) / 0.10)
+    ))
+
+    return { labels, conservative, moderate, aggressive }
   }
 
-  const retirementAssets = profile?.assets
-    ?.filter((a: any) => a.category === 'retirement')
-    ?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+  const chartData = plan ? buildChartData() : null
 
-  const rothIRA = profile?.assets?.find((a: any) =>
-    a.name.toLowerCase().includes('roth') || a.name.toLowerCase().includes('ira')
-  )
-
-  const k401 = profile?.assets?.find((a: any) =>
-    a.name.toLowerCase().includes('401')
-  )
-
-  const totalDebtPayments = profile?.debts?.reduce((s: number, d: any) => s + (d.minimum_payment || 0), 0) || 0
-  const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0) - totalDebtPayments
-  const recommendedRetirementSavings = availableToSave * 0.15
-
-  // Target: 25x annual expenses (4% rule)
-  const annualInRetirement = monthlyInRetirement * 12
-  const targetNestEgg = annualInRetirement * 25
-
-  const yearsToRetirement = targetAge - currentAge
-  const projectedAge = calcRetirementAge(currentAge, retirementAssets, recommendedRetirementSavings, targetNestEgg)
-  const { labels, optimistic, moderate, conservative } = calcProjection(retirementAssets, recommendedRetirementSavings, Math.max(yearsToRetirement, 30))
-
-  const rothContribRoom = Math.max(0, ROTH_IRA_LIMIT - (rothIRA?.value || 0) * 0.1)
-  const k401ContribRoom = Math.max(0, K401_LIMIT)
-
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
-
-  const chartData = {
-    labels,
+  const lineChartData = chartData ? {
+    labels: chartData.labels,
     datasets: [
       {
-        label: 'Optimistic (10%)',
-        data: optimistic,
-        borderColor: '#34d399',
-        backgroundColor: '#34d39920',
-        fill: true,
+        label: 'Conservative (4%)',
+        data: chartData.conservative,
+        borderColor: 'rgba(192,57,43,0.6)',
+        backgroundColor: 'rgba(192,57,43,0.05)',
+        fill: false,
         tension: 0.4,
-        pointRadius: 4,
-        pointHoverRadius: 6
+        pointRadius: 0,
+        borderWidth: 2
       },
       {
         label: 'Moderate (7%)',
-        data: moderate,
-        borderColor: '#60a5fa',
-        backgroundColor: '#60a5fa20',
+        data: chartData.moderate,
+        borderColor: 'var(--accent)',
+        backgroundColor: 'rgba(26,18,8,0.05)',
         fill: true,
         tension: 0.4,
-        pointRadius: 4,
-        pointHoverRadius: 6
+        pointRadius: 0,
+        borderWidth: 2.5
       },
       {
-        label: 'Conservative (4%)',
-        data: conservative,
-        borderColor: '#fbbf24',
-        backgroundColor: '#fbbf2420',
-        fill: true,
+        label: 'Aggressive (10%)',
+        data: chartData.aggressive,
+        borderColor: 'rgba(122,158,110,0.8)',
+        backgroundColor: 'rgba(122,158,110,0.05)',
+        fill: false,
         tension: 0.4,
-        pointRadius: 4,
-        pointHoverRadius: 6
+        pointRadius: 0,
+        borderWidth: 2
       }
     ]
-  }
+  } : null
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
     plugins: {
-      legend: {
-        labels: { color: '#9ca3af', font: { size: 12 }, usePointStyle: true }
-      },
+      legend: { labels: { color: '#9e8e7e', font: { size: 11 }, usePointStyle: true, padding: 16 } },
       tooltip: {
-        backgroundColor: '#18181b',
-        borderColor: '#3f3f46',
+        backgroundColor: '#f2ede6',
+        borderColor: '#ddd4c4',
         borderWidth: 1,
-        titleColor: '#f3f4f6',
-        bodyColor: '#9ca3af',
-        padding: 12,
-        callbacks: {
-          label: (ctx: any) => ` ${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`
-        }
+        titleColor: '#1a1208',
+        bodyColor: '#7a6a5a',
+        padding: 10,
+        callbacks: { label: (ctx: any) => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` }
       }
     },
     scales: {
-      x: { ticks: { color: '#6b7280' }, grid: { color: '#27272a' } },
-      y: {
-        ticks: {
-          color: '#6b7280',
-          callback: (val: any) => formatCurrency(val)
-        },
-        grid: { color: '#27272a' }
-      }
+      x: { ticks: { color: '#9e8e7e', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#ede8e3' } },
+      y: { ticks: { color: '#9e8e7e', font: { size: 10 }, callback: (v: any) => `$${(v/1000000).toFixed(1)}M` }, grid: { color: '#ede8e3' } }
     }
   }
 
-  const onTrack = projectedAge <= targetAge
-
   return (
-    <div className="min-h-screen bg-black">
+    <div style={{ minHeight: '100vh', background: 'var(--sand-100)' }}>
+
       {/* Header */}
-      <div className="border-b border-zinc-900 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/dashboard')}
-              className="text-gray-400 hover:text-white transition-colors">
+      <div style={{ background: 'var(--sand-50)', borderBottom: '0.5px solid var(--sand-300)', padding: '52px 20px 0' }}>
+        <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <button onClick={() => navigate(-1)}
+              style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px', flexShrink: 0 }}>
               ←
             </button>
             <div>
-              <h1 className="font-semibold">Retirement Planner</h1>
-              <p className="text-xs text-gray-500">Based on your current finances</p>
+              <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Retirement Plan</h1>
+              {plan && <p style={{ fontSize: '12px', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: 0 }}>{plan.onTrack ? 'On track ✓' : 'Needs attention'}</p>}
             </div>
           </div>
-          <button onClick={openRetirementChat}
-            className="bg-emerald-400 text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-emerald-300 transition-colors">
-            {chatRef ? 'Continue Plan →' : 'Build My Plan →'}
-          </button>
+
+          {/* Tabs */}
+          {built && (
+            <div style={{ display: 'flex', gap: '0', borderBottom: 'none' }}>
+              {(['overview', 'projections', 'strategy', 'chat'] as const).map(tab => (
+                <button key={tab} onClick={() => setActiveTab(tab)}
+                  style={{ padding: '10px 16px', background: 'none', border: 'none', borderBottom: activeTab === tab ? `2px solid var(--accent)` : '2px solid transparent', color: activeTab === tab ? 'var(--accent)' : 'var(--sand-500)', fontSize: '13px', fontWeight: activeTab === tab ? '600' : '400', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', textTransform: 'capitalize' }}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
+      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '20px' }}>
 
-        {/* Settings */}
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Your Retirement Goals</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Current Age</label>
-              <input
-                type="number"
-                value={currentAge}
-                onChange={e => setCurrentAge(parseInt(e.target.value) || 25)}
-                className="w-full bg-zinc-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
+        {/* Build Plan Form */}
+        {!built && (
+          <div className="animate-fade">
+            <div style={{ textAlign: 'center', padding: '20px 0 32px' }}>
+              <div style={{ width: '60px', height: '60px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <span style={{ fontSize: '24px' }}>🏖️</span>
+              </div>
+              <h2 style={{ fontSize: '22px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 8px', letterSpacing: '-0.3px' }}>Build your retirement plan</h2>
+              <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>We'll use your financial profile to create a personalized retirement roadmap with projections and AI strategy.</p>
             </div>
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Target Retirement Age</label>
-              <input
-                type="number"
-                value={targetAge}
-                onChange={e => setTargetAge(parseInt(e.target.value) || 55)}
-                className="w-full bg-zinc-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Monthly Income Needed in Retirement</label>
-              <input
-                type="number"
-                value={monthlyInRetirement}
-                onChange={e => setMonthlyInRetirement(parseInt(e.target.value) || 5000)}
-                className="w-full bg-zinc-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
-            </div>
-          </div>
-        </div>
 
-        {/* Status Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800">
-            <p className="text-xs text-gray-500 mb-1">Retirement Savings</p>
-            <p className="text-xl font-bold text-emerald-400">{formatCurrency(retirementAssets)}</p>
-          </div>
-          <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800">
-            <p className="text-xs text-gray-500 mb-1">Target Nest Egg</p>
-            <p className="text-xl font-bold text-white">{formatCurrency(targetNestEgg)}</p>
-            <p className="text-xs text-gray-600 mt-1">25x rule</p>
-          </div>
-          <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800">
-            <p className="text-xs text-gray-500 mb-1">Years to Retire</p>
-            <p className="text-xl font-bold text-white">{yearsToRetirement}</p>
-          </div>
-          <div className={`rounded-2xl p-4 border ${onTrack ? 'bg-emerald-400/10 border-emerald-400/30' : 'bg-rose-400/10 border-rose-400/30'}`}>
-            <p className="text-xs text-gray-500 mb-1">Projected Age</p>
-            <p className={`text-xl font-bold ${onTrack ? 'text-emerald-400' : 'text-rose-400'}`}>{projectedAge}</p>
-            <p className={`text-xs mt-1 ${onTrack ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {onTrack ? '✓ On track' : `${projectedAge - targetAge}yr late`}
-            </p>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <div className="flex justify-between items-center mb-3">
-            <p className="text-sm font-semibold">Progress to Target</p>
-            <p className="text-sm text-gray-400">{formatCurrency(retirementAssets)} of {formatCurrency(targetNestEgg)}</p>
-          </div>
-          <div className="w-full bg-zinc-800 rounded-full h-3">
-            <div
-              className="bg-emerald-400 h-3 rounded-full transition-all duration-1000"
-              style={{ width: `${Math.min(100, (retirementAssets / targetNestEgg) * 100)}%` }}
-            />
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            {((retirementAssets / targetNestEgg) * 100).toFixed(1)}% of goal — saving {formatCurrency(recommendedRetirementSavings)}/mo recommended
-          </p>
-        </div>
-
-        {/* Projection Chart */}
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-          <p className="text-sm font-semibold mb-4">Retirement Savings Projection</p>
-          <div style={{ height: '300px' }}>
-            <Line data={chartData} options={chartOptions} />
-          </div>
-          <p className="text-xs text-gray-500 mt-3 text-center">
-            Based on saving {formatCurrency(recommendedRetirementSavings)}/mo (15% of available income)
-          </p>
-        </div>
-
-        {/* Account Limits */}
-        <div>
-          <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Annual Contribution Limits</p>
-          <div className="space-y-3">
-            {rothIRA && (
-              <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-                <div className="flex justify-between items-center mb-2">
-                  <div>
-                    <p className="font-semibold text-sm">{rothIRA.name}</p>
-                    <p className="text-xs text-gray-400">2024 limit: {formatCurrency(ROTH_IRA_LIMIT)}/year</p>
-                  </div>
-                  <span className="text-xs bg-emerald-400/10 text-emerald-400 px-2.5 py-1 rounded-full font-semibold">Roth IRA</span>
+            <div className="card" style={{ marginBottom: '16px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)', marginBottom: '8px' }}>Current age</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input type="range" min="18" max="70" value={currentAge} onChange={e => setCurrentAge(parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: 'var(--accent)' }} />
+                  <span style={{ fontSize: '20px', fontWeight: '300', color: 'var(--sand-900)', minWidth: '40px', textAlign: 'right' }}>{currentAge}</span>
                 </div>
-                <p className="text-xs text-gray-400">
-                  Max out your Roth IRA first — contributions grow tax-free and you can withdraw in retirement without paying taxes. That's {formatCurrency(ROTH_IRA_LIMIT / 12)}/month.
-                </p>
               </div>
-            )}
-            {k401 && (
-              <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-                <div className="flex justify-between items-center mb-2">
-                  <div>
-                    <p className="font-semibold text-sm">{k401.name}</p>
-                    <p className="text-xs text-gray-400">2024 limit: {formatCurrency(K401_LIMIT)}/year</p>
-                  </div>
-                  <span className="text-xs bg-blue-400/10 text-blue-400 px-2.5 py-1 rounded-full font-semibold">401k</span>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)', marginBottom: '8px' }}>Target retirement age</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <input type="range" min={currentAge + 5} max="80" value={targetAge} onChange={e => setTargetAge(parseInt(e.target.value))}
+                    style={{ flex: 1, accentColor: 'var(--accent)' }} />
+                  <span style={{ fontSize: '20px', fontWeight: '300', color: 'var(--sand-900)', minWidth: '40px', textAlign: 'right' }}>{targetAge}</span>
                 </div>
-                <p className="text-xs text-gray-400">
-                  Contribute at least enough to get your employer match — that's free money. The full limit is {formatCurrency(K401_LIMIT / 12)}/month.
+              </div>
+            </div>
+
+            <div className="card-muted" style={{ marginBottom: '20px', padding: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 4px', fontWeight: '500' }}>Your plan will include:</p>
+              {['Personalized nest egg target', 'Projection chart (3 scenarios)', 'Monthly contribution strategy', 'AI retirement advisor'].map((item, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
+                  <div style={{ width: '16px', height: '16px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>✓</span>
+                  </div>
+                  <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <button className="btn-primary" onClick={buildPlan} disabled={building}
+              style={{ width: '100%', padding: '16px', fontSize: '15px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              {building ? (
+                <>
+                  <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  Building your plan...
+                </>
+              ) : 'Build my retirement plan →'}
+            </button>
+          </div>
+        )}
+
+        {/* Overview Tab */}
+        {built && plan && activeTab === 'overview' && (
+          <div className="animate-fade">
+
+            {/* Hero numbers */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              <div className="card" style={{ gridColumn: '1 / -1', padding: '20px' }}>
+                <p className="label" style={{ marginBottom: '4px' }}>Projected at retirement ({plan.targetAge})</p>
+                <p style={{ fontSize: '40px', fontWeight: '300', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: '0 0 4px', letterSpacing: '-1.5px' }}>{fmt(plan.projectedNestEgg)}</p>
+                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>at 7% avg annual return · {plan.yearsToRetirement} years away</p>
+              </div>
+              <div className="card" style={{ padding: '16px' }}>
+                <p className="label" style={{ marginBottom: '4px' }}>Target</p>
+                <p style={{ fontSize: '22px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-0.5px' }}>{fmt(plan.targetNestEgg)}</p>
+                <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>25× annual spend</p>
+              </div>
+              <div className="card" style={{ padding: '16px' }}>
+                <p className="label" style={{ marginBottom: '4px' }}>{plan.onTrack ? 'Surplus' : 'Shortfall'}</p>
+                <p style={{ fontSize: '22px', fontWeight: '400', color: plan.onTrack ? 'var(--success)' : 'var(--danger)', margin: '0 0 2px', letterSpacing: '-0.5px' }}>
+                  {plan.onTrack ? '+' : '-'}{fmt(Math.abs(plan.projectedNestEgg - plan.targetNestEgg))}
                 </p>
+                <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{plan.onTrack ? 'ahead of target' : 'behind target'}</p>
+              </div>
+            </div>
+
+            {/* Key stats */}
+            <div className="card" style={{ marginBottom: '16px' }}>
+              <p className="label" style={{ marginBottom: '12px' }}>Key numbers</p>
+              {[
+                { label: 'Current retirement savings', value: fmt(plan.currentSavings) },
+                { label: 'Monthly contribution', value: fmt(plan.monthlyContribution) },
+                { label: 'Years to retirement', value: `${plan.yearsToRetirement} years` },
+                { label: 'Monthly income in retirement', value: `${fmt(plan.monthlyInRetirement)}/mo` },
+              ].map((item, i, arr) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < arr.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--sand-600)' }}>{item.label}</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)' }}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Account limits */}
+            <div className="card-muted" style={{ marginBottom: '16px' }}>
+              <p className="label" style={{ marginBottom: '10px' }}>2025 contribution limits</p>
+              {[
+                { label: 'Roth IRA', limit: '$7,000/yr', monthly: '$583/mo' },
+                { label: '401(k)', limit: '$23,500/yr', monthly: '$1,958/mo' },
+                { label: 'HSA (individual)', limit: '$4,300/yr', monthly: '$358/mo' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? '0.5px solid var(--sand-300)' : 'none' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-800)' }}>{item.label}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{item.limit}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--sand-500)', marginLeft: '6px' }}>{item.monthly}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setActiveTab('projections')} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '14px', borderRadius: 'var(--radius-md)' }}>
+              View projections →
+            </button>
+          </div>
+        )}
+
+        {/* Projections Tab */}
+        {built && plan && activeTab === 'projections' && (
+          <div className="animate-fade">
+            <div className="card" style={{ marginBottom: '16px' }}>
+              <p className="label" style={{ marginBottom: '4px' }}>Growth projection</p>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 16px' }}>Three scenarios based on avg annual return</p>
+              <div style={{ height: '280px' }}>
+                {lineChartData && <Line data={lineChartData} options={chartOptions} />}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              {chartData && [
+                { label: 'Conservative', value: chartData.conservative[chartData.conservative.length - 1], rate: '4%', color: 'var(--danger)' },
+                { label: 'Moderate', value: chartData.moderate[chartData.moderate.length - 1], rate: '7%', color: 'var(--accent)' },
+                { label: 'Aggressive', value: chartData.aggressive[chartData.aggressive.length - 1], rate: '10%', color: 'var(--success)' },
+              ].map((item, i) => (
+                <div key={i} className="card" style={{ padding: '14px', textAlign: 'center' }}>
+                  <p style={{ fontSize: '10px', color: item.color, fontWeight: '700', margin: '0 0 4px', letterSpacing: '0.05em' }}>{item.rate}</p>
+                  <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{fmt(item.value)}</p>
+                  <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>{item.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="card-muted" style={{ padding: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>Contributing {fmt(plan.monthlyContribution)}/mo starting now</p>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>Projections assume consistent monthly contributions and don't account for inflation, taxes, or market volatility. The moderate (7%) scenario aligns with historical S&P 500 averages.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Strategy Tab */}
+        {built && activeTab === 'strategy' && (
+          <div className="animate-fade">
+            {chatMessages.length > 1 ? (
+              <div className="card">
+                <p className="label" style={{ marginBottom: '12px' }}>Your retirement strategy</p>
+                <div>{formatMessage(chatMessages[1].content)}</div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ width: '32px', height: '32px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+                <p style={{ color: 'var(--sand-500)', marginTop: '16px', fontSize: '14px' }}>Building your strategy...</p>
               </div>
             )}
-            {!rothIRA && !k401 && (
-              <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800">
-                <p className="text-sm text-gray-400">No retirement accounts detected. Update your profile to add your Roth IRA or 401k.</p>
-                <button onClick={() => navigate('/onboarding')} className="text-xs text-emerald-400 hover:underline mt-2 block">
-                  Update profile →
-                </button>
+          </div>
+        )}
+
+        {/* Chat Tab */}
+        {built && activeTab === 'chat' && (
+          <div className="animate-fade">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px', maxHeight: '60vh', overflowY: 'auto', paddingBottom: '8px' }}>
+              {chatMessages.slice(1).map((msg, i) => (
+                <div key={i} style={{ display: 'flex', gap: '10px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '80%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '12px 16px' }}>
+                    {msg.role === 'user'
+                      ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.5' }}>{msg.content}</p>
+                      : <div>{formatMessage(msg.content)}</div>
+                    }
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
+                  </div>
+                  <div style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: '18px 18px 18px 4px', padding: '14px 16px', display: 'flex', gap: '5px' }}>
+                    {[0,150,300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendChat()}
+                placeholder="Ask about your retirement..."
+                style={{ flex: 1, borderRadius: '20px' }}
+              />
+              <button onClick={sendChat} disabled={!chatInput.trim() || chatLoading}
+                style={{ width: '42px', height: '42px', borderRadius: '50%', background: chatInput.trim() ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={chatInput.trim() ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                </svg>
+              </button>
+            </div>
+
+            {chatMessages.length <= 1 && (
+              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {['How can I retire earlier?', 'What should I invest in?', 'How much do I need to save each month?', 'What are the tax advantages I should use?'].map((q, i) => (
+                  <button key={i} onClick={() => { setChatInput(q); }}
+                    style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '12px 16px', textAlign: 'left', cursor: 'pointer', fontSize: '13px', color: 'var(--sand-700)', fontFamily: 'inherit' }}>
+                    {q}
+                  </button>
+                ))}
               </div>
             )}
           </div>
-        </div>
-
-        {/* Key insights */}
-        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800 space-y-3">
-          <p className="text-sm font-semibold">Key Insights</p>
-          <div className="flex items-start gap-3 text-sm">
-            <span className="text-emerald-400 shrink-0 mt-0.5">→</span>
-            <p className="text-gray-300">
-              The <strong className="text-white">4% rule</strong> means you need 25x your annual expenses saved. At {formatCurrency(monthlyInRetirement)}/month you need <strong className="text-white">{formatCurrency(targetNestEgg)}</strong>.
-            </p>
-          </div>
-          <div className="flex items-start gap-3 text-sm">
-            <span className="text-emerald-400 shrink-0 mt-0.5">→</span>
-            <p className="text-gray-300">
-              With {formatCurrency(retirementAssets)} saved and saving {formatCurrency(recommendedRetirementSavings)}/mo, you're projected to retire at <strong className="text-white">age {projectedAge}</strong>.
-            </p>
-          </div>
-          <div className="flex items-start gap-3 text-sm">
-            <span className="text-emerald-400 shrink-0 mt-0.5">→</span>
-            <p className="text-gray-300">
-              Every extra <strong className="text-white">$500/month</strong> you save in your 20s could be worth over <strong className="text-white">{formatCurrency(500 * 12 * Math.pow(1.07, yearsToRetirement))}</strong> by retirement thanks to compound growth.
-            </p>
-          </div>
-        </div>
-
-        <button onClick={openRetirementChat}
-          className="w-full bg-emerald-400 text-black font-semibold py-4 rounded-2xl hover:bg-emerald-300 transition-colors">
-          {chatRef ? 'Continue Retirement Planning →' : 'Build My Retirement Plan with AI →'}
-        </button>
+        )}
 
       </div>
     </div>
