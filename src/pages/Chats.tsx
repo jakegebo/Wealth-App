@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
@@ -10,131 +10,143 @@ interface Chat {
   updated_at: string
 }
 
-const PRESET_TOPICS = [
-  { id: 'general', label: 'General', emoji: '💬', description: 'Ask anything about your finances' },
-  { id: 'debt', label: 'Debt Plan', emoji: '💳', description: 'Strategy to eliminate your debt' },
-  { id: 'retirement', label: 'Retirement', emoji: '🏖️', description: 'Plan your path to early retirement' },
-  { id: 'investment', label: 'Investments', emoji: '📈', description: 'Grow your wealth strategically' },
+const TOPIC_ICONS: Record<string, string> = {
+  debt: '💳',
+  retirement: '🏖️',
+  investment: '📈',
+  general: '💬',
+  money: '💰'
+}
+
+const QUICK_TOPICS = [
+  { id: 'general', label: 'General advice', icon: '💬', prompt: 'Give me a summary of my overall financial health and the most important things I should focus on right now.' },
+  { id: 'debt', label: 'Debt strategy', icon: '💳', prompt: 'Help me create a detailed debt payoff strategy based on my current debts and income.' },
+  { id: 'investment', label: 'Investing', icon: '📈', prompt: 'Based on my financial situation, what should I be investing in and how should I allocate my available savings?' },
+  { id: 'retirement', label: 'Retirement', icon: '🏖️', prompt: 'Analyze my retirement trajectory. Am I on track? What should I do to retire earlier or more comfortably?' },
 ]
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (mins < 60) return `${mins}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}
 
 export default function Chats() {
   const navigate = useNavigate()
   const [chats, setChats] = useState<Chat[]>([])
   const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadChats()
-  }, [])
+  useEffect(() => { loadChats() }, [])
 
   const loadChats = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-
-    const { data } = await supabase
-      .from('chats')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false })
-
+    setUserId(user.id)
+    const { data } = await supabase.from('chats').select('*').eq('user_id', user.id).order('updated_at', { ascending: false })
     setChats(data || [])
     setLoading(false)
   }
 
-  const createChat = async (topic: string, title: string) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data } = await supabase
-      .from('chats')
-      .insert({ user_id: user.id, title, topic, messages: [] })
-      .select()
-      .single()
-
-    if (data) navigate(`/chat/${data.id}`)
+  const createChat = async (topic: string, title: string, prompt: string) => {
+    if (!userId) return
+    const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic, messages: [] }).select().single()
+    if (data) navigate(`/chat/${data.id}`, { state: { prompt } })
   }
 
-  const formatTime = (ts: string) => {
-    const d = new Date(ts)
-    const now = new Date()
-    const diff = now.getTime() - d.getTime()
-    if (diff < 60000) return 'just now'
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
-    return d.toLocaleDateString()
+  const deleteChat = async (chatId: string) => {
+    setDeleting(chatId)
+    await supabase.from('chats').delete().eq('id', chatId)
+    setChats(prev => prev.filter(c => c.id !== chatId))
+    setDeleting(null)
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div style={{ minHeight: '100vh', background: 'var(--sand-100)' }}>
+
       {/* Header */}
-      <div className="border-b border-zinc-900 px-4 py-4 flex items-center justify-between max-w-2xl mx-auto">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors text-lg">
-            ←
-          </button>
-          <h1 className="font-semibold">AI Financial Advisor</h1>
+      <div style={{ background: 'var(--sand-50)', borderBottom: '0.5px solid var(--sand-300)', padding: '52px 20px 16px' }}>
+        <div style={{ maxWidth: '680px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button onClick={() => navigate(-1)}
+              style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px' }}>
+              ←
+            </button>
+            <div>
+              <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>AI Advisor</h1>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Your financial conversations</p>
+            </div>
+          </div>
+          <div style={{ width: '36px', height: '36px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700' }}>AI</span>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '20px' }}>
 
-        {/* Start a new chat */}
-        <div>
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Start a conversation</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {PRESET_TOPICS.map(topic => (
-              <button
-                key={topic.id}
-                onClick={() => createChat(topic.id, topic.label)}
-                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left hover:border-emerald-400/50 transition-colors"
-              >
-                <span className="text-2xl mb-2 block">{topic.emoji}</span>
-                <p className="font-semibold text-sm">{topic.label}</p>
-                <p className="text-xs text-gray-400 mt-1">{topic.description}</p>
+        {/* Quick Start */}
+        <div style={{ marginBottom: '24px' }}>
+          <p className="label" style={{ marginBottom: '10px' }}>Start a conversation</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            {QUICK_TOPICS.map(topic => (
+              <button key={topic.id} onClick={() => createChat(topic.id, topic.label, topic.prompt)}
+                style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                <div style={{ fontSize: '20px', marginBottom: '6px' }}>{topic.icon}</div>
+                <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{topic.label}</p>
               </button>
             ))}
           </div>
-
-          <button
-            onClick={() => createChat('general', 'New Chat')}
-            className="w-full mt-3 border border-dashed border-zinc-700 rounded-2xl py-3 text-gray-400 hover:border-emerald-400 hover:text-emerald-400 transition-colors text-sm"
-          >
-            + Start a custom chat
-          </button>
         </div>
 
-        {/* Previous chats */}
-        {chats.length > 0 && (
+        {/* Chat History */}
+        {!loading && chats.length > 0 && (
           <div>
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Previous conversations</h2>
-            <div className="space-y-2">
+            <p className="label" style={{ marginBottom: '10px' }}>Recent conversations</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {chats.map(chat => (
-                <button
-                  key={chat.id}
-                  onClick={() => navigate(`/chat/${chat.id}`)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{PRESET_TOPICS.find(t => t.id === chat.topic)?.emoji ?? '💬'}</span>
-                      <p className="font-semibold text-sm">{chat.title}</p>
+                <div key={chat.id} style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
+                  <button onClick={() => navigate(`/chat/${chat.id}`)}
+                    style={{ flex: 1, padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '36px', height: '36px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '16px' }}>
+                      {TOPIC_ICONS[chat.topic] || '💬'}
                     </div>
-                    <span className="text-xs text-gray-500">{formatTime(chat.updated_at)}</span>
-                  </div>
-                  {chat.messages.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1 truncate">
-                      {chat.messages[chat.messages.length - 1]?.content?.slice(0, 60)}...
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-600 mt-1">{chat.messages.length} messages</p>
-                </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.title}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>
+                        {chat.messages?.length || 0} messages · {timeAgo(chat.updated_at)}
+                      </p>
+                    </div>
+                  </button>
+                  <button onClick={() => deleteChat(chat.id)}
+                    style={{ padding: '14px 16px', background: 'none', border: 'none', borderLeft: '0.5px solid var(--sand-200)', cursor: 'pointer', color: deleting === chat.id ? 'var(--danger)' : 'var(--sand-400)', fontSize: '16px', transition: 'color 0.15s' }}>
+                    {deleting === chat.id ? '...' : '×'}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
         )}
 
-        {!loading && chats.length === 0 && (
-          <p className="text-center text-gray-500 text-sm py-8">No conversations yet. Start one above!</p>
+        {loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {[1,2,3].map(i => (
+              <div key={i} style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', height: '64px', animation: 'pulse 1.5s infinite' }} />
+            ))}
+          </div>
         )}
+
+        {!loading && chats.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <p style={{ color: 'var(--sand-500)', fontSize: '14px' }}>No conversations yet. Start one above!</p>
+          </div>
+        )}
+
       </div>
     </div>
   )
