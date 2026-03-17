@@ -1,0 +1,63 @@
+import { useNavigate, useLocation } from 'react-router-dom'
+
+const TABS = [
+  {
+    id: 'home',
+    label: 'Home',
+    path: '/dashboard',
+    icon: (active: boolean) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+    )
+  },
+  {
+    id: 'plan',
+    label: 'Plan',
+    path: '/plan',
+    icon: (active: boolean) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+    )
+  },
+  {
+    id: 'grow',
+    label: 'Grow',
+    path: '/grow',
+    icon: (active: boolean) => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+    )
+  }
+]
+
+export default function BottomNav() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const activeTab = TABS.find(t => t.path === location.pathname)?.id || 'home'
+
+  return (
+    <nav className="bottom-nav">
+      {TABS.map(tab => {
+        const active = activeTab === tab.id
+        return (
+          <button
+            key={tab.id}
+            className={`nav-tab ${active ? 'active' : ''}`}
+            onClick={() => navigate(tab.path)}
+          >
+            <div className="nav-tab-indicator" />
+            {tab.icon(active)}
+            <span>{tab.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
