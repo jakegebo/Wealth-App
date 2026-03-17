@@ -8,29 +8,33 @@ interface Message {
 }
 
 const TOPICS = [
-  { id: 'ideas', label: '💡 Income Ideas', description: 'Generate personalized money-making ideas' },
-  { id: 'surplus', label: '💰 Deploy Surplus', description: 'Put your extra money to work' },
-  { id: 'sidehustle', label: '⚡ Side Hustles', description: 'Fast ways to earn more income' },
-  { id: 'passive', label: '📊 Passive Income', description: 'Build income that works while you sleep' },
+  { id: 'ideas', label: 'Income Ideas', description: 'Personalized money-making ideas' },
+  { id: 'surplus', label: 'Deploy Surplus', description: 'Put your extra money to work' },
+  { id: 'sidehustle', label: 'Side Hustles', description: 'Fast ways to earn more' },
+  { id: 'passive', label: 'Passive Income', description: 'Build income while you sleep' },
 ]
 
 function formatContent(content: string) {
   return content.split('\n').map((line, i) => {
-    if (line.match(/^\d+\./)) return (
-      <div key={i} className="flex gap-2 mt-1">
-        <span className="text-emerald-400 font-bold shrink-0">{line.split('.')[0]}.</span>
-        <span>{line.split('.').slice(1).join('.').trim()}</span>
-      </div>
-    )
+    if (line.match(/^\d+\./)) {
+      const num = line.split('.')[0]
+      const text = line.split('.').slice(1).join('.').trim()
+      return (
+        <div key={i} style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+          <span style={{ color: 'var(--accent)', fontWeight: '700', minWidth: '16px', fontSize: '13px' }}>{num}.</span>
+          <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{text}</span>
+        </div>
+      )
+    }
     if (line.startsWith('- ') || line.startsWith('• ')) return (
-      <div key={i} className="flex gap-2 mt-1">
-        <span className="text-emerald-400 shrink-0">→</span>
-        <span>{line.slice(2)}</span>
+      <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span>
+        <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
       </div>
     )
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-bold text-white mt-2">{line.slice(2, -2)}</p>
-    if (line === '') return <div key={i} className="h-2" />
-    return <p key={i}>{line}</p>
+    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
+    if (line === '') return <div key={i} style={{ height: '6px' }} />
+    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
   })
 }
 
@@ -47,27 +51,20 @@ export default function Money() {
   const [chatMessages, setChatMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setUserId(user.id)
-
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (data) {
       setProfile(data.profile_data)
       setSavedIdeas(data.saved_income_ideas || [])
       setChatRefs(data.chat_refs || {})
-      if (data.income_ideas?.length > 0) {
-        setIdeas(data.income_ideas)
-      } else {
-        generateIdeas(data.profile_data)
-      }
+      if (data.income_ideas?.length > 0) setIdeas(data.income_ideas)
+      else generateIdeas(data.profile_data)
     }
   }
 
@@ -84,63 +81,40 @@ export default function Money() {
       const data = await res.json()
       const newIdeas = data.ideas || []
       setIdeas(newIdeas)
-      if (userId) {
-        await supabase.from('profiles').update({ income_ideas: newIdeas }).eq('user_id', userId)
-      }
-    } catch (err) { console.error(err) }
+      if (userId) await supabase.from('profiles').update({ income_ideas: newIdeas }).eq('user_id', userId)
+    } catch { }
     setLoadingIdeas(false)
   }
 
   const toggleSaved = async (idea: string) => {
-    const newSaved = savedIdeas.includes(idea)
-      ? savedIdeas.filter(i => i !== idea)
-      : [...savedIdeas, idea]
+    const newSaved = savedIdeas.includes(idea) ? savedIdeas.filter(i => i !== idea) : [...savedIdeas, idea]
     setSavedIdeas(newSaved)
-    if (userId) {
-      await supabase.from('profiles').update({ saved_income_ideas: newSaved }).eq('user_id', userId)
-    }
+    if (userId) await supabase.from('profiles').update({ saved_income_ideas: newSaved }).eq('user_id', userId)
   }
 
   const openIdeaChat = async (idea: string) => {
     if (!userId) return
     const key = `money_idea_${idea.slice(0, 30)}`
-
-    if (chatRefs[key]) {
-      navigate(`/chat/${chatRefs[key]}`)
-      return
-    }
-
-    const { data } = await supabase
-      .from('chats')
-      .insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] })
-      .select()
-      .single()
-
+    if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
+    const { data } = await supabase.from('chats').insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] }).select().single()
     if (data) {
       const newRefs = { ...chatRefs, [key]: data.id }
       setChatRefs(newRefs)
       await supabase.from('profiles').update({ chat_refs: newRefs }).eq('user_id', userId)
-      navigate(`/chat/${data.id}`, {
-        state: {
-          prompt: `I want to explore this income idea in detail: "${idea}". Tell me: 1) Average realistic income potential, 2) How long to start earning, 3) Exact steps to get started, 4) What skills or resources I need, 5) Whether this is active or passive income. Be specific to my financial situation.`
-        }
-      })
+      navigate(`/chat/${data.id}`, { state: { prompt: `I want to explore this income idea: "${idea}". Give me: 1) Realistic income potential, 2) Time to first dollar, 3) Exact steps to start, 4) Skills/resources needed.` } })
     }
   }
 
-  const startTopicChat = async (topic: string) => {
+  const startTopicChat = (topic: string) => {
     setActiveTopic(topic)
     setActiveTab('chat')
-    setChatMessages([{
-      role: 'assistant',
-      content: topic === 'surplus'
-        ? `You have $${((profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)).toLocaleString()}/mo available to deploy. Let's make sure every dollar is working as hard as possible for you. What's your priority — growing wealth faster, building passive income, or reducing risk?`
-        : topic === 'sidehustle'
-        ? `Let's find you a side hustle that fits your life. I'll be direct — most side hustles take real work to get going. What matters most to you: highest earning potential, fastest to start, or most aligned with your existing skills?`
-        : topic === 'passive'
-        ? `Passive income is real but takes either time or capital to build. You have $${((profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)).toLocaleString()}/mo to work with. Let's figure out the best passive income strategy for your situation. What's your timeline?`
-        : `I'm your make-money strategist. I'll give you specific, realistic ideas tailored to your situation. What kind of income are you most interested in — something you can start quickly, something that scales, or something that builds long-term wealth?`
-    }])
+    const intros: Record<string, string> = {
+      surplus: `You have extra money each month. Let's make sure every dollar is working as hard as possible. What's your priority — building wealth faster, passive income, or reducing risk?`,
+      sidehustle: `Let's find you a side hustle that fits your life. What matters most — highest earning potential, fastest to start, or most aligned with your existing skills?`,
+      passive: `Passive income takes either time or capital to build. Let's figure out the best strategy for your situation. What's your timeline?`,
+      ideas: `I'm your make-money strategist. What kind of income are you most interested in — something to start quickly, something that scales, or long-term wealth building?`
+    }
+    setChatMessages([{ role: 'assistant', content: intros[topic] || intros.ideas }])
   }
 
   const sendChatMessage = async () => {
@@ -150,17 +124,11 @@ export default function Money() {
     setChatMessages(newMessages)
     setChatInput('')
     setChatLoading(true)
-
     try {
       const res = await fetch('/api/money', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'chat',
-          profile,
-          messages: newMessages,
-          topic: activeTopic
-        })
+        body: JSON.stringify({ action: 'chat', profile, messages: newMessages, topic: activeTopic })
       })
       const data = await res.json()
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.message }])
@@ -171,72 +139,73 @@ export default function Money() {
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div style={{ minHeight: '100vh', background: 'var(--sand-100)' }}>
+
       {/* Header */}
-      <div className="border-b border-zinc-900 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-white transition-colors">←</button>
+      <div style={{ background: 'var(--sand-50)', borderBottom: '0.5px solid var(--sand-300)', padding: '52px 20px 0' }}>
+        <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <button onClick={() => navigate(-1)}
+              style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px' }}>←</button>
             <div>
-              <h1 className="font-semibold">Make Money</h1>
-              <p className="text-xs text-gray-500">Income ideas & strategies tailored to you</p>
+              <h1 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Make Money</h1>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Income ideas & strategies</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            {(['ideas', 'saved', 'chat'] as const).map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors capitalize ${activeTab === tab ? 'bg-emerald-400 text-black' : 'bg-zinc-900 text-gray-400 hover:text-white border border-zinc-800'}`}>
-                {tab === 'saved' ? `⭐ Saved (${savedIdeas.length})` : tab === 'chat' ? '💬 Strategist' : '💡 Ideas'}
+
+          {/* Tabs */}
+          <div style={{ display: 'flex' }}>
+            {[
+              { id: 'ideas', label: 'Ideas' },
+              { id: 'saved', label: `Saved (${savedIdeas.length})` },
+              { id: 'chat', label: 'Strategist' }
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+                style={{ padding: '10px 16px', background: 'none', border: 'none', borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === tab.id ? 'var(--accent)' : 'var(--sand-500)', fontSize: '13px', fontWeight: activeTab === tab.id ? '600' : '400', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-6">
+      <div style={{ maxWidth: '680px', margin: '0 auto', padding: '20px' }}>
 
-        {/* Ideas Tab */}
+        {/* Ideas */}
         {activeTab === 'ideas' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-gray-400 text-sm">Personalized for your situation</p>
-              <button onClick={() => generateIdeas()} disabled={loadingIdeas}
-                className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 text-gray-300 text-sm px-4 py-2 rounded-xl hover:border-emerald-400/50 transition-colors disabled:opacity-50">
-                <span className={loadingIdeas ? 'animate-spin' : ''}>↻</span>
-                {loadingIdeas ? 'Generating...' : 'Refresh Ideas'}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Personalized for your situation</p>
+              <button onClick={() => generateIdeas()} disabled={loadingIdeas} className="btn-ghost"
+                style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ display: 'inline-block', animation: loadingIdeas ? 'spin 0.8s linear infinite' : 'none' }}>↻</span>
+                {loadingIdeas ? 'Generating...' : 'Refresh'}
               </button>
             </div>
 
             {loadingIdeas ? (
-              <div className="space-y-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[1,2,3,4,5,6].map(i => (
-                  <div key={i} className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800 animate-pulse">
-                    <div className="h-4 bg-zinc-800 rounded w-3/4 mb-2" />
-                    <div className="h-3 bg-zinc-800 rounded w-1/2" />
-                  </div>
+                  <div key={i} style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', height: '64px', animation: 'pulse 1.5s infinite' }} />
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {ideas.map((idea, i) => (
-                  <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                    <div className="p-5 flex items-start gap-4">
-                      <div className="w-8 h-8 bg-emerald-400/10 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-                        <span className="text-emerald-400 font-bold text-sm">{i + 1}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium leading-relaxed">{idea}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => toggleSaved(idea)}
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${savedIdeas.includes(idea) ? 'bg-amber-400/20 text-amber-400' : 'bg-zinc-800 text-gray-500 hover:text-amber-400'}`}>
-                          ⭐
-                        </button>
-                        <button onClick={() => openIdeaChat(idea)}
-                          className="w-8 h-8 bg-emerald-400/10 rounded-lg flex items-center justify-center text-emerald-400 hover:bg-emerald-400/20 transition-colors">
-                          →
-                        </button>
-                      </div>
+                  <div key={i} className="card" style={{ padding: '16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '28px', height: '28px', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>{i + 1}</span>
+                    </div>
+                    <p style={{ fontSize: '14px', color: 'var(--sand-900)', margin: 0, lineHeight: '1.5', flex: 1 }}>{idea}</p>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button onClick={() => toggleSaved(idea)}
+                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: savedIdeas.includes(idea) ? 'rgba(200,148,58,0.1)' : 'var(--sand-200)', border: 'none', cursor: 'pointer', fontSize: '15px' }}>
+                        {savedIdeas.includes(idea) ? '⭐' : '☆'}
+                      </button>
+                      <button onClick={() => openIdeaChat(idea)}
+                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        →
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -245,122 +214,114 @@ export default function Money() {
           </div>
         )}
 
-        {/* Saved Tab */}
+        {/* Saved */}
         {activeTab === 'saved' && (
-          <div className="space-y-4">
+          <div>
             {savedIdeas.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-4xl mb-4">⭐</p>
-                <p className="text-white font-semibold mb-2">No saved ideas yet</p>
-                <p className="text-gray-400 text-sm">Star ideas from the Ideas tab to save them here</p>
-                <button onClick={() => setActiveTab('ideas')} className="mt-4 text-emerald-400 text-sm hover:underline">
-                  Browse ideas →
-                </button>
+              <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <div style={{ fontSize: '36px', marginBottom: '12px' }}>⭐</div>
+                <p style={{ fontSize: '16px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 6px' }}>No saved ideas yet</p>
+                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 16px' }}>Star ideas from the Ideas tab to save them here</p>
+                <button onClick={() => setActiveTab('ideas')} className="btn-primary" style={{ padding: '8px 20px' }}>Browse ideas</button>
               </div>
             ) : (
-              <>
-                <p className="text-gray-400 text-sm">{savedIdeas.length} saved idea{savedIdeas.length !== 1 ? 's' : ''}</p>
-                <div className="space-y-3">
-                  {savedIdeas.map((idea, i) => (
-                    <div key={i} className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                      <div className="p-5 flex items-start gap-4">
-                        <div className="w-8 h-8 bg-amber-400/10 rounded-xl flex items-center justify-center shrink-0 mt-0.5">
-                          <span className="text-amber-400">⭐</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white font-medium leading-relaxed">{idea}</p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button onClick={() => toggleSaved(idea)}
-                            className="w-8 h-8 bg-zinc-800 rounded-lg flex items-center justify-center text-gray-500 hover:text-red-400 transition-colors text-xs">
-                            ✕
-                          </button>
-                          <button onClick={() => openIdeaChat(idea)}
-                            className="w-8 h-8 bg-emerald-400/10 rounded-lg flex items-center justify-center text-emerald-400 hover:bg-emerald-400/20 transition-colors">
-                            →
-                          </button>
-                        </div>
-                      </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 4px' }}>{savedIdeas.length} saved idea{savedIdeas.length !== 1 ? 's' : ''}</p>
+                {savedIdeas.map((idea, i) => (
+                  <div key={i} className="card" style={{ padding: '16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '28px', height: '28px', background: 'rgba(200,148,58,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '14px' }}>⭐</div>
+                    <p style={{ fontSize: '14px', color: 'var(--sand-900)', margin: 0, lineHeight: '1.5', flex: 1 }}>{idea}</p>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button onClick={() => toggleSaved(idea)}
+                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--sand-200)', border: 'none', cursor: 'pointer', color: 'var(--sand-500)', fontSize: '14px' }}>
+                        ✕
+                      </button>
+                      <button onClick={() => openIdeaChat(idea)}
+                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        →
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
 
-        {/* Chat Tab */}
+        {/* Chat */}
         {activeTab === 'chat' && (
-          <div className="space-y-4">
-            {chatMessages.length === 0 && (
-              <>
-                <p className="text-gray-400 text-sm">Choose a focus area to get started</p>
-                <div className="grid grid-cols-2 gap-3">
+          <div>
+            {chatMessages.length === 0 ? (
+              <div>
+                <p style={{ fontSize: '13px', color: 'var(--sand-500)', marginBottom: '12px' }}>Choose a focus to get started</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   {TOPICS.map(topic => (
                     <button key={topic.id} onClick={() => startTopicChat(topic.id)}
-                      className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-left hover:border-emerald-400/30 transition-colors">
-                      <p className="text-lg mb-1">{topic.label}</p>
-                      <p className="text-xs text-gray-400">{topic.description}</p>
+                      className="card"
+                      style={{ textAlign: 'left', cursor: 'pointer', border: '0.5px solid var(--sand-300)', background: 'var(--sand-50)', padding: '16px' }}>
+                      <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 4px' }}>{topic.label}</p>
+                      <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>{topic.description}</p>
                     </button>
                   ))}
                 </div>
-              </>
-            )}
-
-            {chatMessages.length > 0 && (
-              <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                  <p className="text-sm font-semibold">
-                    {TOPICS.find(t => t.id === activeTopic)?.label || '💬 Strategist'}
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-700)', margin: 0 }}>
+                    {TOPICS.find(t => t.id === activeTopic)?.label}
                   </p>
-                  <button onClick={() => setChatMessages([])} className="text-xs text-gray-500 hover:text-gray-300">
-                    New topic
-                  </button>
+                  <button onClick={() => setChatMessages([])} className="btn-ghost" style={{ fontSize: '11px' }}>New topic</button>
                 </div>
 
-                <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px', maxHeight: '55vh', overflowY: 'auto' }}>
                   {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div key={i} style={{ display: 'flex', gap: '10px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
                       {msg.role === 'assistant' && (
-                        <div className="w-7 h-7 bg-emerald-400 rounded-lg flex items-center justify-center shrink-0 mt-1">
-                          <span className="text-black font-bold text-xs">$</span>
+                        <div style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                          <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
                         </div>
                       )}
-                      <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user' ? 'bg-emerald-400 text-black font-medium rounded-tr-sm' : 'bg-zinc-800 text-gray-100 rounded-tl-sm'}`}>
-                        {msg.role === 'user' ? <p>{msg.content}</p> : <div className="space-y-0.5">{formatContent(msg.content)}</div>}
+                      <div style={{ maxWidth: '80%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '12px 16px' }}>
+                        {msg.role === 'user'
+                          ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.5' }}>{msg.content}</p>
+                          : <div>{formatContent(msg.content)}</div>
+                        }
                       </div>
                     </div>
                   ))}
                   {chatLoading && (
-                    <div className="flex gap-3">
-                      <div className="w-7 h-7 bg-emerald-400 rounded-lg flex items-center justify-center shrink-0">
-                        <span className="text-black font-bold text-xs">$</span>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <div style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
                       </div>
-                      <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-4 py-3">
-                        <div className="flex gap-1.5">
-                          {[0,150,300].map(d => <div key={d} className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
-                        </div>
+                      <div style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: '18px 18px 18px 4px', padding: '14px 16px', display: 'flex', gap: '5px' }}>
+                        {[0,150,300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="p-4 border-t border-zinc-800">
-                  <div className="flex gap-2">
-                    <input value={chatInput} onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
-                      placeholder="Ask about making money..."
-                      className="flex-1 bg-zinc-800 rounded-xl px-4 py-2.5 text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-emerald-400 text-sm" />
-                    <button onClick={sendChatMessage} disabled={chatLoading || !chatInput.trim()}
-                      className="w-10 h-10 bg-emerald-400 text-black rounded-xl font-bold hover:bg-emerald-300 transition-colors disabled:opacity-40 flex items-center justify-center">
-                      ↑
-                    </button>
-                  </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                  <input
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
+                    placeholder="Ask about making money..."
+                    style={{ flex: 1, borderRadius: '20px' }}
+                  />
+                  <button onClick={sendChatMessage} disabled={chatLoading || !chatInput.trim()}
+                    style={{ width: '42px', height: '42px', borderRadius: '50%', background: chatInput.trim() ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={chatInput.trim() ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
             )}
           </div>
         )}
+
       </div>
     </div>
   )
