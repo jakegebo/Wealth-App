@@ -1,32 +1,27 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { THEMES, ACCENT_COLORS, type ThemeKey, type AccentKey } from '../lib/themes'
 
 interface Preferences {
-  theme: ThemeKey
-  accentColor: AccentKey
+  accent: string
+  darkMode: boolean
   dashboardLayout: string[]
   hiddenSections: string[]
 }
 
 interface ThemeContextType {
   preferences: Preferences
-  theme: typeof THEMES[ThemeKey]
-  accent: typeof ACCENT_COLORS[AccentKey]
   updatePreferences: (updates: Partial<Preferences>) => Promise<void>
 }
 
 const DEFAULT_PREFERENCES: Preferences = {
-  theme: 'slate',
-  accentColor: 'emerald',
-  dashboardLayout: ['networth', 'charts', 'actions', 'debt', 'news', 'goals', 'income', 'watchlist'],
+  accent: 'default',
+  darkMode: false,
+  dashboardLayout: ['focus', 'stats', 'watchlist', 'goals', 'retirement', 'debt', 'news', 'income'],
   hiddenSections: []
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   preferences: DEFAULT_PREFERENCES,
-  theme: THEMES.slate,
-  accent: ACCENT_COLORS.emerald,
   updatePreferences: async () => {}
 })
 
@@ -36,6 +31,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadPreferences()
   }, [])
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (preferences.darkMode) {
+      root.setAttribute('data-theme', 'dark')
+    } else {
+      root.removeAttribute('data-theme')
+    }
+    if (preferences.accent && preferences.accent !== 'default') {
+      root.setAttribute('data-accent', preferences.accent)
+    } else {
+      root.removeAttribute('data-accent')
+    }
+  }, [preferences])
 
   const loadPreferences = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -55,28 +64,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const theme = THEMES[preferences.theme] || THEMES.slate
-  const accent = ACCENT_COLORS[preferences.accentColor] || ACCENT_COLORS.emerald
-
   return (
-    <ThemeContext.Provider value={{ preferences, theme, accent, updatePreferences }}>
-      <div style={{
-        '--bg': theme.bg,
-        '--bg-secondary': theme.bgSecondary,
-        '--bg-tertiary': theme.bgTertiary,
-        '--border': theme.border,
-        '--text': theme.text,
-        '--text-muted': theme.textMuted,
-        '--accent': accent.primary,
-        '--accent-dark': accent.primaryDark,
-        '--accent-bg': accent.bg,
-        '--accent-border': accent.border,
-        '--accent-text': accent.text,
-        background: theme.bg,
-        minHeight: '100vh'
-      } as React.CSSProperties}>
-        {children}
-      </div>
+    <ThemeContext.Provider value={{ preferences, updatePreferences }}>
+      {children}
     </ThemeContext.Provider>
   )
 }
