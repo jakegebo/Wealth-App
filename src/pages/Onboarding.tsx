@@ -3,11 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
 
+interface YearlyContribution {
+  year: number
+  amount: number
+}
+
 interface Asset {
   name: string
   category: string
   value: number
   holdings: string
+  yearlyContributions?: YearlyContribution[]
 }
 
 interface Debt {
@@ -69,6 +75,28 @@ export default function Onboarding() {
   const updateAsset = (i: number, field: keyof Asset, value: any) => {
     const updated = [...assets]
     updated[i] = { ...updated[i], [field]: value }
+    setAssets(updated)
+  }
+
+  const addYearlyContribution = (assetIdx: number) => {
+    const updated = [...assets]
+    const currentYear = new Date().getFullYear()
+    const existing = updated[assetIdx].yearlyContributions || []
+    const nextYear = existing.length > 0 ? Math.max(...existing.map(c => c.year)) - 1 : currentYear
+    updated[assetIdx] = { ...updated[assetIdx], yearlyContributions: [{ year: nextYear, amount: 0 }, ...existing] }
+    setAssets(updated)
+  }
+  const removeYearlyContribution = (assetIdx: number, contribIdx: number) => {
+    const updated = [...assets]
+    const existing = updated[assetIdx].yearlyContributions || []
+    updated[assetIdx] = { ...updated[assetIdx], yearlyContributions: existing.filter((_, i) => i !== contribIdx) }
+    setAssets(updated)
+  }
+  const updateYearlyContribution = (assetIdx: number, contribIdx: number, field: keyof YearlyContribution, value: any) => {
+    const updated = [...assets]
+    const existing = [...(updated[assetIdx].yearlyContributions || [])]
+    existing[contribIdx] = { ...existing[contribIdx], [field]: value }
+    updated[assetIdx] = { ...updated[assetIdx], yearlyContributions: existing }
     setAssets(updated)
   }
 
@@ -242,6 +270,52 @@ export default function Onboarding() {
                       </div>
                     </div>
                     <input placeholder="Holdings (e.g. FXAIX, FTIHX)" value={asset.holdings} onChange={e => updateAsset(i, 'holdings', e.target.value)} style={inputStyle} />
+
+                    {/* Yearly Contributions — retirement accounts only */}
+                    {asset.category === 'retirement' && (
+                      <div style={{ marginTop: '4px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', margin: 0 }}>Yearly contributions</p>
+                          <button
+                            onClick={() => addYearlyContribution(i)}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '12px', cursor: 'pointer', padding: '2px 6px', fontFamily: 'inherit' }}
+                          >
+                            + Add year
+                          </button>
+                        </div>
+                        {(!asset.yearlyContributions || asset.yearlyContributions.length === 0) ? (
+                          <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: 0, fontStyle: 'italic' }}>No contributions logged yet</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {asset.yearlyContributions.map((contrib, ci) => (
+                              <div key={ci} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 28px', gap: '6px', alignItems: 'center' }}>
+                                <input
+                                  type="number"
+                                  placeholder="Year"
+                                  value={contrib.year || ''}
+                                  onChange={e => updateYearlyContribution(i, ci, 'year', parseInt(e.target.value) || 0)}
+                                  style={{ ...inputStyle, textAlign: 'center' }}
+                                />
+                                <div style={{ position: 'relative' }}>
+                                  <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>$</span>
+                                  <input
+                                    type="number"
+                                    placeholder="Amount"
+                                    value={contrib.amount || ''}
+                                    onChange={e => updateYearlyContribution(i, ci, 'amount', parseFloat(e.target.value) || 0)}
+                                    style={{ ...inputStyle, paddingLeft: '24px' }}
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => removeYearlyContribution(i, ci)}
+                                  style={{ background: 'none', border: 'none', color: 'var(--sand-400)', cursor: 'pointer', fontSize: '16px', padding: 0, lineHeight: 1 }}
+                                >×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

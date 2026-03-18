@@ -85,48 +85,171 @@ function computeHealthScore(analysis: Analysis, profile: any) {
   }
 }
 
-function generateInsights(analysis: Analysis, profile: any): { text: string; type: 'positive' | 'neutral' | 'warning' }[] {
-  const insights: { text: string; type: 'positive' | 'neutral' | 'warning' }[] = []
+interface Insight {
+  title: string
+  text: string
+  type: 'positive' | 'neutral' | 'warning'
+  actions: string[]
+  chatSeed: string
+}
+
+function generateInsights(analysis: Analysis, profile: any): Insight[] {
+  const insights: Insight[] = []
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
   const sr = Math.round(analysis.savingsRate || 0)
+  const income = profile?.monthly_income || 0
+  const gap = Math.round(income * 0.20 - (analysis.availableToSave || 0))
   if (sr >= 20) {
-    insights.push({ text: `${sr}% savings rate — top tier. Most Americans save under 5%.`, type: 'positive' })
+    insights.push({
+      title: 'Savings Rate',
+      text: `${sr}% savings rate — top tier. Most Americans save under 5%.`,
+      type: 'positive',
+      actions: [
+        'Keep savings automated so lifestyle inflation doesn\'t erode this.',
+        'Consider bumping to 25–30% if your retirement target is aggressive.',
+        'Direct surplus to tax-advantaged accounts (Roth IRA, 401k) before taxable.'
+      ],
+      chatSeed: `My savings rate is ${sr}%, which is above the 20% benchmark. Help me understand how to maintain this and whether I should be doing more with this savings rate given my financial profile.`
+    })
   } else if (sr >= 10) {
-    const gap = Math.round((profile?.monthly_income || 0) * 0.20 - (analysis.availableToSave || 0))
-    insights.push({ text: `${sr}% savings rate. Adding ${fmt(gap)}/mo reaches the 20% benchmark.`, type: 'neutral' })
+    insights.push({
+      title: 'Savings Rate',
+      text: `${sr}% savings rate. ${gap > 0 ? `Adding ${fmt(gap)}/mo reaches the 20% benchmark.` : 'Approaching the 20% target.'}`,
+      type: 'neutral',
+      actions: [
+        gap > 0 ? `Find ${fmt(gap)}/mo to cut — subscriptions, dining out, and recurring charges are the fastest wins.` : 'You\'re close to 20% — one small adjustment could get you there.',
+        'Automate your savings on payday before you can spend it.',
+        'Track spending for 30 days to find where money actually goes.'
+      ],
+      chatSeed: `My savings rate is ${sr}%. I need to get to 20% — that's an extra ${fmt(Math.max(0, gap))}/mo. My income is ${fmt(income)}/mo. Help me find specific ways to close this gap based on my financial situation.`
+    })
   } else {
-    insights.push({ text: `${sr}% savings rate. Target 20%+ for serious wealth building.`, type: 'warning' })
+    insights.push({
+      title: 'Savings Rate',
+      text: `${sr}% savings rate. Target 20%+ for serious wealth building.`,
+      type: 'warning',
+      actions: [
+        'Do a spending audit — categorize every expense this month to find cuts.',
+        'Even saving 1% more each month compounds dramatically over time.',
+        'Look for income increases: side income, negotiating salary, or freelance work.'
+      ],
+      chatSeed: `My savings rate is only ${sr}%, which is below the recommended 20%. My monthly income is ${fmt(income)}. I need a concrete plan to increase my savings rate. What should I do first?`
+    })
   }
 
   if ((analysis.totalLiabilities || 0) === 0) {
-    insights.push({ text: `Debt-free. Every dollar earned goes straight to building wealth.`, type: 'positive' })
+    insights.push({
+      title: 'Debt',
+      text: `Debt-free. Every dollar earned goes straight to building wealth.`,
+      type: 'positive',
+      actions: [
+        'Stay debt-free by building a buffer before any large purchase.',
+        'If you take on future debt (mortgage, car), keep payments under 28% of income.',
+        'Consider investing the money you used to put toward debt payments.'
+      ],
+      chatSeed: `I'm completely debt-free. Help me make the most of this position — where should I be directing my money now that I have no debt payments eating into my income?`
+    })
   } else {
     const highDebt = [...(analysis.debts || [])].sort((a, b) => b.interestRate - a.interestRate)[0]
     if (highDebt && highDebt.interestRate > 15) {
-      insights.push({ text: `${highDebt.name} at ${highDebt.interestRate}% APR is your most expensive debt — pay this down first.`, type: 'warning' })
+      insights.push({
+        title: 'High-Interest Debt',
+        text: `${highDebt.name} at ${highDebt.interestRate}% APR is costing you the most — tackle this first.`,
+        type: 'warning',
+        actions: [
+          `Pay more than the minimum on ${highDebt.name} every month — even $50 extra saves significant interest.`,
+          'Look into a balance transfer card (0% intro APR) to buy time while paying down principal.',
+          'Use the avalanche method: minimum on everything, maximum on the highest-rate debt.'
+        ],
+        chatSeed: `I have a ${highDebt.name} with a ${highDebt.interestRate}% APR and a balance of ${fmt(highDebt.balance)}. This is my highest-interest debt. Give me a specific payoff plan and help me understand how much interest I'll save by attacking this aggressively.`
+      })
     } else if (highDebt) {
-      insights.push({ text: `Highest-rate debt: ${highDebt.name} at ${highDebt.interestRate}% — ${highDebt.monthsToPayoff} months to payoff.`, type: 'neutral' })
+      insights.push({
+        title: 'Debt Payoff',
+        text: `Highest-rate debt: ${highDebt.name} at ${highDebt.interestRate}% — ${highDebt.monthsToPayoff} months to payoff.`,
+        type: 'neutral',
+        actions: [
+          `At ${highDebt.interestRate}%, compare whether paying extra beats investing the same amount.`,
+          'Keep minimum payments current — missed payments hurt your credit score and add fees.',
+          `${highDebt.monthsToPayoff} months is manageable — stay consistent and it\'s gone.`
+        ],
+        chatSeed: `I have a ${highDebt.name} at ${highDebt.interestRate}% with ${highDebt.monthsToPayoff} months left. Should I pay it down faster or invest instead? Help me think through the math based on my situation.`
+      })
     }
   }
 
   const liquid = profile?.assets?.filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
-  const emoMonths = liquid / (profile?.monthly_expenses || 1)
+  const monthlyExp = profile?.monthly_expenses || 1
+  const emoMonths = liquid / monthlyExp
+  const target3mo = fmt(monthlyExp * 3)
+  const target6mo = fmt(monthlyExp * 6)
   if (emoMonths < 1) {
-    insights.push({ text: `Emergency fund covers less than 1 month. Build to 3–6 months before investing more.`, type: 'warning' })
+    insights.push({
+      title: 'Emergency Fund',
+      text: `Emergency fund covers less than 1 month. This is your most urgent financial gap.`,
+      type: 'warning',
+      actions: [
+        `Target ${target3mo} (3 months) as your first milestone — pause extra investing until you hit it.`,
+        'Open a high-yield savings account (HYSA) separate from your checking.',
+        'Automate a fixed transfer to savings on every payday, even if small.'
+      ],
+      chatSeed: `My emergency fund covers less than 1 month of expenses (${fmt(liquid)} saved, ${fmt(monthlyExp)}/mo in expenses). I need to build this to ${target3mo}–${target6mo}. Give me a step-by-step plan to build my emergency fund as fast as possible.`
+    })
   } else if (emoMonths < 3) {
-    insights.push({ text: `${emoMonths.toFixed(1)}-month emergency fund. Advisors recommend 3–6 months covered.`, type: 'neutral' })
+    insights.push({
+      title: 'Emergency Fund',
+      text: `${emoMonths.toFixed(1)}-month emergency fund. Advisors recommend 3–6 months.`,
+      type: 'neutral',
+      actions: [
+        `You need ${fmt(monthlyExp * 3 - liquid)} more to hit 3 months — that's your next milestone.`,
+        'Keep this in a high-yield savings account earning 4–5% APY, not a regular savings account.',
+        'Don\'t invest new money aggressively until your fund hits 3 months.'
+      ],
+      chatSeed: `My emergency fund covers ${emoMonths.toFixed(1)} months (${fmt(liquid)}). I need to get to ${target3mo}–${target6mo}. Help me make a plan to build it up while also managing my other financial goals.`
+    })
   } else if (emoMonths >= 6) {
-    insights.push({ text: `${Math.floor(emoMonths)}-month emergency fund — fully covered. Surplus above 6 months can be invested.`, type: 'positive' })
+    insights.push({
+      title: 'Emergency Fund',
+      text: `${Math.floor(emoMonths)}-month emergency fund — fully covered.`,
+      type: 'positive',
+      actions: [
+        'Your emergency fund is solid — keep it in a high-yield savings account (HYSA).',
+        `Any cash beyond ${target6mo} is over-insured — consider investing the surplus.`,
+        'Review the fund amount if your expenses increase significantly.'
+      ],
+      chatSeed: `My emergency fund covers ${Math.floor(emoMonths)} months (${fmt(liquid)}). That's above the recommended 6 months. Should I invest the excess, and if so, what should I invest in given my current financial profile?`
+    })
   }
 
   const achievedGoals = (analysis.goals || []).filter(g => (g.percentage || 0) >= 100)
   if (achievedGoals.length > 0 && insights.length < 4) {
-    insights.push({ text: `${achievedGoals.length} goal${achievedGoals.length > 1 ? 's' : ''} fully funded. Time to put that capital to work.`, type: 'positive' })
+    insights.push({
+      title: 'Goals',
+      text: `${achievedGoals.length} goal${achievedGoals.length > 1 ? 's' : ''} fully funded. Time to put that capital to work.`,
+      type: 'positive',
+      actions: [
+        'Decide: withdraw and use the funds, or redirect them to another goal.',
+        'If the goal is long-term (retirement), keep invested and let it grow.',
+        'Set your next goal now so this momentum doesn\'t get wasted on lifestyle inflation.'
+      ],
+      chatSeed: `I've fully funded ${achievedGoals.length} of my goals (${achievedGoals.map(g => g.name).join(', ')}). Help me figure out the best next move — should I use the money, reinvest it, or set a new goal?`
+    })
   } else {
     const closest = [...(analysis.goals || [])].sort((a, b) => (b.percentage || 0) - (a.percentage || 0))[0]
     if (closest && insights.length < 4) {
-      insights.push({ text: `${closest.name} is ${Math.round(closest.percentage || 0)}% funded — ${fmt(closest.targetAmount - closest.currentAmount)} to go.`, type: 'neutral' })
+      const remaining = fmt(closest.targetAmount - closest.currentAmount)
+      insights.push({
+        title: 'Closest Goal',
+        text: `${closest.name} is ${Math.round(closest.percentage || 0)}% funded — ${remaining} to go.`,
+        type: 'neutral',
+        actions: [
+          `You need ${remaining} more — at your current rate, is the timeline realistic?`,
+          'Set up automatic monthly contributions specifically for this goal.',
+          'Consider whether a higher-return investment makes sense for this goal\'s timeline.'
+        ],
+        chatSeed: `My closest goal "${closest.name}" is ${Math.round(closest.percentage || 0)}% funded with ${remaining} left to go. The monthly needed is ${fmt(closest.monthlyNeeded)}. Help me figure out the most efficient way to fully fund this goal.`
+      })
     }
   }
 
@@ -228,39 +351,181 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
   )
 }
 
+function InsightChatModal({ insight, profile, onClose }: { insight: Insight; profile: any; onClose: () => void }) {
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Auto-send the seed message on open
+    const seed = { role: 'user' as const, content: insight.chatSeed }
+    setMessages([seed])
+    setLoading(true)
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [seed], profile: profile || {}, topic: 'insights' })
+    })
+      .then(r => r.json())
+      .then(d => setMessages(prev => [...prev, { role: 'assistant', content: d.message || '' }]))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
+
+  const send = async () => {
+    if (!input.trim() || loading) return
+    const userMsg = { role: 'user' as const, content: input.trim() }
+    const next = [...messages, userMsg]
+    setMessages(next)
+    setInput('')
+    setLoading(true)
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next, profile: profile || {}, topic: 'insights' })
+      })
+      const d = await r.json()
+      setMessages(prev => [...prev, { role: 'assistant', content: d.message || '' }])
+    } catch {}
+    setLoading(false)
+  }
+
+  const typeColors = {
+    positive: { dot: 'var(--success)' },
+    neutral: { dot: 'var(--accent)' },
+    warning: { dot: 'var(--danger)' },
+  }
+  const dot = typeColors[insight.type].dot
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.5)', zIndex: 300, display: 'flex', alignItems: 'flex-end', padding: '0' }} onClick={onClose}>
+      <div style={{ background: 'var(--sand-50)', borderRadius: '20px 20px 0 0', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        {/* Handle + header */}
+        <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px', margin: '0 auto 16px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dot, flexShrink: 0 }} />
+            <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{insight.title}</p>
+            <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: '20px', color: 'var(--sand-400)', cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '8px' }}>
+          {messages.slice(1).map((msg, i) => (
+            <div key={i} style={{ display: 'flex', gap: '8px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+              {msg.role === 'assistant' && (
+                <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                  <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                </div>
+              )}
+              <div style={{ maxWidth: '82%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-100)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
+                <p style={{ fontSize: '13px', margin: 0, color: msg.role === 'user' ? 'var(--sand-50)' : 'var(--sand-800)', lineHeight: '1.55' }}>{msg.content}</p>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+              </div>
+              <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '16px 16px 16px 4px', padding: '12px 14px', display: 'flex', gap: '4px' }}>
+                {[0,150,300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div style={{ padding: '12px 20px 32px', borderTop: '0.5px solid var(--sand-200)', display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && send()}
+            placeholder="Ask a follow-up..."
+            style={{ flex: 1, borderRadius: '20px', fontSize: '14px' }}
+          />
+          <button onClick={send} disabled={!input.trim() || loading}
+            style={{ width: '40px', height: '40px', borderRadius: '50%', background: input.trim() ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: input.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={input.trim() ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InsightsStrip({ analysis, profile }: { analysis: Analysis; profile: any }) {
   const insights = generateInsights(analysis, profile)
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  const [chatInsight, setChatInsight] = useState<Insight | null>(null)
+
   const typeColors = {
-    positive: { bg: 'rgba(122,158,110,0.08)', border: 'rgba(122,158,110,0.2)', dot: 'var(--success)' },
-    neutral: { bg: 'var(--sand-200)', border: 'var(--sand-300)', dot: 'var(--accent)' },
-    warning: { bg: 'rgba(192,57,43,0.05)', border: 'rgba(192,57,43,0.15)', dot: 'var(--danger)' },
+    positive: { bg: 'rgba(122,158,110,0.08)', border: 'rgba(122,158,110,0.2)', dot: 'var(--success)', label: 'On track' },
+    neutral: { bg: 'var(--sand-50)', border: 'var(--sand-300)', dot: 'var(--accent)', label: 'Room to improve' },
+    warning: { bg: 'rgba(192,57,43,0.04)', border: 'rgba(192,57,43,0.18)', dot: 'var(--danger)', label: 'Needs attention' },
   }
 
   return (
-    <div className="animate-fade stagger-1" style={{ marginBottom: '12px' }}>
-      <p className="label" style={{ marginBottom: '8px' }}>Key Insights</p>
-      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
-        {insights.map((insight, i) => {
-          const c = typeColors[insight.type]
-          return (
-            <div key={i} style={{
-              background: c.bg,
-              border: `0.5px solid ${c.border}`,
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 14px',
-              minWidth: '220px',
-              maxWidth: '260px',
-              flexShrink: 0
-            }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.dot, marginTop: '5px', flexShrink: 0 }} />
-                <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)', margin: 0 }}>{insight.text}</p>
+    <>
+      <div className="animate-fade stagger-1" style={{ marginBottom: '12px' }}>
+        <p className="label" style={{ marginBottom: '8px' }}>Key Insights</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {insights.map((insight, i) => {
+            const c = typeColors[insight.type]
+            const isOpen = expandedIdx === i
+            return (
+              <div key={i} style={{ background: c.bg, border: `0.5px solid ${c.border}`, borderRadius: 'var(--radius-md)', overflow: 'hidden', transition: 'all 0.2s' }}>
+                {/* Header row — always visible */}
+                <button
+                  onClick={() => setExpandedIdx(isOpen ? null : i)}
+                  style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'flex-start', gap: '10px' }}
+                >
+                  <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: c.dot, marginTop: '5px', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: c.dot, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 2px' }}>{insight.title}</p>
+                    <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)', margin: 0 }}>{insight.text}</p>
+                  </div>
+                  <span style={{ fontSize: '12px', color: 'var(--sand-400)', flexShrink: 0, marginTop: '2px', transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                </button>
+
+                {/* Expanded content */}
+                {isOpen && (
+                  <div className="animate-fade" style={{ padding: '0 16px 14px', borderTop: `0.5px solid ${c.border}` }}>
+                    <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '12px 0 8px' }}>Next steps</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+                      {insight.actions.map((action, ai) => (
+                        <div key={ai} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                          <span style={{ color: c.dot, fontWeight: '700', fontSize: '13px', flexShrink: 0, marginTop: '1px' }}>·</span>
+                          <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>{action}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setChatInsight(insight)}
+                      style={{ background: c.dot, border: 'none', borderRadius: 'var(--radius-sm)', color: 'var(--sand-50)', fontSize: '12px', fontWeight: '600', padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      Chat about this →
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
-    </div>
+
+      {chatInsight && (
+        <InsightChatModal insight={chatInsight} profile={profile} onClose={() => setChatInsight(null)} />
+      )}
+    </>
   )
 }
 

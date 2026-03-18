@@ -404,6 +404,50 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
               ))}
             </div>
 
+            {/* Yearly Contributions per retirement account */}
+            {profile?.assets?.some((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0) && (
+              <div className="card" style={{ marginBottom: '16px' }}>
+                <p className="label" style={{ marginBottom: '12px' }}>Yearly contributions</p>
+                {profile.assets
+                  .filter((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0)
+                  .map((a: any, ai: number) => {
+                    const sorted = [...a.yearlyContributions].sort((x: any, y: any) => y.year - x.year)
+                    const total = sorted.reduce((s: number, c: any) => s + (c.amount || 0), 0)
+                    const currentYear = new Date().getFullYear()
+                    const thisYear = sorted.find((c: any) => c.year === currentYear)
+                    const limit = 7000
+                    const pct = thisYear ? Math.min(100, Math.round((thisYear.amount / limit) * 100)) : 0
+                    return (
+                      <div key={ai} style={{ marginBottom: ai < profile.assets.filter((x: any) => x.category === 'retirement' && x.yearlyContributions?.length > 0).length - 1 ? '16px' : 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                          <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)', margin: 0 }}>{a.name}</p>
+                          <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>Total: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(total)}</span>
+                        </div>
+                        {thisYear && (
+                          <div style={{ marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{currentYear} — {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(thisYear.amount)} of $7,000 limit</span>
+                              <span style={{ fontSize: '11px', fontWeight: '600', color: pct >= 100 ? 'var(--success)' : 'var(--accent)' }}>{pct}%</span>
+                            </div>
+                            <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
+                            </div>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {sorted.map((c: any, ci: number) => (
+                            <div key={ci} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: ci < sorted.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--sand-600)' }}>{c.year}</span>
+                              <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)' }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(c.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+
             {/* Account limits */}
             <div className="card-muted" style={{ marginBottom: '16px' }}>
               <p className="label" style={{ marginBottom: '10px' }}>2025 contribution limits</p>
