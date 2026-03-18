@@ -1,9 +1,44 @@
+const TRENDING_POOL = ['NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMZN', 'META', 'GOOGL', 'AMD', 'PLTR', 'COIN', 'MSTR', 'SMCI']
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { symbols, symbol, period, search } = req.query
+  const { symbols, symbol, period, search, trending } = req.query
 
   try {
+    // Trending movers
+    if (trending) {
+      const quotes = await Promise.all(
+        TRENDING_POOL.map(async (sym: string) => {
+          try {
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=1d&interval=1d`
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+            const data = await response.json()
+            const result = data?.chart?.result?.[0]
+            if (!result) return null
+            const meta = result.meta
+            const price = meta.regularMarketPrice
+            const prevClose = meta.previousClose || meta.chartPreviousClose
+            const change = price - prevClose
+            return {
+              symbol: sym,
+              name: meta.shortName || sym,
+              price: parseFloat(price?.toFixed(2)),
+              change: parseFloat(change?.toFixed(2)),
+              changePercent: ((change / prevClose) * 100).toFixed(2),
+              high: parseFloat(meta.regularMarketDayHigh?.toFixed(2)),
+              low: parseFloat(meta.regularMarketDayLow?.toFixed(2)),
+              volume: meta.regularMarketVolume || 0,
+            }
+          } catch { return null }
+        })
+      )
+      const valid = quotes.filter(Boolean).sort((a: any, b: any) => parseFloat(b.changePercent) - parseFloat(a.changePercent))
+      const gainers = valid.slice(0, 3)
+      const losers = [...valid].sort((a: any, b: any) => parseFloat(a.changePercent) - parseFloat(b.changePercent)).slice(0, 3)
+      return res.json({ gainers, losers })
+    }
+
     // Search for any stock, ETF, or mutual fund
     if (search) {
       const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(search as string)}&lang=en-US&region=US&quotesCount=8&newsCount=0`
@@ -92,7 +127,9 @@ export default async function handler(req: any, res: any) {
               changePercent: ((change / prevClose) * 100).toFixed(2),
               high: parseFloat(meta.regularMarketDayHigh?.toFixed(2)),
               low: parseFloat(meta.regularMarketDayLow?.toFixed(2)),
-              volume: meta.regularMarketVolume || 0
+              volume: meta.regularMarketVolume || 0,
+              fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ? parseFloat(meta.fiftyTwoWeekHigh.toFixed(2)) : undefined,
+              fiftyTwoWeekLow: meta.fiftyTwoWeekLow ? parseFloat(meta.fiftyTwoWeekLow.toFixed(2)) : undefined,
             }
           } catch {
             return null
