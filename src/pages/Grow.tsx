@@ -446,6 +446,13 @@ export default function Grow() {
   const [showAllIdeas, setShowAllIdeas] = useState(false)
   const [expandedIdea, setExpandedIdea] = useState<string | null>(null)
 
+  // Global search
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [globalResults, setGlobalResults] = useState<SearchResult[]>([])
+  const [globalSearching, setGlobalSearching] = useState(false)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const globalSearchTimeout = useRef<any>(null)
+
   // New state
   const [trendingGainers, setTrendingGainers] = useState<StockQuote[]>([])
   const [trendingLosers, setTrendingLosers] = useState<StockQuote[]>([])
@@ -632,6 +639,34 @@ export default function Grow() {
     }, 400)
   }
 
+  const handleGlobalSearch = (value: string) => {
+    setGlobalSearch(value)
+    clearTimeout(globalSearchTimeout.current)
+    if (!value.trim()) { setGlobalResults([]); setGlobalSearchOpen(false); return }
+    setGlobalSearchOpen(true)
+    globalSearchTimeout.current = setTimeout(async () => {
+      setGlobalSearching(true)
+      try {
+        const res = await fetch(`/api/stocks?search=${encodeURIComponent(value)}`)
+        const data = await res.json()
+        setGlobalResults(data.results || [])
+      } catch { }
+      setGlobalSearching(false)
+    }, 350)
+  }
+
+  const openSearchResult = async (symbol: string) => {
+    setGlobalSearch('')
+    setGlobalResults([])
+    setGlobalSearchOpen(false)
+    try {
+      const res = await fetch(`/api/stocks?symbols=${symbol}`)
+      const data = await res.json()
+      const quote = data.quotes?.[0]
+      if (quote) setSelectedStock(quote)
+    } catch { }
+  }
+
   const addToWatchlist = async (symbol: string) => {
     const upper = symbol.toUpperCase().trim()
     if (!upper || watchlist.includes(upper)) return
@@ -725,12 +760,46 @@ export default function Grow() {
   const displayedArticles = activeSection === 'saved' ? bookmarks : articles
 
   return (
-    <div className="page" style={{ paddingTop: '0' }} onClick={() => setActiveCardSymbol(null)}>
+    <div className="page" style={{ paddingTop: '0' }} onClick={() => { setActiveCardSymbol(null); setGlobalSearchOpen(false) }}>
 
       {/* Header */}
-      <div style={{ padding: '52px 0 16px' }}>
+      <div style={{ padding: '52px 0 12px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-0.5px' }}>Grow</h1>
         <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Income ideas, markets & news</p>
+      </div>
+
+      {/* Global Search Bar */}
+      <div style={{ marginBottom: '16px', position: 'relative' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: 'var(--sand-400)', pointerEvents: 'none' }}>🔍</span>
+          <input
+            value={globalSearch}
+            onChange={e => handleGlobalSearch(e.target.value)}
+            onFocus={() => globalSearch.trim() && setGlobalSearchOpen(true)}
+            placeholder="Search stocks, ETFs, crypto..."
+            style={{ width: '100%', paddingLeft: '36px', paddingRight: globalSearch ? '36px' : '12px', boxSizing: 'border-box' }}
+          />
+          {globalSearch && (
+            <button
+              onClick={() => { setGlobalSearch(''); setGlobalResults([]); setGlobalSearchOpen(false) }}
+              style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'var(--sand-300)', border: 'none', borderRadius: '50%', width: '18px', height: '18px', cursor: 'pointer', fontSize: '11px', color: 'var(--sand-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+              ×
+            </button>
+          )}
+        </div>
+        {globalSearchOpen && (globalResults.length > 0 || globalSearching) && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', overflow: 'hidden', zIndex: 30, marginTop: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
+            {globalSearching ? (
+              <div style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--sand-500)' }}>Searching...</div>
+            ) : globalResults.map(r => (
+              <button key={r.symbol} onClick={() => openSearchResult(r.symbol)}
+                style={{ width: '100%', padding: '11px 16px', background: 'none', border: 'none', borderBottom: '0.5px solid var(--sand-200)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'inherit' }}>
+                <span style={{ fontWeight: '700', fontSize: '14px', color: 'var(--sand-900)' }}>{r.symbol}</span>
+                <span style={{ fontSize: '12px', color: 'var(--sand-500)', maxWidth: '65%', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Market Snapshot Bar */}
@@ -761,28 +830,41 @@ export default function Grow() {
         </div>
       </div>
 
-      {/* Trending Movers */}
-      {(trendingGainers.length > 0 || trendingLosers.length > 0) && (
-        <div className="animate-fade" style={{ marginBottom: '20px' }}>
-          <p className="label" style={{ marginBottom: '8px' }}>Movers Today</p>
-          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
-            {[...trendingGainers, ...trendingLosers].map(stock => {
-              const isPos = stock.change >= 0
-              return (
-                <button
-                  key={stock.symbol}
-                  onClick={() => setSelectedStock(stock)}
-                  style={{ flexShrink: 0, background: isPos ? 'rgba(122,158,110,0.08)' : 'rgba(192,57,43,0.06)', border: `0.5px solid ${isPos ? 'rgba(122,158,110,0.25)' : 'rgba(192,57,43,0.2)'}`, borderRadius: 'var(--radius-sm)', padding: '8px 12px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', minWidth: '90px' }}>
-                  <p style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-700)', margin: '0 0 3px', letterSpacing: '0.03em' }}>{stock.symbol}</p>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>
-                    {isPos ? '+' : ''}{parseFloat(stock.changePercent).toFixed(2)}%
-                  </p>
-                </button>
-              )
-            })}
+      {/* Biggest Movers Ticker Tape */}
+      {(trendingGainers.length > 0 || trendingLosers.length > 0) && (() => {
+        const allMovers = [...trendingGainers, ...trendingLosers]
+        // Duplicate for seamless loop
+        const tickerItems = [...allMovers, ...allMovers]
+        const duration = allMovers.length * 2.5
+        return (
+          <div style={{ margin: '0 -16px', marginBottom: '20px', overflow: 'hidden', borderTop: '0.5px solid var(--sand-200)', borderBottom: '0.5px solid var(--sand-200)', background: 'var(--sand-100)' }}>
+            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+              <div style={{ flexShrink: 0, padding: '7px 12px', borderRight: '0.5px solid var(--sand-200)', background: 'var(--sand-200)', display: 'flex', alignItems: 'center' }}>
+                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>MOVERS</p>
+              </div>
+              <div style={{ overflow: 'hidden', flex: 1 }}>
+                <div style={{ display: 'flex', animation: `tickerScroll ${duration}s linear infinite`, width: 'max-content' }}>
+                  {tickerItems.map((stock, idx) => {
+                    const isPos = stock.change >= 0
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setSelectedStock(stock)}
+                        style={{ flexShrink: 0, padding: '7px 16px', background: 'none', border: 'none', borderRight: '0.5px solid var(--sand-200)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-800)', letterSpacing: '0.02em' }}>{stock.symbol}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: isPos ? 'var(--success)' : 'var(--danger)' }}>
+                          {isPos ? '▲' : '▼'} {isPos ? '+' : ''}{parseFloat(stock.changePercent).toFixed(2)}%
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>${stock.price?.toFixed(2)}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Watchlist */}
       {isVisible('watchlist') && (
