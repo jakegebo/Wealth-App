@@ -86,7 +86,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     if ('income_ideas' in updates) setIncomeIdeas(updates.income_ideas)
     if ('goal_advice' in updates) setGoalAdvice(updates.goal_advice)
     if (!userId) return
-    await supabase.from('profiles').update(updates).eq('user_id', userId)
+    const { error } = await supabase.from('profiles').upsert({ user_id: userId, ...updates }, { onConflict: 'user_id' })
+    if (error) console.error('Failed to save profile:', error)
   }
 
   return (

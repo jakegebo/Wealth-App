@@ -75,15 +75,15 @@ export default function Retirement() {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (profile?.retirement_plan && !plan) {
+    if (profile?.retirement_plan) {
       setPlan(profile.retirement_plan)
       setBuilt(true)
       setCurrentAge(profile.retirement_plan.currentAge || profile.age || 23)
       setTargetAge(profile.retirement_plan.targetAge || 52)
-    } else if (profile?.age && !currentAge) {
+    } else if (profile?.age) {
       setCurrentAge(profile.age)
     }
-  }, [profile])
+  }, [profile?.retirement_plan, profile?.age])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
   const buildPlan = async () => {
