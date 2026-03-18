@@ -194,12 +194,35 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Edit Finances */}
+        <div>
+          <p className="label" style={{ marginBottom: '4px' }}>Edit Finances</p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '12px' }}>Update any section of your financial profile</p>
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            {[
+              { label: 'Income & Expenses', sub: 'Monthly cash flow', step: 0 },
+              { label: 'Assets', sub: 'Accounts, investments & property', step: 1 },
+              { label: 'Debts', sub: 'Loans, cards & balances', step: 2 },
+              { label: 'Goals', sub: 'Savings targets & timelines', step: 3 },
+              { label: 'Additional Context', sub: 'Notes for your AI advisor', step: 4 },
+            ].map((item, i, arr) => (
+              <button key={i} onClick={() => navigate(`/onboarding?step=${item.step}&from=settings`)}
+                style={{ background: 'none', border: 'none', borderBottom: i < arr.length - 1 ? '0.5px solid var(--sand-200)' : 'none', padding: '12px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                <div>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>{item.label}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{item.sub}</p>
+                </div>
+                <span style={{ color: 'var(--sand-400)', flexShrink: 0 }}>→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Account */}
         <div>
           <p className="label" style={{ marginBottom: '12px' }}>Account</p>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
             {[
-              { label: 'Edit financial profile', action: () => navigate('/onboarding') },
               { label: 'View all chats', action: () => navigate('/chats') },
               { label: 'Retirement planner', action: () => navigate('/retirement') },
             ].map((item, i, arr) => (

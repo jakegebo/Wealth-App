@@ -700,6 +700,9 @@ export default function Home() {
   const [analysisError, setAnalysisError] = useState(false)
   const [milestone, setMilestone] = useState<number | null>(null)
   const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null)
+  const [editingGoalIdx, setEditingGoalIdx] = useState<number | null>(null)
+  const [goalInputVal, setGoalInputVal] = useState('')
+  const [savingGoal, setSavingGoal] = useState(false)
 
   useEffect(() => {
     if (profileLoading) return
@@ -816,6 +819,21 @@ export default function Home() {
     } else if (error) {
       navigate('/chats')
     }
+  }
+
+  const saveGoalProgress = async (idx: number) => {
+    if (!profile) return
+    const val = parseFloat(goalInputVal)
+    if (isNaN(val)) { setEditingGoalIdx(null); return }
+    setSavingGoal(true)
+    const updatedGoals = profile.goals.map((g: any, i: number) =>
+      i === idx ? { ...g, current_amount: val } : g
+    )
+    const updatedProfile = { ...profile, goals: updatedGoals }
+    await updateProfile({ profile_data: updatedProfile })
+    await runAnalysis(updatedProfile)
+    setSavingGoal(false)
+    setEditingGoalIdx(null)
   }
 
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
@@ -991,6 +1009,70 @@ export default function Home() {
                     <p style={{ fontSize: '14px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>${stock.price?.toFixed(2)}</p>
                     <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
                   </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Goals */}
+      {isVisible('goals') && (profile?.goals?.length || 0) > 0 && (
+        <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <p className="label">Goals</p>
+            <button className="btn-ghost" onClick={() => navigate('/onboarding?step=3&from=settings')} style={{ fontSize: '11px', padding: '3px 8px' }}>Edit →</button>
+          </div>
+          <div className="card" style={{ padding: '4px 0' }}>
+            {profile.goals.map((goal: any, i: number) => {
+              const pct = Math.min(100, goal.target_amount > 0 ? Math.round((goal.current_amount / goal.target_amount) * 100) : 0)
+              const isEditing = editingGoalIdx === i
+              return (
+                <div key={i} style={{ padding: '14px 18px', borderBottom: i < profile.goals.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 1px' }}>{goal.name}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{goal.timeline}</p>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: pct >= 100 ? 'var(--success)' : 'var(--sand-900)', margin: '0 0 1px' }}>{pct}%</p>
+                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
+                        {fmt(goal.current_amount)} / {fmt(goal.target_amount)}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: '10px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                  </div>
+                  {isEditing ? (
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <div style={{ position: 'relative', flex: 1 }}>
+                        <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--sand-600)' }}>$</span>
+                        <input
+                          autoFocus
+                          type="number"
+                          value={goalInputVal}
+                          onChange={e => setGoalInputVal(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveGoalProgress(i); if (e.key === 'Escape') setEditingGoalIdx(null) }}
+                          placeholder={goal.current_amount.toString()}
+                          style={{ width: '100%', paddingLeft: '22px', paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', fontSize: '13px', background: 'var(--sand-200)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', color: 'var(--sand-900)', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <button onClick={() => saveGoalProgress(i)} disabled={savingGoal} className="btn-primary" style={{ padding: '7px 14px', fontSize: '12px', flexShrink: 0 }}>
+                        {savingGoal ? '...' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditingGoalIdx(null)} className="btn-ghost" style={{ padding: '7px 10px', fontSize: '12px', flexShrink: 0 }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingGoalIdx(i); setGoalInputVal(goal.current_amount?.toString() || '0') }}
+                      className="btn-ghost"
+                      style={{ fontSize: '11px', padding: '4px 10px', width: '100%', textAlign: 'center' }}>
+                      Update progress
+                    </button>
+                  )}
                 </div>
               )
             })}

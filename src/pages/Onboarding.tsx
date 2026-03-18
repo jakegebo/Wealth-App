@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
 
@@ -34,8 +34,13 @@ const ASSET_CATEGORIES = ['retirement', 'investment', 'savings', 'real_estate', 
 
 export default function Onboarding() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const fromSettings = searchParams.get('from') === 'settings'
   const { updateProfile } = useProfile()
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(() => {
+    const s = parseInt(searchParams.get('step') || '0')
+    return isNaN(s) ? 0 : Math.max(0, Math.min(s, 4))
+  })
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -140,7 +145,7 @@ export default function Onboarding() {
 
     await updateProfile({ profile_data: profileData })
     setSaving(false)
-    navigate('/dashboard')
+    navigate(fromSettings ? '/settings' : '/dashboard')
   }
 
   const steps = [
@@ -181,15 +186,25 @@ export default function Onboarding() {
               </div>
               <span style={{ fontWeight: '600', fontSize: '15px', color: 'var(--sand-900)' }}>WealthApp</span>
             </div>
-            {step > 0 && (
-              <button onClick={() => setStep(s => s - 1)} className="btn-ghost" style={{ fontSize: '13px' }}>← Back</button>
-            )}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {fromSettings && (
+                <button onClick={() => navigate('/settings')} className="btn-ghost" style={{ fontSize: '13px' }}>Cancel</button>
+              )}
+              {step > 0 && (
+                <button onClick={() => setStep(s => s - 1)} className="btn-ghost" style={{ fontSize: '13px' }}>← Back</button>
+              )}
+            </div>
           </div>
 
-          {/* Progress */}
+          {/* Progress — clickable to jump between sections */}
           <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-            {steps.map((_, i) => (
-              <div key={i} style={{ flex: 1, height: '3px', borderRadius: '2px', background: i <= step ? 'var(--accent)' : 'var(--sand-300)', transition: 'background 0.3s' }} />
+            {steps.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => setStep(i)}
+                title={s.title}
+                style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= step ? 'var(--accent)' : 'var(--sand-300)', transition: 'background 0.3s', border: 'none', cursor: 'pointer', padding: 0 }}
+              />
             ))}
           </div>
           <div>
@@ -260,6 +275,11 @@ export default function Onboarding() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <input placeholder="Account name (e.g. Roth IRA)" value={asset.name} onChange={e => updateAsset(i, 'name', e.target.value)} style={inputStyle} />
+                    {asset.category === 'retirement' && (
+                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '-4px 0 2px', lineHeight: '1.5' }}>
+                        Include account type in the name for limit tracking — e.g. "Roth IRA", "401k", "HSA", "SEP-IRA"
+                      </p>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <select value={asset.category} onChange={e => updateAsset(i, 'category', e.target.value)} style={selectStyle}>
                         {ASSET_CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
@@ -434,7 +454,7 @@ export default function Onboarding() {
                   <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   Saving...
                 </>
-              ) : 'Build my plan →'}
+              ) : (fromSettings ? 'Save changes →' : 'Build my plan →')}
             </button>
           )}
         </div>

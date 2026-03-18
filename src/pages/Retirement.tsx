@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
+import { detectAccountLimit, getContributionStatus } from '../lib/retirementLimits'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -405,66 +406,117 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
             </div>
 
             {/* Yearly Contributions per retirement account */}
-            {profile?.assets?.some((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0) && (
-              <div className="card" style={{ marginBottom: '16px' }}>
-                <p className="label" style={{ marginBottom: '12px' }}>Yearly contributions</p>
-                {profile.assets
-                  .filter((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0)
-                  .map((a: any, ai: number) => {
+            {profile?.assets?.some((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0) && (() => {
+              const currentYear = new Date().getFullYear()
+              const fmt$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+              const retirementAssets = profile.assets.filter((a: any) => a.category === 'retirement' && a.yearlyContributions?.length > 0)
+              const allStatuses = getContributionStatus(profile.assets, profile.age)
+              const allMaxed = allStatuses.length > 0 && allStatuses.every(s => s.maxed)
+              return (
+                <div className="card" style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <p className="label" style={{ margin: 0 }}>Yearly contributions</p>
+                    {allMaxed && (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.12)', border: '0.5px solid var(--success)', borderRadius: '20px', padding: '3px 10px', letterSpacing: '0.02em' }}>
+                        All accounts maxed ✓
+                      </span>
+                    )}
+                  </div>
+                  {retirementAssets.map((a: any, ai: number) => {
                     const sorted = [...a.yearlyContributions].sort((x: any, y: any) => y.year - x.year)
                     const total = sorted.reduce((s: number, c: any) => s + (c.amount || 0), 0)
-                    const currentYear = new Date().getFullYear()
                     const thisYear = sorted.find((c: any) => c.year === currentYear)
-                    const limit = 7000
-                    const pct = thisYear ? Math.min(100, Math.round((thisYear.amount / limit) * 100)) : 0
+                    const det = detectAccountLimit(a.name, profile.age)
+                    const limit = det?.limit ?? null
+                    const accountType = det?.accountType ?? null
+                    const contributed = thisYear?.amount || 0
+                    const pct = limit && thisYear ? Math.min(100, Math.round((contributed / limit) * 100)) : 0
+                    const maxed = !!limit && contributed >= limit
+                    const remaining = limit ? Math.max(0, limit - contributed) : null
                     return (
-                      <div key={ai} style={{ marginBottom: ai < profile.assets.filter((x: any) => x.category === 'retirement' && x.yearlyContributions?.length > 0).length - 1 ? '16px' : 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                          <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)', margin: 0 }}>{a.name}</p>
-                          <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>Total: {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(total)}</span>
+                      <div key={ai} style={{ marginBottom: ai < retirementAssets.length - 1 ? '20px' : 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <div>
+                            <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)', margin: '0 0 1px' }}>{a.name}</p>
+                            {accountType && <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>{accountType}</p>}
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            {maxed ? (
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--success)' }}>Maxed ✓</span>
+                            ) : limit && thisYear ? (
+                              <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{fmt$(remaining!)} left</span>
+                            ) : null}
+                          </div>
                         </div>
-                        {thisYear && (
+                        {thisYear && limit && (
                           <div style={{ marginBottom: '8px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{currentYear} — {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(thisYear.amount)} of $7,000 limit</span>
-                              <span style={{ fontSize: '11px', fontWeight: '600', color: pct >= 100 ? 'var(--success)' : 'var(--accent)' }}>{pct}%</span>
+                              <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>
+                                {currentYear} — {fmt$(contributed)} of {fmt$(limit)} limit
+                              </span>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: maxed ? 'var(--success)' : 'var(--accent)' }}>{pct}%</span>
                             </div>
-                            <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
+                            <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: maxed ? 'var(--success)' : 'var(--accent)', borderRadius: '3px', transition: 'width 0.3s' }} />
                             </div>
                           </div>
                         )}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                           {sorted.map((c: any, ci: number) => (
-                            <div key={ci} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: ci < sorted.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                            <div key={ci} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: ci < sorted.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
                               <span style={{ fontSize: '12px', color: 'var(--sand-600)' }}>{c.year}</span>
-                              <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)' }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(c.amount)}</span>
+                              <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)' }}>{fmt$(c.amount)}</span>
                             </div>
                           ))}
+                        </div>
+                        {!limit && thisYear && (
+                          <p style={{ fontSize: '11px', color: 'var(--sand-400)', marginTop: '6px' }}>
+                            Add account type to name (e.g. "401k", "Roth IRA") to see limit progress
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
+            {/* Account limits */}
+            {(() => {
+              const statuses = getContributionStatus(profile?.assets || [], profile?.age)
+              const maxedAccounts = statuses.filter(s => s.maxed).map(s => s.account)
+              const catchUp = profile?.age >= 50
+              const limits = [
+                { label: 'Roth / Traditional IRA', limit: catchUp ? '$8,000/yr' : '$7,000/yr', monthly: catchUp ? '$667/mo' : '$583/mo', keywords: ['roth', 'ira', 'traditional'] },
+                { label: '401(k) / 403(b) / 457(b)', limit: catchUp ? '$31,000/yr' : '$23,500/yr', monthly: catchUp ? '$2,583/mo' : '$1,958/mo', keywords: ['401', '403', '457'] },
+                { label: 'HSA (individual)', limit: '$4,300/yr', monthly: '$358/mo', keywords: ['hsa'] },
+                { label: 'SIMPLE IRA', limit: catchUp ? '$20,000/yr' : '$16,500/yr', monthly: catchUp ? '$1,667/mo' : '$1,375/mo', keywords: ['simple'] },
+                { label: 'SEP-IRA', limit: '$70,000/yr', monthly: 'varies', keywords: ['sep'] },
+              ]
+              const accountNames = (profile?.assets || []).filter((a: any) => a.category === 'retirement').map((a: any) => a.name.toLowerCase())
+              const hasAccount = (keywords: string[]) => accountNames.some((n: string) => keywords.some(k => n.includes(k)))
+              return (
+                <div className="card-muted" style={{ marginBottom: '16px' }}>
+                  <p className="label" style={{ marginBottom: '10px' }}>2025 contribution limits{catchUp ? ' (catch-up eligible)' : ''}</p>
+                  {limits.map((item, i) => {
+                    const owned = hasAccount(item.keywords)
+                    const maxed = owned && statuses.filter(s => item.keywords.some(k => s.account.toLowerCase().includes(k))).every(s => s.maxed) && statuses.some(s => item.keywords.some(k => s.account.toLowerCase().includes(k)))
+                    return (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < limits.length - 1 ? '0.5px solid var(--sand-300)' : 'none', opacity: owned ? 1 : 0.55 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-800)' }}>{item.label}</span>
+                          {maxed && <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--success)' }}>✓</span>}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: maxed ? 'var(--success)' : 'var(--sand-900)' }}>{item.limit}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--sand-500)', marginLeft: '6px' }}>{item.monthly}</span>
                         </div>
                       </div>
                     )
                   })}
-              </div>
-            )}
-
-            {/* Account limits */}
-            <div className="card-muted" style={{ marginBottom: '16px' }}>
-              <p className="label" style={{ marginBottom: '10px' }}>2025 contribution limits</p>
-              {[
-                { label: 'Roth IRA', limit: '$7,000/yr', monthly: '$583/mo' },
-                { label: '401(k)', limit: '$23,500/yr', monthly: '$1,958/mo' },
-                { label: 'HSA (individual)', limit: '$4,300/yr', monthly: '$358/mo' },
-              ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? '0.5px solid var(--sand-300)' : 'none' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-800)' }}>{item.label}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{item.limit}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--sand-500)', marginLeft: '6px' }}>{item.monthly}</span>
-                  </div>
                 </div>
-              ))}
-            </div>
+              )
+            })()}
 
             <button onClick={() => setActiveTab('projections')} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '14px', borderRadius: 'var(--radius-md)' }}>
               View projections →

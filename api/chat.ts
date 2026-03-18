@@ -2,6 +2,36 @@ import Groq from 'groq-sdk'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
+// 2025 IRS contribution limits — infer from account name
+function detectLimit(name: string, age?: number): { limit: number; accountType: string } | null {
+  const n = name.toLowerCase()
+  const over50 = typeof age === 'number' && age >= 50
+  if (/401\s*k|403\s*b|457\s*b/.test(n)) return { limit: over50 ? 31000 : 23500, accountType: over50 ? '401(k) + catch-up' : '401(k)' }
+  if (/simple/.test(n)) return { limit: over50 ? 20000 : 16500, accountType: 'SIMPLE IRA' }
+  if (/sep/.test(n)) return { limit: 70000, accountType: 'SEP-IRA' }
+  if (/\bhsa\b/.test(n)) return { limit: /family|fam/.test(n) ? 8550 : 4300, accountType: /family|fam/.test(n) ? 'HSA (family)' : 'HSA (individual)' }
+  if (/roth|traditional|\bira\b/.test(n)) return { limit: over50 ? 8000 : 7000, accountType: over50 ? 'IRA + catch-up' : 'IRA' }
+  return null
+}
+
+function buildContributionSummary(assets: any[], age?: number): string {
+  const year = new Date().getFullYear()
+  const items: string[] = []
+  for (const a of assets ?? []) {
+    if (a.category !== 'retirement' || !a.yearlyContributions?.length) continue
+    const thisYear = a.yearlyContributions.find((c: any) => c.year === year)
+    if (!thisYear) continue
+    const det = detectLimit(a.name, age)
+    if (!det) continue
+    const contributed = thisYear.amount || 0
+    const pct = Math.min(100, Math.round((contributed / det.limit) * 100))
+    const maxed = contributed >= det.limit
+    const remaining = Math.max(0, det.limit - contributed)
+    items.push(`${a.name} (${det.accountType}): $${contributed.toLocaleString()} / $${det.limit.toLocaleString()} — ${pct}%${maxed ? ' MAXED ✓' : ` ($${remaining.toLocaleString()} left)`}`)
+  }
+  return items.length ? items.join(' | ') : 'none recorded'
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -14,6 +44,7 @@ export default async function handler(req: any, res: any) {
     const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
     const savingsRate = profile?.monthly_income > 0 ? ((availableToSave / profile.monthly_income) * 100).toFixed(1) : '0'
     const highestDebt = profile?.debts?.sort((a: any, b: any) => b.interest_rate - a.interest_rate)?.[0]
+    const contributionSummary = buildContributionSummary(profile?.assets, profile?.age)
 
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
@@ -38,21 +69,23 @@ YOUR CLIENT'S COMPLETE FINANCIAL PROFILE:
 - Debts: ${profile?.debts?.map((d: any) => `${d.name}: $${(d.balance || 0).toLocaleString()} @ ${d.interest_rate}% APR`).join(' | ') || 'none'}${highestDebt ? ` — highest rate: ${highestDebt.name} at ${highestDebt.interest_rate}%` : ''}
 - Goals: ${profile?.goals?.map((g: any) => `${g.name}: $${(g.current_amount || 0).toLocaleString()} / $${(g.target_amount || 0).toLocaleString()} (${g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0}%)`).join(' | ') || 'none'}
 - Retirement Plan: ${profile?.retirement_plan ? `Target age ${profile.retirement_plan.targetAge}, projected $${Math.round(profile.retirement_plan.projectedNestEgg || 0).toLocaleString()}, ${profile.retirement_plan.onTrack ? 'ON TRACK' : 'BEHIND TARGET'}` : 'not set up'}
+- Retirement contributions (${new Date().getFullYear()}): ${contributionSummary}
 - Additional context: ${profile?.additional_context || 'none provided'}
 - Topic focus: ${topic || 'general financial advice'}
 
 YOUR COMMUNICATION STYLE:
 1. Always use THEIR ACTUAL NUMBERS — never say "your income" when you can say "$8,500/month"
 2. Be direct, specific, and decisive. Say "Put $2,000/month into FXAIX" not "consider investing more"
-3. Reference current 2025 conditions: Fed funds rate ~4.25-4.5%, S&P 500 historical ~10% nominal return, 2025 401k limit $23,500, IRA limit $7,000, HSA $4,300
-4. For investments: recommend specific funds/ETFs with tickers (FXAIX, VTI, VXUS, BND, etc.)
-5. For debt: always calculate and state exact payoff timelines with their numbers
-6. Structure longer responses with **Bold Headers**
-7. Use numbered lists for step-by-step action plans
-8. Use - bullet points for lists
-9. End every response with a "**Your move today:**" section — one specific action they can take right now
-10. If you give a ratio or allocation, always translate it to their actual dollar amounts
-11. Be honest about risk and tradeoffs — don't sugarcoat
+3. Reference current 2025 conditions: Fed funds rate ~4.25-4.5%, S&P 500 historical ~10% nominal return, 2025 401k limit $23,500 (catch-up $31,000 at 50+), IRA limit $7,000 (catch-up $8,000 at 50+), HSA $4,300 individual / $8,550 family
+4. IMPORTANT: If a retirement account shows MAXED ✓ in their profile, NEVER suggest contributing more to it. If all their retirement accounts are maxed, acknowledge this achievement and shift advice to taxable brokerage investing, debt payoff, or other goals.
+5. For investments: recommend specific funds/ETFs with tickers (FXAIX, VTI, VXUS, BND, etc.)
+6. For debt: always calculate and state exact payoff timelines with their numbers
+7. Structure longer responses with **Bold Headers**
+8. Use numbered lists for step-by-step action plans
+9. Use - bullet points for lists
+10. End every response with a "**Your move today:**" section — one specific action they can take right now
+11. If you give a ratio or allocation, always translate it to their actual dollar amounts
+12. Be honest about risk and tradeoffs — don't sugarcoat
 
 FORMATTING RULES:
 - **Bold** for section headers and key terms

@@ -432,6 +432,7 @@ export default function Grow() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showSearch, setShowSearch] = useState(false)
+  const [watchlistExpanded, setWatchlistExpanded] = useState(false)
   const [searching, setSearching] = useState(false)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
@@ -469,6 +470,9 @@ export default function Grow() {
   const searchTimeout = useRef<any>(null)
   const longPressTimer = useRef<any>(null)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const dragInfo = useRef<{ symbol: string; startX: number; originalOrder: StockQuote[]; currentIndex: number } | null>(null)
+  const dragOrderRef = useRef<StockQuote[] | null>(null)
+  const [dragOrder, setDragOrder] = useState<StockQuote[] | null>(null)
 
   // Load localStorage state
   useEffect(() => {
@@ -703,17 +707,57 @@ export default function Grow() {
 
   const handleCardPointerDown = (e: React.PointerEvent, symbol: string) => {
     pointerDownPos.current = { x: e.clientX, y: e.clientY }
-    longPressTimer.current = setTimeout(() => setActiveCardSymbol(symbol), 500)
+    longPressTimer.current = setTimeout(() => {
+      setActiveCardSymbol(symbol)
+      const idx = stocks.findIndex(s => s.symbol === symbol)
+      const originalOrder = [...stocks]
+      dragInfo.current = { symbol, startX: e.clientX, originalOrder, currentIndex: idx }
+      dragOrderRef.current = originalOrder
+      setDragOrder(originalOrder)
+    }, 500)
   }
 
   const handleCardPointerMove = (e: React.PointerEvent) => {
     if (!pointerDownPos.current) return
-    const dx = Math.abs(e.clientX - pointerDownPos.current.x)
+    const dx = e.clientX - pointerDownPos.current.x
     const dy = Math.abs(e.clientY - pointerDownPos.current.y)
-    if (dx > 8 || dy > 8) { clearTimeout(longPressTimer.current); pointerDownPos.current = null }
+    if (!dragInfo.current && (Math.abs(dx) > 8 || dy > 8)) {
+      clearTimeout(longPressTimer.current)
+      pointerDownPos.current = null
+      return
+    }
+    if (dragInfo.current) {
+      const { symbol, startX, originalOrder } = dragInfo.current
+      const CARD_WIDTH = 140
+      const shift = Math.round((e.clientX - startX) / CARD_WIDTH)
+      const origIdx = originalOrder.findIndex(s => s.symbol === symbol)
+      const newIdx = Math.max(0, Math.min(originalOrder.length - 1, origIdx + shift))
+      if (newIdx !== dragInfo.current.currentIndex) {
+        dragInfo.current.currentIndex = newIdx
+        const arr = [...originalOrder]
+        const [item] = arr.splice(origIdx, 1)
+        arr.splice(newIdx, 0, item)
+        dragOrderRef.current = arr
+        setDragOrder(arr)
+      }
+    }
   }
 
-  const handleCardPointerUp = () => { clearTimeout(longPressTimer.current); pointerDownPos.current = null }
+  const handleCardPointerUp = async () => {
+    clearTimeout(longPressTimer.current)
+    pointerDownPos.current = null
+    if (dragInfo.current) {
+      const finalOrder = dragOrderRef.current
+      dragInfo.current = null
+      dragOrderRef.current = null
+      setDragOrder(null)
+      setActiveCardSymbol(null)
+      if (finalOrder) {
+        setStocks(finalOrder)
+        await updateProfile({ watchlist: finalOrder.map(s => s.symbol) })
+      }
+    }
+  }
 
   const savePriceAlert = (symbol: string, price: number | null) => {
     const key = userId || 'guest'
@@ -802,40 +846,12 @@ export default function Grow() {
         )}
       </div>
 
-      {/* Market Snapshot Bar */}
-      <div style={{ margin: '0 -16px', borderBottom: '0.5px solid var(--sand-200)', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', overflowX: 'auto', padding: '0 16px 12px' }}>
-          {marketSnap.length === 0 ? (
-            SNAP_SYMBOLS.map(sym => (
-              <div key={sym} style={{ flexShrink: 0, padding: '8px 16px', borderRight: '0.5px solid var(--sand-200)' }}>
-                <p style={{ fontSize: '10px', fontWeight: '600', color: 'var(--sand-500)', margin: '0 0 4px' }}>{sym}</p>
-                <div style={{ width: '48px', height: '13px', background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '4px', animation: 'pulse 1.5s infinite' }} />
-                <div style={{ width: '32px', height: '10px', background: 'var(--sand-200)', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
-              </div>
-            ))
-          ) : marketSnap.map((s, i) => {
-            const isPos = s.change >= 0
-            return (
-              <div key={s.symbol} style={{ flexShrink: 0, padding: '8px 16px', borderRight: '0.5px solid var(--sand-200)' }}>
-                <p style={{ fontSize: '10px', fontWeight: '600', color: 'var(--sand-500)', margin: '0 0 2px', letterSpacing: '0.04em' }}>{s.symbol}</p>
-                <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px', animation: snapCounted ? 'none' : 'countUp 0.35s ease forwards', animationDelay: snapCounted ? '0s' : `${i * 0.08}s` }}>
-                  ${s.price?.toFixed(2)}
-                </p>
-                <p style={{ fontSize: '10px', fontWeight: '500', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>
-                  {isPos ? '+' : ''}{parseFloat(s.changePercent)?.toFixed(2)}%
-                </p>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
       {/* Biggest Movers Ticker Tape */}
       {(trendingGainers.length > 0 || trendingLosers.length > 0) && (() => {
         const allMovers = [...trendingGainers, ...trendingLosers]
         // Duplicate for seamless loop
         const tickerItems = [...allMovers, ...allMovers]
-        const duration = allMovers.length * 2.5
+        const duration = allMovers.length * 4
         return (
           <div style={{ margin: '0 -16px', marginBottom: '20px', overflow: 'hidden', borderTop: '0.5px solid var(--sand-200)', borderBottom: '0.5px solid var(--sand-200)', background: 'var(--sand-100)' }}>
             <div style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -871,9 +887,16 @@ export default function Grow() {
         <div className="animate-fade" style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <p className="label">Watchlist</p>
-            <button className="btn-ghost" onClick={e => { e.stopPropagation(); setShowSearch(!showSearch) }} style={{ fontSize: '11px', padding: '3px 8px' }}>
-              {showSearch ? 'Done' : '+ Add'}
-            </button>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {stocks.length > 0 && (
+                <button className="btn-ghost" onClick={() => setWatchlistExpanded(v => !v)} style={{ fontSize: '11px', padding: '3px 8px' }}>
+                  {watchlistExpanded ? 'Collapse' : 'Expand'}
+                </button>
+              )}
+              <button className="btn-ghost" onClick={e => { e.stopPropagation(); setShowSearch(!showSearch) }} style={{ fontSize: '11px', padding: '3px 8px' }}>
+                {showSearch ? 'Done' : '+ Add'}
+              </button>
+            </div>
           </div>
 
           {/* Portfolio total card */}
@@ -913,58 +936,108 @@ export default function Grow() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-            {stocks.map(stock => {
-              const isPos = stock.change >= 0
-              const isActive = activeCardSymbol === stock.symbol
-              const alert = priceAlerts[stock.symbol]
-              const alertNear = alert && Math.abs(stock.price - alert) / alert < 0.05
-              const alertHit = alert && stock.price >= alert
-              return (
-                <div
-                  key={stock.symbol}
-                  style={{ position: 'relative', flexShrink: 0 }}
-                  onMouseEnter={() => setActiveCardSymbol(stock.symbol)}
-                  onMouseLeave={() => setActiveCardSymbol(null)}
-                  onPointerDown={e => handleCardPointerDown(e, stock.symbol)}
-                  onPointerMove={handleCardPointerMove}
-                  onPointerUp={handleCardPointerUp}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => setSelectedStock(stock)}
-                    style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '12px 14px', minWidth: '120px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'transform var(--transition)', transform: isActive ? 'scale(0.97)' : 'scale(1)' }}>
-                    <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 4px' }}>{stock.symbol}</p>
-                    <p style={{ fontSize: '16px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 2px' }}>${stock.price?.toFixed(2)}</p>
-                    <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
-                    {alert && (
-                      <p style={{ fontSize: '10px', margin: '3px 0 0', color: alertHit ? 'var(--success)' : alertNear ? '#c8943a' : 'var(--sand-400)' }}>
-                        {alertHit ? '● ' : alertNear ? '◐ ' : '○ '}${alert}
-                      </p>
-                    )}
-                    {shareCounts[stock.symbol] > 0 && (
-                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '2px 0 0' }}>
-                        {shareCounts[stock.symbol]} sh
-                      </p>
-                    )}
-                    {sparklines[stock.symbol]?.length > 1 && (
-                      <svg width="90" height="20" style={{ display: 'block', marginTop: '8px', overflow: 'visible' }}>
-                        <path d={buildSparkPath(sparklines[stock.symbol], 90, 18)} fill="none" stroke={isPos ? 'var(--success)' : 'var(--danger)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); removeFromWatchlist(stock.symbol) }}
-                    style={{ position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', background: 'var(--sand-700)', color: '#fff', border: 'none', borderRadius: '50%', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', opacity: isActive ? 1 : 0, pointerEvents: isActive ? 'auto' : 'none', transition: 'opacity 0.15s' }}>
-                    ×
-                  </button>
-                </div>
-              )
-            })}
-            {stocks.length === 0 && (
-              <p style={{ color: 'var(--sand-500)', fontSize: '13px', padding: '12px 0' }}>Add stocks to your watchlist</p>
-            )}
-          </div>
+          {watchlistExpanded ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {(dragOrder ?? stocks).map(stock => {
+                const isPos = stock.change >= 0
+                const isActive = activeCardSymbol === stock.symbol
+                const alert = priceAlerts[stock.symbol]
+                const alertNear = alert && Math.abs(stock.price - alert) / alert < 0.05
+                const alertHit = alert && stock.price >= alert
+                return (
+                  <div key={stock.symbol} style={{ position: 'relative' }}
+                    onMouseEnter={() => setActiveCardSymbol(stock.symbol)}
+                    onMouseLeave={() => setActiveCardSymbol(null)}
+                  >
+                    <button
+                      onClick={() => setSelectedStock(stock)}
+                      style={{ width: '100%', background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '12px 14px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)', margin: '0 0 2px' }}>{stock.symbol}</p>
+                        <p style={{ fontSize: '15px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>${stock.price?.toFixed(2)}</p>
+                        <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
+                        {alert && (
+                          <p style={{ fontSize: '10px', margin: '3px 0 0', color: alertHit ? 'var(--success)' : alertNear ? '#c8943a' : 'var(--sand-400)' }}>
+                            {alertHit ? '● ' : alertNear ? '◐ ' : '○ '}${alert}
+                          </p>
+                        )}
+                        {shareCounts[stock.symbol] > 0 && (
+                          <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '2px 0 0' }}>{shareCounts[stock.symbol]} sh</p>
+                        )}
+                      </div>
+                      {sparklines[stock.symbol]?.length > 1 && (
+                        <svg width="60" height="28" style={{ flexShrink: 0, overflow: 'visible' }}>
+                          <path d={buildSparkPath(sparklines[stock.symbol], 60, 26)} fill="none" stroke={isPos ? 'var(--success)' : 'var(--danger)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeFromWatchlist(stock.symbol) }}
+                      style={{ position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', background: 'var(--sand-700)', color: '#fff', border: 'none', borderRadius: '50%', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', opacity: isActive ? 1 : 0, pointerEvents: isActive ? 'auto' : 'none', transition: 'opacity 0.15s' }}>
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div
+              style={{ display: 'flex', gap: '8px', overflowX: dragOrder ? 'hidden' : 'auto', paddingBottom: '4px', touchAction: dragOrder ? 'none' : 'pan-x' }}
+              onPointerMove={handleCardPointerMove}
+              onPointerUp={handleCardPointerUp}
+              onPointerCancel={handleCardPointerUp}
+            >
+              {(dragOrder ?? stocks).map(stock => {
+                const isPos = stock.change >= 0
+                const isActive = activeCardSymbol === stock.symbol
+                const isDragging = isActive && !!dragInfo.current
+                const alert = priceAlerts[stock.symbol]
+                const alertNear = alert && Math.abs(stock.price - alert) / alert < 0.05
+                const alertHit = alert && stock.price >= alert
+                return (
+                  <div
+                    key={stock.symbol}
+                    style={{ position: 'relative', flexShrink: 0, transition: isDragging ? 'none' : 'transform 0.15s', transform: isDragging ? 'scale(1.06)' : 'scale(1)', zIndex: isDragging ? 10 : 1, boxShadow: isDragging ? '0 6px 16px rgba(0,0,0,0.13)' : 'none', borderRadius: 'var(--radius-md)' }}
+                    onMouseEnter={() => { if (!dragInfo.current) setActiveCardSymbol(stock.symbol) }}
+                    onMouseLeave={() => { if (!dragInfo.current) setActiveCardSymbol(null) }}
+                    onPointerDown={e => handleCardPointerDown(e, stock.symbol)}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={() => setSelectedStock(stock)}
+                      style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '12px 14px', minWidth: '120px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'transform var(--transition)', transform: isActive ? 'scale(0.97)' : 'scale(1)' }}>
+                      <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 4px' }}>{stock.symbol}</p>
+                      <p style={{ fontSize: '16px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 2px' }}>${stock.price?.toFixed(2)}</p>
+                      <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
+                      {alert && (
+                        <p style={{ fontSize: '10px', margin: '3px 0 0', color: alertHit ? 'var(--success)' : alertNear ? '#c8943a' : 'var(--sand-400)' }}>
+                          {alertHit ? '● ' : alertNear ? '◐ ' : '○ '}${alert}
+                        </p>
+                      )}
+                      {shareCounts[stock.symbol] > 0 && (
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '2px 0 0' }}>
+                          {shareCounts[stock.symbol]} sh
+                        </p>
+                      )}
+                      {sparklines[stock.symbol]?.length > 1 && (
+                        <svg width="90" height="20" style={{ display: 'block', marginTop: '8px', overflow: 'visible' }}>
+                          <path d={buildSparkPath(sparklines[stock.symbol], 90, 18)} fill="none" stroke={isPos ? 'var(--success)' : 'var(--danger)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeFromWatchlist(stock.symbol) }}
+                      style={{ position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', background: 'var(--sand-700)', color: '#fff', border: 'none', borderRadius: '50%', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', opacity: isActive ? 1 : 0, pointerEvents: isActive ? 'auto' : 'none', transition: 'opacity 0.15s' }}>
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+              {stocks.length === 0 && (
+                <p style={{ color: 'var(--sand-500)', fontSize: '13px', padding: '12px 0' }}>Add stocks to your watchlist</p>
+              )}
+            </div>
+          )}
           {stocks.length > 0 && !hasPortfolio && (
             <p style={{ fontSize: '11px', color: 'var(--sand-400)', marginTop: '6px' }}>
               Tap a stock to add shares and track your portfolio value
