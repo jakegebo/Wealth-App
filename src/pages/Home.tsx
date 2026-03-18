@@ -20,21 +20,6 @@ interface Analysis {
   incomeIdeas: string[]
 }
 
-interface StockQuote {
-  symbol: string
-  price: number
-  change: number
-  changePercent: string
-}
-
-interface Article {
-  title: string
-  url: string
-  image: string
-  source: string
-  publishedAt: string
-}
-
 interface MiniDashboard {
   type: 'assets' | 'debts' | 'savings'
   analysis: string
@@ -690,11 +675,9 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
 export default function Home() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const { userId, userEmail, profileData: profile, analysis, chatRefs, watchlist, hasProfile, loading: profileLoading, updateProfile } = useProfile()
+  const { userId, userEmail, profileData: profile, analysis, chatRefs, hasProfile, loading: profileLoading, updateProfile } = useProfile()
   const firstName = userEmail.split('@')[0] || 'there'
   const [analyzing, setAnalyzing] = useState(false)
-  const [stocks, setStocks] = useState<StockQuote[]>([])
-  const [news, setNews] = useState<Article[]>([])
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [analysisError, setAnalysisError] = useState(false)
@@ -707,8 +690,6 @@ export default function Home() {
   useEffect(() => {
     if (profileLoading) return
     if (!hasProfile) { navigate('/onboarding'); return }
-    fetchStocks(watchlist)
-    fetchNews()
     if (analysis) {
       saveNetWorthHistory(userId!, analysis)
       checkMilestone(analysis.netWorth)
@@ -744,22 +725,6 @@ export default function Home() {
         })
       })
     } catch (err) { console.error('Failed to save net worth history:', err) }
-  }
-
-  const fetchStocks = async (symbols: string[]) => {
-    try {
-      const res = await fetch(`/api/stocks?symbols=${symbols.slice(0, 4).join(',')}`)
-      const data = await res.json()
-      setStocks(data.quotes || [])
-    } catch (err) { console.error('Failed to fetch stocks:', err) }
-  }
-
-  const fetchNews = async () => {
-    try {
-      const res = await fetch('/api/news?category=markets&page=1')
-      const data = await res.json()
-      setNews((data.articles || []).slice(0, 3))
-    } catch (err) { console.error('Failed to fetch news:', err) }
   }
 
   const runAnalysis = async (profileData: any) => {
@@ -992,26 +957,29 @@ export default function Home() {
         </div>
       )}
 
-      {/* Watchlist */}
-      {isVisible('watchlist') && stocks.length > 0 && (
+      {/* Cash Flow */}
+      {isVisible('cashflow') && analysis.monthlyIncome > 0 && (
         <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p className="label">Watchlist</p>
-            <button className="btn-ghost" onClick={() => navigate('/grow')} style={{ fontSize: '11px', padding: '3px 8px' }}>View all →</button>
+            <p className="label">Monthly Cash Flow</p>
+            <button className="btn-ghost" onClick={() => navigate('/plan')} style={{ fontSize: '11px', padding: '3px 8px' }}>Details →</button>
           </div>
-          <div className="card" style={{ padding: '4px 0' }}>
-            {stocks.map((stock, i) => {
-              const isPos = stock.change >= 0
-              return (
-                <div key={stock.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: i < stocks.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
-                  <span style={{ fontWeight: '500', fontSize: '14px', color: 'var(--sand-900)' }}>{stock.symbol}</span>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '14px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>${stock.price?.toFixed(2)}</p>
-                    <p style={{ fontSize: '11px', color: isPos ? 'var(--success)' : 'var(--danger)', margin: 0 }}>{isPos ? '+' : ''}{parseFloat(stock.changePercent)?.toFixed(2)}%</p>
-                  </div>
+          <div className="card" style={{ padding: '18px' }}>
+            {[
+              { label: 'Income', value: analysis.monthlyIncome, color: 'var(--success)', pct: 100 },
+              { label: 'Expenses', value: analysis.monthlyExpenses, color: 'var(--danger)', pct: (analysis.monthlyExpenses / analysis.monthlyIncome) * 100 },
+              { label: 'Saves', value: analysis.availableToSave, color: 'var(--accent)', pct: Math.max(0, (analysis.availableToSave / analysis.monthlyIncome) * 100) },
+            ].map((row, i) => (
+              <div key={row.label} style={{ marginBottom: i < 2 ? '14px' : 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{row.label}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(row.value)}</span>
                 </div>
-              )
-            })}
+                <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1076,31 +1044,6 @@ export default function Home() {
                 </div>
               )
             })}
-          </div>
-        </div>
-      )}
-
-      {/* News */}
-      {isVisible('news') && news.length > 0 && (
-        <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p className="label">Latest News</p>
-            <button className="btn-ghost" onClick={() => navigate('/grow')} style={{ fontSize: '11px', padding: '3px 8px' }}>View all →</button>
-          </div>
-          <div className="card" style={{ padding: '4px 0' }}>
-            {news.map((article, i) => (
-              <a key={i} href={article.url} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'flex', gap: '12px', padding: '12px 18px', borderBottom: i < news.length - 1 ? '0.5px solid var(--sand-200)' : 'none', textDecoration: 'none' }}>
-                {article.image && (
-                  <img src={article.image} alt="" style={{ width: '52px', height: '40px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }}
-                    onError={e => (e.currentTarget.style.display = 'none')} />
-                )}
-                <div>
-                  <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 3px', lineHeight: '1.4' }}>{article.title}</p>
-                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{article.source} · {timeAgo(article.publishedAt)}</p>
-                </div>
-              </a>
-            ))}
           </div>
         </div>
       )}
