@@ -47,7 +47,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     load()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN') load()
+      if (event === 'SIGNED_IN') { setLoading(true); load() }
       if (event === 'SIGNED_OUT') {
         setUserId(null); setUserEmail(''); setProfileData(null); setAnalysis(null)
         setChatRefs({}); setWatchlist(['SPY', 'QQQ', 'AAPL']); setSavedIdeas([])
