@@ -33,6 +33,7 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
 
+  const [age, setAge] = useState('')
   const [income, setIncome] = useState('')
   const [expenses, setExpenses] = useState('')
   const [context, setContext] = useState('')
@@ -53,6 +54,7 @@ export default function Onboarding() {
     const { data } = await supabase.from('profiles').select('profile_data').eq('user_id', uid).single()
     if (data?.profile_data) {
       const p = data.profile_data
+      setAge(p.age?.toString() || '')
       setIncome(p.monthly_income?.toString() || '')
       setExpenses(p.monthly_expenses?.toString() || '')
       setContext(p.additional_context || '')
@@ -91,6 +93,7 @@ export default function Onboarding() {
     setSaving(true)
 
     const profileData = {
+      age: parseInt(age) || null,
       monthly_income: parseFloat(income) || 0,
       monthly_expenses: parseFloat(expenses) || 0,
       additional_context: context,
@@ -175,6 +178,22 @@ export default function Onboarding() {
           {/* Step 0: Income */}
           {step === 0 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)', marginBottom: '8px' }}>Your age</label>
+                <input
+                  type="number"
+                  value={age}
+                  onChange={e => setAge(e.target.value)}
+                  placeholder="25"
+                  min="16"
+                  max="100"
+                  style={{ ...inputStyle, width: '120px' }}
+                />
+                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '6px 0 0', lineHeight: '1.4' }}>
+                  Used to tailor investment strategy, retirement timeline, and risk advice to your life stage.
+                </p>
+              </div>
+              <div style={{ height: '0.5px', background: 'var(--sand-300)' }} />
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)', marginBottom: '8px' }}>Monthly income (after tax)</label>
                 <div style={{ position: 'relative' }}>

@@ -81,10 +81,15 @@ function simulatePayoff(
 
   const state = debts.map(d => ({
     remaining: d.balance,
-    rate: d.interestRate / 100 / 12,
-    minPayment: Math.max(d.recommendedPayment || 50, 10),
+    monthlyRate: d.interestRate / 100 / 12,
+    minPayment: Math.max(d.recommendedPayment || 25, 10),
     interestRate: d.interestRate,
   }))
+
+  // Fixed total monthly budget = all minimums + extra (stays constant as debts are paid off,
+  // so freed-up minimums automatically roll into the priority debt — this is the core mechanic)
+  const totalMinimums = state.reduce((s, d) => s + d.minPayment, 0)
+  const isMinimumOnly = strategy === 'minimum'
 
   let totalInterest = 0
   let months = 0
@@ -92,32 +97,40 @@ function simulatePayoff(
   while (state.some(d => d.remaining > 0.01) && months < 600) {
     months++
 
-    // Sort for strategy priority each month
-    const byPriority = [...state.map((d, i) => ({ ...d, i }))].filter(d => d.remaining > 0.01)
-    if (strategy === 'avalanche') byPriority.sort((a, b) => b.interestRate - a.interestRate)
-    if (strategy === 'snowball') byPriority.sort((a, b) => a.remaining - b.remaining)
-
-    // Accrue interest and apply minimum payments
+    // Step 1: Accrue interest on all active debts
     for (const d of state) {
       if (d.remaining <= 0) continue
-      const interest = d.remaining * d.rate
+      const interest = d.remaining * d.monthlyRate
       totalInterest += interest
       d.remaining += interest
+    }
+
+    // Step 2: Pay minimums on every debt; track how much budget is left
+    let budgetLeft = totalMinimums + (isMinimumOnly ? 0 : extraPerMonth)
+    for (const d of state) {
+      if (d.remaining <= 0) continue
       const pmt = Math.min(d.remaining, d.minPayment)
       d.remaining -= pmt
+      budgetLeft -= pmt
       if (d.remaining < 0.01) d.remaining = 0
     }
 
-    // Apply extra to top priority debt
-    if (strategy !== 'minimum') {
-      let extraLeft = extraPerMonth
-      for (const priority of byPriority) {
-        if (extraLeft <= 0) break
-        const d = state[priority.i]
-        if (d.remaining <= 0) continue
-        const extra = Math.min(d.remaining, extraLeft)
-        d.remaining -= extra
-        extraLeft -= extra
+    // Step 3: Apply remaining budget (freed minimums + extra) to priority debt.
+    // This is what makes avalanche ≠ snowball — where the surplus goes each month.
+    if (budgetLeft > 0.01 && !isMinimumOnly) {
+      const active = state
+        .map((d, i) => ({ ...d, idx: i }))
+        .filter(d => d.remaining > 0.01)
+
+      if (strategy === 'avalanche') active.sort((a, b) => b.interestRate - a.interestRate)
+      else if (strategy === 'snowball') active.sort((a, b) => a.remaining - b.remaining)
+
+      for (const item of active) {
+        if (budgetLeft <= 0.01) break
+        const d = state[item.idx]
+        const pay = Math.min(d.remaining, budgetLeft)
+        d.remaining -= pay
+        budgetLeft -= pay
         if (d.remaining < 0.01) d.remaining = 0
       }
     }
@@ -206,8 +219,10 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
 
   if (!debts.length) return null
 
+  const avalancheResult = simulatePayoff(debts, extraPayment, 'avalanche')
+  const snowballResult = simulatePayoff(debts, extraPayment, 'snowball')
   const minResult = simulatePayoff(debts, 0, 'minimum')
-  const currentResult = simulatePayoff(debts, extraPayment, strategy)
+  const currentResult = strategy === 'avalanche' ? avalancheResult : strategy === 'snowball' ? snowballResult : minResult
   const interestSaved = minResult.totalInterest - currentResult.totalInterest
   const monthsSaved = minResult.months - currentResult.months
 
@@ -224,23 +239,86 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
     return `${yrs}yr ${mos}mo`
   }
 
+  const STRATEGY_INFO = {
+    avalanche: {
+      title: 'Debt Avalanche',
+      tagline: 'Mathematically optimal',
+      description: 'Attack the highest interest rate debt first. Every extra dollar saves the maximum possible in interest charges. When that debt is cleared, roll its payment into the next highest rate. Best if you want to pay the least amount overall.',
+      color: 'var(--accent)',
+      bg: 'rgba(122,158,110,0.06)',
+      border: 'rgba(122,158,110,0.2)',
+    },
+    snowball: {
+      title: 'Debt Snowball',
+      tagline: 'Psychologically powerful',
+      description: 'Attack the smallest balance first, regardless of rate. You eliminate individual debts faster, which builds momentum and motivation. When cleared, roll that payment into the next smallest. Best if you need wins to stay on track.',
+      color: '#6a8aae',
+      bg: 'rgba(106,138,174,0.06)',
+      border: 'rgba(106,138,174,0.2)',
+    },
+    minimum: {
+      title: 'Minimum Payments',
+      tagline: 'Costs the most',
+      description: 'Pay only the required minimum on each debt every month. No extra is directed anywhere. This stretches repayment to its longest possible timeline and maximizes the total interest you pay to lenders.',
+      color: 'var(--danger)',
+      bg: 'rgba(192,57,43,0.05)',
+      border: 'rgba(192,57,43,0.15)',
+    },
+  }
+
+  const info = STRATEGY_INFO[strategy]
+
   return (
     <div className="card" style={{ marginBottom: '24px' }}>
       <p className="label" style={{ marginBottom: '12px' }}>Debt Payoff Optimizer</p>
 
       {/* Strategy toggle */}
-      <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '10px', padding: '3px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '10px', padding: '3px', marginBottom: '14px' }}>
         {([
-          { key: 'avalanche', label: 'Avalanche', sub: 'highest rate first' },
-          { key: 'snowball', label: 'Snowball', sub: 'lowest balance first' },
-          { key: 'minimum', label: 'Minimums', sub: 'minimum only' },
+          { key: 'avalanche', label: 'Avalanche' },
+          { key: 'snowball', label: 'Snowball' },
+          { key: 'minimum', label: 'Minimums' },
         ] as const).map(opt => (
           <button key={opt.key} onClick={() => setStrategy(opt.key)}
-            style={{ flex: 1, padding: '6px 4px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', background: strategy === opt.key ? 'var(--sand-50)' : 'transparent', textAlign: 'center' }}>
-            <p style={{ fontSize: '11px', fontWeight: '600', color: strategy === opt.key ? 'var(--sand-900)' : 'var(--sand-500)', margin: 0 }}>{opt.label}</p>
+            style={{ flex: 1, padding: '7px 4px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', background: strategy === opt.key ? 'var(--sand-50)' : 'transparent', textAlign: 'center' }}>
+            <p style={{ fontSize: '12px', fontWeight: '600', color: strategy === opt.key ? 'var(--sand-900)' : 'var(--sand-500)', margin: 0 }}>{opt.label}</p>
           </button>
         ))}
       </div>
+
+      {/* Strategy explanation card */}
+      <div style={{ padding: '14px', background: info.bg, border: `0.5px solid ${info.border}`, borderRadius: 'var(--radius-sm)', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <p style={{ fontSize: '13px', fontWeight: '700', color: info.color, margin: 0 }}>{info.title}</p>
+          <span style={{ fontSize: '10px', fontWeight: '600', color: info.color, background: `${info.border}`, padding: '2px 7px', borderRadius: '20px', opacity: 0.9 }}>{info.tagline}</span>
+        </div>
+        <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.55' }}>{info.description}</p>
+      </div>
+
+      {/* 3-way comparison */}
+      {debts.length > 1 && (
+        <div style={{ marginBottom: '16px' }}>
+          <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Strategy comparison</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+            {([
+              { key: 'avalanche', label: 'Avalanche', result: avalancheResult, color: 'var(--accent)' },
+              { key: 'snowball', label: 'Snowball', result: snowballResult, color: '#6a8aae' },
+              { key: 'minimum', label: 'Minimum', result: minResult, color: 'var(--sand-500)' },
+            ] as const).map(opt => (
+              <button key={opt.key} onClick={() => setStrategy(opt.key)} style={{
+                background: strategy === opt.key ? 'var(--sand-50)' : 'transparent',
+                border: strategy === opt.key ? `1.5px solid ${opt.color}` : '0.5px solid var(--sand-300)',
+                borderRadius: '10px', padding: '10px 8px', cursor: 'pointer', fontFamily: 'inherit',
+                textAlign: 'center', transition: 'all 0.15s'
+              }}>
+                <p style={{ fontSize: '10px', fontWeight: '700', color: strategy === opt.key ? opt.color : 'var(--sand-500)', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{opt.label}</p>
+                <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{formatMonths(opt.result.months)}</p>
+                <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>{fmt(opt.result.totalInterest)}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Extra payment slider */}
       <div style={{ marginBottom: '16px' }}>
@@ -251,7 +329,7 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
         <input
           type="range"
           min={0}
-          max={Math.min(2000, Math.round((analysis.availableToSave || 0)))}
+          max={Math.min(2000, Math.round(analysis.availableToSave || 500))}
           step={25}
           value={extraPayment}
           onChange={e => setExtraPayment(parseInt(e.target.value))}
@@ -259,21 +337,21 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
           <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>$0</span>
-          <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>{fmt(Math.min(2000, analysis.availableToSave || 0))}</span>
+          <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>{fmt(Math.min(2000, analysis.availableToSave || 500))}</span>
         </div>
       </div>
 
-      {/* Results */}
+      {/* Current strategy results */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
         <div className="card-muted" style={{ padding: '12px', textAlign: 'center' }}>
           <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 3px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Payoff in</p>
           <p style={{ fontSize: '22px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px' }}>{formatMonths(currentResult.months)}</p>
-          {monthsSaved > 0 && <p style={{ fontSize: '10px', color: 'var(--success)', margin: '2px 0 0' }}>↓ {formatMonths(monthsSaved)} faster</p>}
+          {monthsSaved > 0 && <p style={{ fontSize: '10px', color: 'var(--success)', margin: '2px 0 0' }}>↓ {formatMonths(monthsSaved)} faster than minimums</p>}
         </div>
         <div className="card-muted" style={{ padding: '12px', textAlign: 'center' }}>
           <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 3px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total interest</p>
           <p style={{ fontSize: '22px', fontWeight: '300', color: 'var(--danger)', margin: 0, letterSpacing: '-0.5px' }}>{fmt(currentResult.totalInterest)}</p>
-          {interestSaved > 0 && <p style={{ fontSize: '10px', color: 'var(--success)', margin: '2px 0 0' }}>↓ {fmt(interestSaved)} saved</p>}
+          {interestSaved > 0 && <p style={{ fontSize: '10px', color: 'var(--success)', margin: '2px 0 0' }}>↓ {fmt(interestSaved)} vs. minimums</p>}
         </div>
       </div>
 
@@ -281,7 +359,7 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
       {strategy !== 'minimum' && (
         <div>
           <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>
-            {strategy === 'avalanche' ? 'Pay in this order (saves most interest)' : 'Pay in this order (builds momentum)'}
+            {strategy === 'avalanche' ? 'Payoff order — highest rate first' : 'Payoff order — smallest balance first'}
           </p>
           {priorityList.map((debt, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: i < priorityList.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
@@ -292,15 +370,22 @@ function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analy
                 <p style={{ fontSize: '13px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>{debt.name}</p>
                 <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{fmt(debt.balance)} · {debt.interestRate}% APR</p>
               </div>
+              {i === 0 && <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-light)', padding: '2px 7px', borderRadius: '20px', flexShrink: 0 }}>Focus here</span>}
             </div>
           ))}
         </div>
       )}
 
       {strategy === 'minimum' && (
-        <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5', padding: '8px 12px', background: 'rgba(192,57,43,0.05)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.1)' }}>
-          Minimum payments only will cost {fmt(minResult.totalInterest)} in interest over {formatMonths(minResult.months)}. Switching to avalanche or adding extra payments can save significantly.
-        </p>
+        <div style={{ padding: '12px', background: 'rgba(192,57,43,0.05)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.1)' }}>
+          <p style={{ fontSize: '12px', color: 'var(--danger)', fontWeight: '600', margin: '0 0 4px' }}>
+            Cost of minimum payments only
+          </p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5' }}>
+            You'll pay {fmt(minResult.totalInterest)} in interest over {formatMonths(minResult.months)}.
+            Switching to Avalanche saves {fmt(minResult.totalInterest - avalancheResult.totalInterest)} and finishes {formatMonths(minResult.months - avalancheResult.months)} sooner.
+          </p>
+        </div>
       )}
     </div>
   )
@@ -330,14 +415,16 @@ export default function Plan() {
             role: 'user',
             content: `Give me a 2-3 sentence advice recap for my "${goal.name}" goal. I have ${fmt(goal.currentAmount)} saved toward a ${fmt(goal.targetAmount)} target (${Math.round(goal.percentage)}% complete). I can save ${fmt(goal.monthlyNeeded)}/mo toward this. Be direct and specific — what's the single most important thing I should do right now? Keep it under 60 words.`
           }],
-          profile,
+          profile: profile || {},
           topic: 'general'
         })
       })
       const data = await res.json()
-      const advice = data.message || ''
+      const advice = data.message || 'Unable to load advice.'
       await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: advice } })
-    } catch { }
+    } catch {
+      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: 'Unable to load advice. Please try again.' } })
+    }
     setLoadingAdvice(null)
   }
 
@@ -362,12 +449,14 @@ export default function Plan() {
   }
 
   const openChat = async (key: string, prompt: string, title: string) => {
-    if (!userId) return
+    if (!userId) { navigate('/chats'); return }
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
-    const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
+    const { data, error } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
     if (data) {
       await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt } })
+    } else if (error) {
+      navigate('/chats')
     }
   }
 

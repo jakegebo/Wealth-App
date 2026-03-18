@@ -2,13 +2,144 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
+import {
+  Chart as ChartJS,
+  CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement,
+  Title, Tooltip, Legend, Filler
+} from 'chart.js'
+import { Bar, Line, Doughnut } from 'react-chartjs-2'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler)
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
 
-function FormattedMessage({ content }: { content: string }) {
+const CHART_COLORS = ['#7a9e6e', '#4a6a3e', '#c0503b', '#6a8aae', '#c8a84a', '#8e7aae', '#a0bfa0', '#e8784c']
+
+function ChartBlock({ raw }: { raw: string }) {
+  try {
+    const config = JSON.parse(raw.trim())
+    const { type, title, labels, data, datasets } = config
+    if (!type || !labels) return null
+
+    const isMulti = Array.isArray(datasets) && datasets.length > 0
+
+    const chartData = {
+      labels,
+      datasets: isMulti
+        ? datasets.map((ds: any, i: number) => ({
+            label: ds.label || '',
+            data: ds.data || [],
+            borderColor: CHART_COLORS[i % CHART_COLORS.length],
+            backgroundColor: type === 'line'
+              ? `${CHART_COLORS[i % CHART_COLORS.length]}20`
+              : CHART_COLORS[i % CHART_COLORS.length],
+            fill: type === 'line' && i === 0,
+            tension: 0.4,
+            pointRadius: 3,
+            borderWidth: 2,
+          }))
+        : [{
+            label: title || '',
+            data: data || [],
+            backgroundColor: type === 'doughnut'
+              ? CHART_COLORS.slice(0, (data || []).length)
+              : CHART_COLORS.map(c => c + 'CC'),
+            borderColor: type === 'doughnut' ? '#f7f2ec' : CHART_COLORS,
+            borderWidth: type === 'doughnut' ? 2 : 0,
+            borderRadius: type === 'bar' ? 5 : 0,
+          }]
+    }
+
+    const opts: any = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: type === 'doughnut' || isMulti,
+          labels: { color: '#9e8e7e', font: { size: 11 }, usePointStyle: true, padding: 14 }
+        },
+        title: {
+          display: !!title,
+          text: title,
+          color: '#2a1a08',
+          font: { size: 13, weight: '600' },
+          padding: { bottom: 12 }
+        },
+        tooltip: {
+          backgroundColor: '#f2ede6',
+          borderColor: '#ddd4c4',
+          borderWidth: 1,
+          titleColor: '#1a1208',
+          bodyColor: '#7a6a5a',
+          padding: 10,
+          callbacks: {
+            label: (ctx: any) => {
+              const val = ctx.parsed?.y ?? ctx.parsed
+              if (typeof val === 'number' && Math.abs(val) >= 100) return ` $${val.toLocaleString()}`
+              return ` ${typeof val === 'number' ? val.toLocaleString() : val}`
+            }
+          }
+        }
+      },
+      ...(type !== 'doughnut' && {
+        scales: {
+          x: {
+            ticks: { color: '#9e8e7e', font: { size: 10 }, maxTicksLimit: 8 },
+            grid: { color: '#ede8e3' }
+          },
+          y: {
+            ticks: {
+              color: '#9e8e7e',
+              font: { size: 10 },
+              callback: (v: any) => {
+                if (Math.abs(v) >= 1000000) return `$${(v / 1000000).toFixed(1)}M`
+                if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(0)}k`
+                return `${v}`
+              }
+            },
+            grid: { color: '#ede8e3' }
+          }
+        }
+      })
+    }
+
+    return (
+      <div style={{
+        background: 'var(--sand-100)',
+        border: '0.5px solid var(--sand-300)',
+        borderRadius: '14px',
+        padding: '16px 16px 10px',
+        margin: '10px 0',
+      }}>
+        <div style={{ height: type === 'doughnut' ? '210px' : '240px' }}>
+          {type === 'bar' && <Bar data={chartData} options={opts} />}
+          {type === 'line' && <Line data={chartData} options={opts} />}
+          {type === 'doughnut' && <Doughnut data={chartData} options={opts} />}
+        </div>
+      </div>
+    )
+  } catch {
+    return null
+  }
+}
+
+function InlineText({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith('**') && part.endsWith('**')
+          ? <strong key={i} style={{ fontWeight: '600', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  )
+}
+
+function TextBlock({ content }: { content: string }) {
   const lines = content.split('\n')
   const elements: React.ReactNode[] = []
   let i = 0
@@ -16,54 +147,26 @@ function FormattedMessage({ content }: { content: string }) {
   while (i < lines.length) {
     const line = lines[i]
 
-    // Skip empty lines but add spacing
     if (line.trim() === '') {
       elements.push(<div key={i} style={{ height: '8px' }} />)
-      i++
-      continue
+      i++; continue
     }
 
-    // Bold header lines **text**
     if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-      const text = line.trim().slice(2, -2)
       elements.push(
-        <p key={i} style={{
-          fontSize: '13px',
-          fontWeight: '700',
-          color: 'var(--sand-900)',
-          margin: '14px 0 6px',
-          letterSpacing: '0.01em',
-          textTransform: 'uppercase',
-          opacity: 0.7
-        }}>
-          {text}
+        <p key={i} style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-600)', margin: '14px 0 6px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          {line.trim().slice(2, -2)}
         </p>
       )
-      i++
-      continue
+      i++; continue
     }
 
-    // Numbered list
     if (line.match(/^\d+\.\s/)) {
       const num = line.match(/^(\d+)\./)?.[1]
       const text = line.replace(/^\d+\.\s/, '')
-      // Parse inline bold in text
       elements.push(
         <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'flex-start' }}>
-          <div style={{
-            width: '22px',
-            height: '22px',
-            borderRadius: '50%',
-            background: 'var(--accent)',
-            color: 'var(--sand-50)',
-            fontSize: '11px',
-            fontWeight: '700',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            marginTop: '1px'
-          }}>
+          <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
             {num}
           </div>
           <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
@@ -71,41 +174,23 @@ function FormattedMessage({ content }: { content: string }) {
           </p>
         </div>
       )
-      i++
-      continue
+      i++; continue
     }
 
-    // Bullet points
     if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
-      const text = line.trim().slice(2)
       elements.push(
         <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-          <div style={{
-            width: '5px',
-            height: '5px',
-            borderRadius: '50%',
-            background: 'var(--accent)',
-            flexShrink: 0,
-            marginTop: '9px',
-            opacity: 0.7
-          }} />
+          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '9px', opacity: 0.7 }} />
           <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
-            <InlineText text={text} />
+            <InlineText text={line.trim().slice(2)} />
           </p>
         </div>
       )
-      i++
-      continue
+      i++; continue
     }
 
-    // Regular paragraph
     elements.push(
-      <p key={i} style={{
-        fontSize: '14px',
-        lineHeight: '1.7',
-        margin: '0 0 8px',
-        color: 'var(--sand-800)'
-      }}>
+      <p key={i} style={{ fontSize: '14px', lineHeight: '1.7', margin: '0 0 8px', color: 'var(--sand-800)' }}>
         <InlineText text={line} />
       </p>
     )
@@ -115,18 +200,19 @@ function FormattedMessage({ content }: { content: string }) {
   return <div>{elements}</div>
 }
 
-function InlineText({ text }: { text: string }) {
-  // Handle inline **bold** text
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
+function FormattedMessage({ content }: { content: string }) {
+  // Split content into text and chart blocks
+  const parts = content.split(/(<chart>[\s\S]*?<\/chart>)/g)
   return (
-    <>
+    <div>
       {parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={i} style={{ fontWeight: '600', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
+        if (part.startsWith('<chart>') && part.endsWith('</chart>')) {
+          return <ChartBlock key={i} raw={part.slice(7, -8)} />
         }
-        return <span key={i}>{part}</span>
+        if (!part.trim()) return null
+        return <TextBlock key={i} content={part} />
       })}
-    </>
+    </div>
   )
 }
 
@@ -134,7 +220,7 @@ export default function Chat() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { userId, profileData: profile } = useProfile()
+  const { userId, profileData: profile, analysis } = useProfile()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -153,7 +239,6 @@ export default function Chat() {
     if (chatRes.data) {
       setTitle(chatRes.data.title || 'Chat')
       setMessages(chatRes.data.messages || [])
-
       if (!initialized.current && location.state?.prompt &&
         (!chatRes.data.messages || chatRes.data.messages.length === 0)) {
         initialized.current = true
@@ -176,14 +261,14 @@ export default function Chat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages,
-          profile: profileData || profile,
+          profile: profileData || profile || {},
           topic: 'general'
         })
       })
       const data = await res.json()
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.message || 'Something went wrong.'
+        content: data.message || 'Something went wrong. Please try again.'
       }
       const finalMessages = [...newMessages, assistantMessage]
       setMessages(finalMessages)
@@ -194,7 +279,7 @@ export default function Chat() {
     } catch {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Something went wrong. Please try again.'
+        content: 'Something went wrong. Please check your connection and try again.'
       }])
     }
     setLoading(false)
@@ -211,6 +296,49 @@ export default function Chat() {
       handleSend()
     }
   }
+
+  // Smart suggested questions built from actual profile data
+  const getSuggestedQuestions = (): string[] => {
+    const questions: string[] = []
+    const totalDebts = profile?.debts?.reduce((s: number, d: any) => s + (d.balance || 0), 0) || 0
+    const highIntDebt = profile?.debts?.sort((a: any, b: any) => (b.interest_rate || 0) - (a.interest_rate || 0))?.[0]
+    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+    const totalAssets = profile?.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+    const topGoal = profile?.goals?.[0]
+
+    if (highIntDebt && (highIntDebt.interest_rate || 0) > 10) {
+      questions.push(`Build me a payoff plan for my ${highIntDebt.name} at ${highIntDebt.interest_rate}% — include a chart showing when I'll be debt-free.`)
+    }
+    if (availableToSave > 200) {
+      const fmt = (n: number) => `$${n.toLocaleString()}`
+      questions.push(`I have ${fmt(availableToSave)}/month to work with. Show me exactly how to split it between investing, emergency fund, and debt with a breakdown chart.`)
+    }
+    if (totalAssets > 1000) {
+      questions.push(`Analyze my asset allocation and show me a chart comparing it to an optimal mix for my situation and timeline.`)
+    }
+    if (topGoal) {
+      questions.push(`Am I on track to hit my "${topGoal.name}" goal? Show me a projection chart with different savings scenarios.`)
+    }
+
+    // Smart defaults if not enough personalized questions
+    const defaults = [
+      'Give me a complete financial health check with charts — where am I strong and where do I need work?',
+      'Build me a 3-year net worth projection chart based on my current trajectory vs. if I optimize now.',
+      'What are the 3 highest-impact financial moves I can make in the next 90 days?',
+      'How should I be thinking about taxes and retirement accounts given my income and situation?',
+    ]
+
+    for (const d of defaults) {
+      if (questions.length >= 4) break
+      questions.push(d)
+    }
+
+    return questions.slice(0, 4)
+  }
+
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const netWorth = analysis ? (analysis.netWorth ?? (analysis.totalAssets - analysis.totalLiabilities)) : null
+  const availableToSave = analysis?.availableToSave ?? ((profile?.monthly_income || 0) - (profile?.monthly_expenses || 0))
 
   return (
     <div style={{
@@ -235,42 +363,22 @@ export default function Chat() {
         zIndex: 10
       }}>
         <button onClick={() => navigate(-1)} style={{
-          background: 'var(--sand-200)',
-          border: 'none',
-          width: '34px',
-          height: '34px',
-          borderRadius: '50%',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--sand-700)',
-          fontSize: '16px',
-          flexShrink: 0
+          background: 'var(--sand-200)', border: 'none', width: '34px', height: '34px',
+          borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px', flexShrink: 0
         }}>←</button>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
-            fontSize: '15px',
-            fontWeight: '600',
-            color: 'var(--sand-900)',
-            margin: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
+            fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
           }}>{title}</p>
-          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>AI Financial Advisor</p>
+          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>AI Financial Advisor · Charts enabled</p>
         </div>
 
         <div style={{
-          width: '34px',
-          height: '34px',
-          background: 'var(--accent)',
-          borderRadius: '50%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0
+          width: '34px', height: '34px', background: 'var(--accent)', borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
         }}>
           <span style={{ color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700' }}>AI</span>
         </div>
@@ -278,54 +386,61 @@ export default function Chat() {
 
       {/* Messages */}
       <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '24px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px'
+        flex: 1, overflowY: 'auto', padding: '24px 16px',
+        display: 'flex', flexDirection: 'column', gap: '20px'
       }}>
 
         {messages.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{
-              width: '56px',
-              height: '56px',
-              background: 'var(--accent)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px'
-            }}>
-              <span style={{ color: 'var(--sand-50)', fontSize: '18px', fontWeight: '700' }}>AI</span>
+          <div style={{ padding: '8px 4px' }}>
+
+            {/* AI avatar + intro */}
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{
+                width: '64px', height: '64px', background: 'var(--accent)', borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px'
+              }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '20px', fontWeight: '700' }}>AI</span>
+              </div>
+              <p style={{ fontSize: '19px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 6px', letterSpacing: '-0.3px' }}>
+                Your financial advisor
+              </p>
+              <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.6' }}>
+                I know your full financial picture — assets, debts, goals, income.<br />
+                Ask me anything and I'll give you specific, actionable advice with charts.
+              </p>
             </div>
-            <p style={{ fontSize: '17px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 8px' }}>
-              Your financial advisor
-            </p>
-            <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: '0 0 28px', lineHeight: '1.6' }}>
-              Ask me anything about your finances.<br />I know your full situation.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
-              {[
-                'What should I do with my $4,500/month surplus?',
-                'How do I optimize my investment allocation?',
-                'What\'s the fastest way to grow my net worth?',
-                'Should I pay off debt or invest first?'
-              ].map((q, i) => (
-                <button key={i} onClick={() => sendMessage(q)}
-                  style={{
-                    background: 'var(--sand-50)',
-                    border: '0.5px solid var(--sand-300)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '12px 16px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    color: 'var(--sand-700)',
-                    fontFamily: 'inherit',
-                    transition: 'background 0.15s'
+
+            {/* Key stats snapshot */}
+            {netWorth !== null && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '24px' }}>
+                {[
+                  { label: 'Net Worth', value: fmt(netWorth), color: netWorth >= 0 ? 'var(--sand-900)' : 'var(--danger)' },
+                  { label: 'Monthly Save', value: fmt(availableToSave), color: availableToSave > 0 ? 'var(--success)' : 'var(--danger)' },
+                  { label: 'Total Assets', value: fmt(analysis?.totalAssets || 0), color: 'var(--sand-900)' },
+                ].map((stat, i) => (
+                  <div key={i} style={{
+                    background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)',
+                    borderRadius: '12px', padding: '12px', textAlign: 'center'
                   }}>
+                    <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: '500' }}>{stat.label}</p>
+                    <p style={{ fontSize: '14px', fontWeight: '600', color: stat.color, margin: 0 }}>{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Smart suggested prompts */}
+            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '0 0 10px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Suggested
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {getSuggestedQuestions().map((q, i) => (
+                <button key={i} onClick={() => sendMessage(q)} style={{
+                  background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)',
+                  borderRadius: '14px', padding: '13px 16px', textAlign: 'left',
+                  cursor: 'pointer', fontSize: '13px', color: 'var(--sand-700)',
+                  fontFamily: 'inherit', transition: 'all 0.15s', lineHeight: '1.45'
+                }}>
                   {q}
                 </button>
               ))}
@@ -335,90 +450,52 @@ export default function Chat() {
 
         {messages.map((msg, i) => (
           <div key={i} style={{
-            display: 'flex',
-            gap: '10px',
+            display: 'flex', gap: '10px',
             flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
             animation: 'fadeIn 0.2s ease forwards'
           }}>
-
             {msg.role === 'assistant' && (
               <div style={{
-                width: '30px',
-                height: '30px',
-                background: 'var(--accent)',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                marginTop: '2px'
+                width: '30px', height: '30px', background: 'var(--accent)', borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px'
               }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
               </div>
             )}
 
             <div style={{
-              maxWidth: msg.role === 'user' ? '72%' : '85%',
+              maxWidth: msg.role === 'user' ? '72%' : '90%',
               background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)',
               border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)',
-              borderRadius: msg.role === 'user'
-                ? '20px 20px 4px 20px'
-                : '4px 20px 20px 20px',
+              borderRadius: msg.role === 'user' ? '20px 20px 4px 20px' : '4px 20px 20px 20px',
               padding: msg.role === 'user' ? '12px 16px' : '16px 18px',
               boxShadow: msg.role === 'assistant' ? '0 1px 4px rgba(26,18,8,0.04)' : 'none'
             }}>
-              {msg.role === 'user' ? (
-                <p style={{
-                  fontSize: '14px',
-                  margin: 0,
-                  color: 'var(--sand-50)',
-                  lineHeight: '1.6',
-                  fontWeight: '400'
-                }}>
-                  {msg.content}
-                </p>
-              ) : (
-                <FormattedMessage content={msg.content} />
-              )}
+              {msg.role === 'user'
+                ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.6' }}>{msg.content}</p>
+                : <FormattedMessage content={msg.content} />
+              }
             </div>
           </div>
         ))}
 
         {loading && (
-          <div style={{
-            display: 'flex',
-            gap: '10px',
-            animation: 'fadeIn 0.2s ease forwards'
-          }}>
+          <div style={{ display: 'flex', gap: '10px', animation: 'fadeIn 0.2s ease forwards' }}>
             <div style={{
-              width: '30px',
-              height: '30px',
-              background: 'var(--accent)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
+              width: '30px', height: '30px', background: 'var(--accent)', borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
             }}>
               <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
             </div>
             <div style={{
-              background: 'var(--sand-50)',
-              border: '0.5px solid var(--sand-300)',
-              borderRadius: '4px 20px 20px 20px',
-              padding: '16px 20px',
-              display: 'flex',
-              gap: '6px',
-              alignItems: 'center'
+              background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)',
+              borderRadius: '4px 20px 20px 20px', padding: '16px 20px',
+              display: 'flex', gap: '6px', alignItems: 'center'
             }}>
               {[0, 160, 320].map(d => (
                 <div key={d} style={{
-                  width: '7px',
-                  height: '7px',
-                  background: 'var(--sand-400)',
-                  borderRadius: '50%',
-                  animation: 'pulse 1.4s infinite',
-                  animationDelay: `${d}ms`
+                  width: '7px', height: '7px', background: 'var(--sand-400)', borderRadius: '50%',
+                  animation: 'pulse 1.4s infinite', animationDelay: `${d}ms`
                 }} />
               ))}
             </div>
@@ -449,19 +526,10 @@ export default function Chat() {
             placeholder="Ask about your finances..."
             rows={1}
             style={{
-              flex: 1,
-              resize: 'none',
-              borderRadius: '22px',
-              padding: '11px 18px',
-              fontSize: '14px',
-              lineHeight: '1.5',
-              minHeight: '44px',
-              maxHeight: '140px',
-              background: 'var(--sand-200)',
-              border: '0.5px solid var(--sand-300)',
-              color: 'var(--sand-900)',
-              outline: 'none',
-              fontFamily: 'inherit',
+              flex: 1, resize: 'none', borderRadius: '22px', padding: '11px 18px',
+              fontSize: '14px', lineHeight: '1.5', minHeight: '44px', maxHeight: '140px',
+              background: 'var(--sand-200)', border: '0.5px solid var(--sand-300)',
+              color: 'var(--sand-900)', outline: 'none', fontFamily: 'inherit',
               transition: 'border-color 0.2s'
             }}
           />
@@ -469,17 +537,12 @@ export default function Chat() {
             onClick={handleSend}
             disabled={!input.trim() || loading}
             style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '50%',
+              width: '44px', height: '44px', borderRadius: '50%',
               background: input.trim() && !loading ? 'var(--accent)' : 'var(--sand-300)',
               border: 'none',
               cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              transition: 'background 0.2s, transform 0.1s'
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'background 0.2s, transform 0.1s'
             }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
               stroke={input.trim() && !loading ? 'var(--sand-50)' : 'var(--sand-500)'}

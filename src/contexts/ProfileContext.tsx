@@ -44,7 +44,18 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [hasProfile, setHasProfile] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') load()
+      if (event === 'SIGNED_OUT') {
+        setUserId(null); setUserEmail(''); setProfileData(null); setAnalysis(null)
+        setChatRefs({}); setWatchlist(['SPY', 'QQQ', 'AAPL']); setSavedIdeas([])
+        setIncomeIdeas([]); setGoalAdvice({}); setHasProfile(false); setLoading(false)
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   const load = async () => {
     const { data: { user } } = await supabase.auth.getUser()

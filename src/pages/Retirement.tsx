@@ -61,11 +61,11 @@ function formatMessage(content: string) {
 
 export default function Retirement() {
   const navigate = useNavigate()
-  const { userId, profileData: profile, updateProfile } = useProfile()
+  const { userId, profileData: profile, updateProfile, loading: profileLoading } = useProfile()
   const [plan, setPlan] = useState<RetirementPlan | null>(profile?.retirement_plan || null)
   const [built, setBuilt] = useState(!!profile?.retirement_plan)
   const [building, setBuilding] = useState(false)
-  const [currentAge, setCurrentAge] = useState(profile?.retirement_plan?.currentAge || 23)
+  const [currentAge, setCurrentAge] = useState(profile?.retirement_plan?.currentAge || profile?.age || 23)
   const [targetAge, setTargetAge] = useState(profile?.retirement_plan?.targetAge || 52)
   const [chatMessages, setChatMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -78,20 +78,21 @@ export default function Retirement() {
     if (profile?.retirement_plan && !plan) {
       setPlan(profile.retirement_plan)
       setBuilt(true)
-      setCurrentAge(profile.retirement_plan.currentAge || 23)
+      setCurrentAge(profile.retirement_plan.currentAge || profile.age || 23)
       setTargetAge(profile.retirement_plan.targetAge || 52)
+    } else if (profile?.age && !currentAge) {
+      setCurrentAge(profile.age)
     }
   }, [profile])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
   const buildPlan = async () => {
-    if (!profile || !userId) return
+    if (!userId) return
     setBuilding(true)
 
-    const totalAssets = profile.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
-    const retirementAssets = profile.assets?.filter((a: any) => ['retirement', 'investment'].includes(a.category))
+    const retirementAssets = profile?.assets?.filter((a: any) => ['retirement', 'investment'].includes(a.category))
       .reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
-    const availableToSave = (profile.monthly_income || 0) - (profile.monthly_expenses || 0)
+    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
     const yearsToRetirement = targetAge - currentAge
     const targetNestEgg = availableToSave * 12 * 25
     const monthlyContribution = Math.min(availableToSave, availableToSave * 0.7)
@@ -117,16 +118,16 @@ export default function Retirement() {
     setBuilt(true)
 
     // Save to profile
-    const updatedProfile = { ...profile, retirement_plan: newPlan }
+    const updatedProfile = { ...(profile || {}), retirement_plan: newPlan }
     await updateProfile({ profile_data: updatedProfile })
 
     // Get AI strategy
     const initialMsg: Message = {
       role: 'user',
-      content: `Build me a comprehensive retirement plan. I'm ${currentAge} years old, want to retire at ${targetAge}. 
+      content: `Build me a comprehensive retirement plan. I'm ${currentAge} years old, want to retire at ${targetAge}.
 I have $${retirementAssets.toLocaleString()} saved for retirement already.
-Monthly income: $${profile.monthly_income}, expenses: $${profile.monthly_expenses}, available to save: $${availableToSave}/month.
-Assets: ${profile.assets?.map((a: any) => `${a.name}: $${a.value}`).join(', ')}.
+Monthly income: $${profile?.monthly_income || 0}, expenses: $${profile?.monthly_expenses || 0}, available to save: $${availableToSave}/month.
+Assets: ${profile?.assets?.map((a: any) => `${a.name}: $${a.value}`).join(', ') || 'none listed'}.
 Projected nest egg at retirement: $${Math.round(projectedNestEgg).toLocaleString()}.
 Give me a clear, specific retirement strategy with exact numbers and steps.`
     }
@@ -138,7 +139,7 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [initialMsg], profile, topic: 'retirement' })
+        body: JSON.stringify({ messages: [initialMsg], profile: profile || {}, topic: 'retirement' })
       })
       const data = await res.json()
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
@@ -268,6 +269,12 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
       y: { ticks: { color: '#9e8e7e', font: { size: 10 }, callback: (v: any) => `$${(v/1000000).toFixed(1)}M` }, grid: { color: '#ede8e3' } }
     }
   }
+
+  if (profileLoading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
+      <div style={{ width: '32px', height: '32px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--sand-100)' }}>

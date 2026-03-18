@@ -520,33 +520,36 @@ export default function Home() {
   }
 
   const openMiniDash = async (type: 'assets' | 'debts' | 'savings') => {
-    if (!analysis || !profile) return
     setMiniDash({ type, analysis: '', loading: true })
+    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+    const totalAssets = analysis?.totalAssets ?? profile?.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) ?? 0
     const prompts = {
-      assets: `Analyze this person's asset allocation: ${JSON.stringify(profile.assets)}. Total: $${analysis.totalAssets}. Give specific advice on diversification and top 2-3 actions to optimize. Be concise.`,
-      debts: `Analyze these debts: ${JSON.stringify(profile.debts)}. Income: $${profile.monthly_income}. Give priority payoff order and best strategy. Be concise.`,
-      savings: `Person has $${analysis.availableToSave}/mo to save. Income: $${profile.monthly_income}, Expenses: $${profile.monthly_expenses}. Assets: ${JSON.stringify(profile.assets)}. Give specific dollar allocation advice. Be concise.`
+      assets: `Analyze my asset allocation and give specific advice. Assets: ${JSON.stringify(profile?.assets || [])}. Total: $${totalAssets.toLocaleString()}. What's my diversification score and the top 2-3 things I should do to optimize it?`,
+      debts: `Analyze my debts and build me an optimal payoff strategy. Debts: ${JSON.stringify(profile?.debts || [])}. Monthly income: $${profile?.monthly_income || 0}. Give me priority order and exact monthly amounts.`,
+      savings: `I have $${availableToSave.toLocaleString()}/month to allocate. Income: $${profile?.monthly_income || 0}, Expenses: $${profile?.monthly_expenses || 0}. Assets: ${JSON.stringify(profile?.assets || [])}. Give me an exact dollar allocation across investing, emergency fund, and any debt.`
     }
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompts[type] }], profile, topic: 'general' })
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompts[type] }], profile: profile || {}, topic: 'general' })
       })
       const data = await res.json()
-      setMiniDash({ type, analysis: data.message || '', loading: false })
+      setMiniDash({ type, analysis: data.message || 'No response received.', loading: false })
     } catch {
-      setMiniDash({ type, analysis: 'Unable to load analysis.', loading: false })
+      setMiniDash({ type, analysis: 'Unable to load analysis. Check your connection and try again.', loading: false })
     }
   }
 
   const openChat = async (key: string, prompt: string, title: string) => {
-    if (!userId) return
+    if (!userId) { navigate('/chats'); return }
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
-    const { data } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
+    const { data, error } = await supabase.from('chats').insert({ user_id: userId, title, topic: 'general', messages: [] }).select().single()
     if (data) {
       await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
       navigate(`/chat/${data.id}`, { state: { prompt } })
+    } else if (error) {
+      navigate('/chats')
     }
   }
 
