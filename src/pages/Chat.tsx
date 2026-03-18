@@ -201,8 +201,10 @@ function TextBlock({ content }: { content: string }) {
 }
 
 function FormattedMessage({ content }: { content: string }) {
+  // Strip any raw <followups> tags that may be stored in old messages
+  const cleaned = content.replace(/<followups>[\s\S]*?<\/followups>/g, '').trim()
   // Split content into text and chart blocks
-  const parts = content.split(/(<chart>[\s\S]*?<\/chart>)/g)
+  const parts = cleaned.split(/(<chart>[\s\S]*?<\/chart>)/g)
   return (
     <div>
       {parts.map((part, i) => {
@@ -239,7 +241,13 @@ export default function Chat() {
     const chatRes = await supabase.from('chats').select('*').eq('id', id).single()
     if (chatRes.data) {
       setTitle(chatRes.data.title || 'Chat')
-      setMessages(chatRes.data.messages || [])
+      // Strip any <followups> tags from stored messages (from older saves)
+      const cleanedMessages = (chatRes.data.messages || []).map((m: Message) =>
+        m.role === 'assistant'
+          ? { ...m, content: m.content.replace(/<followups>[\s\S]*?<\/followups>/g, '').trim() }
+          : m
+      )
+      setMessages(cleanedMessages)
       if (!initialized.current && location.state?.prompt &&
         (!chatRes.data.messages || chatRes.data.messages.length === 0)) {
         initialized.current = true
