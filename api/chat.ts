@@ -80,13 +80,22 @@ WHEN to include charts (use your judgment — only when it genuinely adds value)
 - Showing asset allocation vs. recommended allocation (doughnut or bar)
 - Illustrating net worth trajectory (line chart)
 
-Place charts AFTER the relevant explanation, not before. Use real numbers from their profile.`
+Place charts AFTER the relevant explanation, not before. Use real numbers from their profile.
+
+FOLLOW-UP QUESTIONS:
+At the very end of every response, after "**Your move today:**", include a block with 2-3 natural follow-up questions the user is likely to want to ask next, based on what you just covered. Format EXACTLY like this (valid JSON array, no extra text):
+<followups>["Follow-up question 1?", "Follow-up question 2?", "Follow-up question 3?"]</followups>
+
+Make follow-ups specific to the conversation — not generic. If you just covered debt payoff, suggest questions about investing the freed cash, credit score impact, etc.`
+
+    // Cap context to last 20 messages to control latency and cost
+    const contextMessages = messages.slice(-20)
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: systemPrompt },
-        ...messages
+        ...contextMessages
       ],
       temperature: 0.35,
       max_tokens: 2500

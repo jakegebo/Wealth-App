@@ -225,6 +225,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [title, setTitle] = useState('Chat')
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const initialized = useRef(false)
@@ -253,6 +254,7 @@ export default function Chat() {
     const newMessages = [...currentMessages, userMessage]
     setMessages(newMessages)
     setInput('')
+    setFollowUpQuestions([])
     setLoading(true)
 
     try {
@@ -266,10 +268,19 @@ export default function Chat() {
         })
       })
       const data = await res.json()
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.message || 'Something went wrong. Please try again.'
+      let rawContent = data.message || 'Something went wrong. Please try again.'
+
+      // Parse and strip follow-up questions from the response
+      const followupMatch = rawContent.match(/<followups>([\s\S]*?)<\/followups>/)
+      if (followupMatch) {
+        try {
+          const parsed = JSON.parse(followupMatch[1].trim())
+          if (Array.isArray(parsed)) setFollowUpQuestions(parsed.slice(0, 3))
+        } catch {}
+        rawContent = rawContent.replace(/<followups>[\s\S]*?<\/followups>/g, '').trim()
       }
+
+      const assistantMessage: Message = { role: 'assistant', content: rawContent }
       const finalMessages = [...newMessages, assistantMessage]
       setMessages(finalMessages)
       await supabase.from('chats').update({
@@ -354,13 +365,14 @@ export default function Chat() {
       <div style={{
         background: 'var(--sand-50)',
         borderBottom: '0.5px solid var(--sand-300)',
-        padding: '16px 20px',
+        padding: '14px 16px',
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
         position: 'sticky',
         top: 0,
-        zIndex: 10
+        zIndex: 10,
+        backdropFilter: 'blur(12px)'
       }}>
         <button onClick={() => navigate(-1)} style={{
           background: 'var(--sand-200)', border: 'none', width: '34px', height: '34px',
@@ -368,19 +380,30 @@ export default function Chat() {
           justifyContent: 'center', color: 'var(--sand-700)', fontSize: '16px', flexShrink: 0
         }}>←</button>
 
+        <div style={{
+          width: '36px', height: '36px', background: 'var(--accent)', borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          boxShadow: '0 2px 8px rgba(74,106,62,0.25)'
+        }}>
+          <span style={{ color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700' }}>AI</span>
+        </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
             fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
           }}>{title}</p>
-          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>AI Financial Advisor · Charts enabled</p>
-        </div>
-
-        <div style={{
-          width: '34px', height: '34px', background: 'var(--accent)', borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-        }}>
-          <span style={{ color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700' }}>AI</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '1px' }}>
+            <div style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: loading ? 'var(--sand-400)' : '#5a9e4a',
+              animation: loading ? 'pulse 1.4s infinite' : 'none',
+              transition: 'background 0.3s'
+            }} />
+            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>
+              {loading ? 'Thinking...' : 'Financial Advisor'}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -448,36 +471,96 @@ export default function Chat() {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <div key={i} style={{
-            display: 'flex', gap: '10px',
-            flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-            animation: 'fadeIn 0.2s ease forwards'
-          }}>
-            {msg.role === 'assistant' && (
+        {messages.map((msg, i) => {
+          const isLastAssistant = msg.role === 'assistant' && i === messages.length - 1 && !loading
+          return (
+            <div key={i}>
               <div style={{
-                width: '30px', height: '30px', background: 'var(--accent)', borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px'
+                display: 'flex', gap: '10px',
+                flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                animation: 'fadeIn 0.2s ease forwards'
               }}>
-                <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
-              </div>
-            )}
+                {msg.role === 'assistant' && (
+                  <div style={{
+                    width: '30px', height: '30px', background: 'var(--accent)', borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px'
+                  }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>AI</span>
+                  </div>
+                )}
 
-            <div style={{
-              maxWidth: msg.role === 'user' ? '72%' : '90%',
-              background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)',
-              border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)',
-              borderRadius: msg.role === 'user' ? '20px 20px 4px 20px' : '4px 20px 20px 20px',
-              padding: msg.role === 'user' ? '12px 16px' : '16px 18px',
-              boxShadow: msg.role === 'assistant' ? '0 1px 4px rgba(26,18,8,0.04)' : 'none'
-            }}>
-              {msg.role === 'user'
-                ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.6' }}>{msg.content}</p>
-                : <FormattedMessage content={msg.content} />
-              }
+                <div style={{
+                  maxWidth: msg.role === 'user' ? '72%' : '90%',
+                  background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)',
+                  border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)',
+                  borderRadius: msg.role === 'user' ? '20px 20px 4px 20px' : '4px 20px 20px 20px',
+                  padding: msg.role === 'user' ? '12px 16px' : '16px 18px',
+                  boxShadow: msg.role === 'assistant' ? '0 2px 8px rgba(26,18,8,0.06)' : 'none'
+                }}>
+                  {msg.role === 'user'
+                    ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.6' }}>{msg.content}</p>
+                    : <FormattedMessage content={msg.content} />
+                  }
+                </div>
+              </div>
+
+              {/* Follow-up question chips after last AI message */}
+              {isLastAssistant && followUpQuestions.length > 0 && (
+                <div style={{
+                  marginTop: '12px', marginLeft: '40px',
+                  display: 'flex', flexDirection: 'column', gap: '7px',
+                  animation: 'fadeIn 0.3s ease forwards'
+                }}>
+                  <p style={{
+                    fontSize: '10px', color: 'var(--sand-400)', margin: '0 0 2px',
+                    fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase'
+                  }}>
+                    Ask next
+                  </p>
+                  {followUpQuestions.map((q, qi) => (
+                    <button
+                      key={qi}
+                      onClick={() => sendMessage(q)}
+                      style={{
+                        background: 'var(--sand-50)',
+                        border: '0.5px solid var(--sand-300)',
+                        borderRadius: '20px',
+                        padding: '9px 14px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: 'var(--sand-700)',
+                        fontFamily: 'inherit',
+                        lineHeight: '1.4',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.15s',
+                        boxShadow: '0 1px 3px rgba(26,18,8,0.04)'
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-100)'
+                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-50)'
+                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--sand-300)'
+                      }}
+                    >
+                      <span style={{
+                        width: '18px', height: '18px', borderRadius: '50%',
+                        background: 'var(--sand-200)', color: 'var(--sand-600)',
+                        fontSize: '10px', fontWeight: '700', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                      }}>↗</span>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {loading && (
           <div style={{ display: 'flex', gap: '10px', animation: 'fadeIn 0.2s ease forwards' }}>
