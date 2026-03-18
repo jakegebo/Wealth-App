@@ -41,6 +41,98 @@ interface MiniDashboard {
   loading: boolean
 }
 
+const MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+
+function getMilestoneKey(netWorth: number) {
+  const hit = MILESTONES.filter(m => netWorth >= m)
+  return hit.length > 0 ? `milestone_${hit[hit.length - 1]}` : null
+}
+
+function computeHealthScore(analysis: Analysis, profile: any) {
+  const sr = analysis.savingsRate || 0
+  const savingsScore = sr >= 20 ? 30 : sr >= 15 ? 24 : sr >= 10 ? 18 : sr >= 5 ? 10 : 3
+
+  const totalDebtPmt = profile?.debts?.reduce((s: number, d: any) => s + (d.minimum_payment || 0), 0) || 0
+  const income = profile?.monthly_income || 1
+  const debtRatio = totalDebtPmt / income
+  const hasDebts = (profile?.debts?.length || 0) > 0
+  const debtScore = !hasDebts ? 25 : debtRatio < 0.10 ? 22 : debtRatio < 0.20 ? 15 : debtRatio < 0.30 ? 8 : 2
+
+  const liquid = profile?.assets?.filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+  const monthlyExp = profile?.monthly_expenses || 1
+  const emoMonths = liquid / monthlyExp
+  const emergencyScore = emoMonths >= 6 ? 25 : emoMonths >= 3 ? 18 : emoMonths >= 1 ? 10 : 2
+
+  const cats = new Set(profile?.assets?.map((a: any) => a.category) || [])
+  const diversityScore = cats.size >= 4 ? 10 : cats.size >= 3 ? 8 : cats.size >= 2 ? 5 : cats.size >= 1 ? 3 : 0
+
+  const goals = analysis.goals || []
+  const avgGoal = goals.length > 0 ? goals.reduce((s: number, g: any) => s + Math.min(100, g.percentage || 0), 0) / goals.length : 50
+  const goalScore = avgGoal >= 75 ? 10 : avgGoal >= 50 ? 7 : avgGoal >= 25 ? 4 : 2
+
+  const total = Math.min(100, savingsScore + debtScore + emergencyScore + diversityScore + goalScore)
+  return {
+    score: total,
+    label: total >= 80 ? 'Excellent' : total >= 65 ? 'Good' : total >= 45 ? 'Fair' : 'Needs work',
+    color: total >= 80 ? 'var(--success)' : total >= 65 ? 'var(--accent)' : total >= 45 ? 'var(--warning)' : 'var(--danger)',
+    breakdown: [
+      { label: 'Savings rate', score: savingsScore, max: 30, note: `${Math.round(sr)}%` },
+      { label: 'Debt load', score: debtScore, max: 25, note: hasDebts ? `${Math.round(debtRatio * 100)}% of income` : 'Debt-free' },
+      { label: 'Emergency fund', score: emergencyScore, max: 25, note: `${emoMonths.toFixed(1)} months` },
+      { label: 'Diversification', score: diversityScore, max: 10, note: `${cats.size} asset ${cats.size === 1 ? 'type' : 'types'}` },
+      { label: 'Goal progress', score: goalScore, max: 10, note: goals.length > 0 ? `${Math.round(avgGoal)}% avg` : 'No goals set' },
+    ]
+  }
+}
+
+function generateInsights(analysis: Analysis, profile: any): { text: string; type: 'positive' | 'neutral' | 'warning' }[] {
+  const insights: { text: string; type: 'positive' | 'neutral' | 'warning' }[] = []
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+
+  const sr = Math.round(analysis.savingsRate || 0)
+  if (sr >= 20) {
+    insights.push({ text: `${sr}% savings rate — top tier. Most Americans save under 5%.`, type: 'positive' })
+  } else if (sr >= 10) {
+    const gap = Math.round((profile?.monthly_income || 0) * 0.20 - (analysis.availableToSave || 0))
+    insights.push({ text: `${sr}% savings rate. Adding ${fmt(gap)}/mo reaches the 20% benchmark.`, type: 'neutral' })
+  } else {
+    insights.push({ text: `${sr}% savings rate. Target 20%+ for serious wealth building.`, type: 'warning' })
+  }
+
+  if ((analysis.totalLiabilities || 0) === 0) {
+    insights.push({ text: `Debt-free. Every dollar earned goes straight to building wealth.`, type: 'positive' })
+  } else {
+    const highDebt = [...(analysis.debts || [])].sort((a, b) => b.interestRate - a.interestRate)[0]
+    if (highDebt && highDebt.interestRate > 15) {
+      insights.push({ text: `${highDebt.name} at ${highDebt.interestRate}% APR is your most expensive debt — pay this down first.`, type: 'warning' })
+    } else if (highDebt) {
+      insights.push({ text: `Highest-rate debt: ${highDebt.name} at ${highDebt.interestRate}% — ${highDebt.monthsToPayoff} months to payoff.`, type: 'neutral' })
+    }
+  }
+
+  const liquid = profile?.assets?.filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
+  const emoMonths = liquid / (profile?.monthly_expenses || 1)
+  if (emoMonths < 1) {
+    insights.push({ text: `Emergency fund covers less than 1 month. Build to 3–6 months before investing more.`, type: 'warning' })
+  } else if (emoMonths < 3) {
+    insights.push({ text: `${emoMonths.toFixed(1)}-month emergency fund. Advisors recommend 3–6 months covered.`, type: 'neutral' })
+  } else if (emoMonths >= 6) {
+    insights.push({ text: `${Math.floor(emoMonths)}-month emergency fund — fully covered. Surplus above 6 months can be invested.`, type: 'positive' })
+  }
+
+  const achievedGoals = (analysis.goals || []).filter(g => (g.percentage || 0) >= 100)
+  if (achievedGoals.length > 0 && insights.length < 4) {
+    insights.push({ text: `${achievedGoals.length} goal${achievedGoals.length > 1 ? 's' : ''} fully funded. Time to put that capital to work.`, type: 'positive' })
+  } else {
+    const closest = [...(analysis.goals || [])].sort((a, b) => (b.percentage || 0) - (a.percentage || 0))[0]
+    if (closest && insights.length < 4) {
+      insights.push({ text: `${closest.name} is ${Math.round(closest.percentage || 0)}% funded — ${fmt(closest.targetAmount - closest.currentAmount)} to go.`, type: 'neutral' })
+    }
+  }
+
+  return insights.slice(0, 3)
+}
+
 function CountUp({ value, duration = 1200 }: { value: number; duration?: number }) {
   const [display, setDisplay] = useState(0)
   const startRef = useRef<number | null>(null)
@@ -67,6 +159,7 @@ function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)
+  if (hours < 1) return 'just now'
   if (hours < 24) return `${hours}h ago`
   return `${days}d ago`
 }
@@ -76,6 +169,119 @@ function greeting() {
   if (h < 12) return 'good morning'
   if (h < 17) return 'good afternoon'
   return 'good evening'
+}
+
+function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
+  const [expanded, setExpanded] = useState(false)
+  const { score, label, color, breakdown } = computeHealthScore(analysis, profile)
+
+  return (
+    <div className="card animate-fade" style={{ marginBottom: '12px', cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <p className="label" style={{ marginBottom: '4px' }}>Financial Health</p>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '44px', fontWeight: '300', color, letterSpacing: '-2px', lineHeight: '1' }}>{score}</span>
+            <span style={{ fontSize: '13px', color: 'var(--sand-500)' }}>/ 100</span>
+          </div>
+          <span style={{ fontSize: '13px', fontWeight: '600', color }}>{label}</span>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          {/* Score ring using SVG */}
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--sand-200)" strokeWidth="5" />
+            <circle cx="32" cy="32" r="26" fill="none" stroke={color} strokeWidth="5"
+              strokeDasharray={`${(score / 100) * 163.4} 163.4`}
+              strokeLinecap="round"
+              transform="rotate(-90 32 32)"
+              style={{ transition: 'stroke-dasharray 1s ease' }}
+            />
+          </svg>
+          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '-4px 0 0', textAlign: 'center' }}>{expanded ? 'collapse ▲' : 'details ▼'}</p>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="animate-fade" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '0.5px solid var(--sand-200)' }}>
+          {breakdown.map((item, i) => (
+            <div key={i} style={{ marginBottom: i < breakdown.length - 1 ? '12px' : '0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--sand-700)', fontWeight: '500' }}>{item.label}</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{item.note}</span>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: item.score / item.max >= 0.8 ? 'var(--success)' : item.score / item.max >= 0.5 ? 'var(--accent)' : 'var(--warning)' }}>
+                    {item.score}/{item.max}
+                  </span>
+                </div>
+              </div>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{
+                  width: `${(item.score / item.max) * 100}%`,
+                  background: item.score / item.max >= 0.8 ? 'var(--success)' : item.score / item.max >= 0.5 ? 'var(--accent)' : 'var(--warning)'
+                }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InsightsStrip({ analysis, profile }: { analysis: Analysis; profile: any }) {
+  const insights = generateInsights(analysis, profile)
+  const typeColors = {
+    positive: { bg: 'rgba(122,158,110,0.08)', border: 'rgba(122,158,110,0.2)', dot: 'var(--success)' },
+    neutral: { bg: 'var(--sand-200)', border: 'var(--sand-300)', dot: 'var(--accent)' },
+    warning: { bg: 'rgba(192,57,43,0.05)', border: 'rgba(192,57,43,0.15)', dot: 'var(--danger)' },
+  }
+
+  return (
+    <div className="animate-fade stagger-1" style={{ marginBottom: '12px' }}>
+      <p className="label" style={{ marginBottom: '8px' }}>Key Insights</p>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
+        {insights.map((insight, i) => {
+          const c = typeColors[insight.type]
+          return (
+            <div key={i} style={{
+              background: c.bg,
+              border: `0.5px solid ${c.border}`,
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px',
+              minWidth: '220px',
+              maxWidth: '260px',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: c.dot, marginTop: '5px', flexShrink: 0 }} />
+                <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)', margin: 0 }}>{insight.text}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => void }) {
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  useEffect(() => {
+    const t = setTimeout(onClose, 5000)
+    return () => clearTimeout(t)
+  }, [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }} onClick={onClose}>
+      <div className="animate-scale" style={{ background: 'var(--sand-50)', borderRadius: 'var(--radius-lg)', padding: '32px 28px', textAlign: 'center', maxWidth: '320px', width: '100%' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎉</div>
+        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 8px' }}>Milestone reached</p>
+        <p style={{ fontSize: '32px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-1px', margin: '0 0 8px' }}>{fmt(amount)}</p>
+        <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 20px', lineHeight: '1.5' }}>Your net worth just crossed {fmt(amount)}. That's a real achievement — keep going.</p>
+        <button onClick={onClose} className="btn-primary" style={{ width: '100%', padding: '12px', fontSize: '14px' }}>Keep building →</button>
+      </div>
+    </div>
+  )
 }
 
 function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWorth, totalAssets, totalLiabilities, availableToSave }: {
@@ -100,6 +306,16 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
     return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
   })
 
+  // Asset allocation donut data
+  const categoryColors: Record<string, string> = {
+    retirement: 'var(--accent)',
+    investment: 'var(--success)',
+    savings: '#5a8fc4',
+    real_estate: '#c4955a',
+    crypto: '#9b5ac4',
+    other: 'var(--sand-400)',
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
@@ -115,18 +331,38 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(totalAssets)}</p>
               <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 16px' }}>total assets</p>
-              {profile?.assets?.map((asset: any, i: number) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '0.5px solid var(--sand-200)' }}>
-                  <div>
-                    <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 2px', color: 'var(--sand-900)' }}>{asset.name}</p>
-                    {asset.holdings && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{asset.holdings}</p>}
+              {/* Category breakdown */}
+              {(() => {
+                const byCategory: Record<string, number> = {}
+                profile?.assets?.forEach((a: any) => {
+                  byCategory[a.category] = (byCategory[a.category] || 0) + (a.value || 0)
+                })
+                return Object.entries(byCategory).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                  <div key={cat} style={{ marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--sand-700)', textTransform: 'capitalize' }}>{cat.replace('_', ' ')}</span>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(val)} · {((val / totalAssets) * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${(val / totalAssets) * 100}%`, background: categoryColors[cat] || 'var(--sand-400)' }} />
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{fmt(asset.value)}</p>
-                    <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{((asset.value / totalAssets) * 100).toFixed(1)}%</p>
+                ))
+              })()}
+              <div style={{ marginTop: '16px', borderTop: '0.5px solid var(--sand-200)', paddingTop: '12px' }}>
+                {profile?.assets?.map((asset: any, i: number) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid var(--sand-200)' }}>
+                    <div>
+                      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 2px', color: 'var(--sand-900)' }}>{asset.name}</p>
+                      {asset.holdings && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{asset.holdings}</p>}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{fmt(asset.value)}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{((asset.value / totalAssets) * 100).toFixed(1)}%</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
           {type === 'debts' && (
@@ -197,6 +433,8 @@ export default function Home() {
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [analysisError, setAnalysisError] = useState(false)
+  const [milestone, setMilestone] = useState<number | null>(null)
+  const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null)
 
   useEffect(() => {
     if (profileLoading) return
@@ -205,10 +443,25 @@ export default function Home() {
     fetchNews()
     if (analysis) {
       saveNetWorthHistory(userId!, analysis)
+      checkMilestone(analysis.netWorth)
     } else if (profile) {
       runAnalysis(profile)
     }
+    // Load last analyzed timestamp
+    const stored = localStorage.getItem(`lastAnalyzed_${userId}`)
+    if (stored) setLastAnalyzedAt(stored)
   }, [profileLoading])
+
+  const checkMilestone = (netWorth: number) => {
+    const key = getMilestoneKey(netWorth)
+    if (!key || !userId) return
+    const storageKey = `${userId}_${key}`
+    if (!localStorage.getItem(storageKey)) {
+      const threshold = MILESTONES.filter(m => netWorth >= m).pop()!
+      setMilestone(threshold)
+      localStorage.setItem(storageKey, '1')
+    }
+  }
 
   const saveNetWorthHistory = async (uid: string, analysisData: Analysis) => {
     try {
@@ -252,7 +505,13 @@ export default function Home() {
       })
       const result = await res.json()
       await updateProfile({ analysis: result })
-      if (userId) saveNetWorthHistory(userId, result)
+      if (userId) {
+        saveNetWorthHistory(userId, result)
+        checkMilestone(result.netWorth)
+        const now = new Date().toISOString()
+        localStorage.setItem(`lastAnalyzed_${userId}`, now)
+        setLastAnalyzedAt(now)
+      }
     } catch (err) {
       console.error('Analysis failed:', err)
       setAnalysisError(true)
@@ -332,6 +591,9 @@ export default function Home() {
         <div>
           <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 2px' }}>{greeting()}, {firstName}</p>
           <h1 style={{ fontSize: '20px', fontWeight: '500', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.3px' }}>Here's your overview</h1>
+          {lastAnalyzedAt && (
+            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '2px 0 0' }}>Updated {timeAgo(lastAnalyzedAt)}</p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
           <button onClick={() => navigate('/settings')}
@@ -366,14 +628,12 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Net Worth History Chart */}
         {showHistory && userId && (
           <div className="animate-fade" style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '0.5px solid var(--sand-200)' }}>
             <NetWorthChart userId={userId} />
           </div>
         )}
 
-        {/* Clickable stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
           {[
             { id: 'assets', label: 'Assets', value: fmt(analysis.totalAssets), color: 'var(--sand-900)', bg: 'var(--sand-200)' },
@@ -390,9 +650,19 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Financial Health Score */}
+      {isVisible('health') && (
+        <HealthScoreCard analysis={analysis} profile={profile} />
+      )}
+
+      {/* Key Insights */}
+      {isVisible('insights') && (
+        <InsightsStrip analysis={analysis} profile={profile} />
+      )}
+
       {/* Today's Focus */}
       {isVisible('focus') && topAction && (
-        <div className="animate-fade stagger-1" style={{ marginBottom: '12px', background: 'var(--accent)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
+        <div className="animate-fade stagger-2" style={{ marginBottom: '12px', background: 'var(--accent)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
           <p style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', textTransform: 'uppercase' }}>
             This week's focus
           </p>
@@ -416,23 +686,29 @@ export default function Home() {
 
       {/* Quick Stats */}
       {isVisible('stats') && (
-        <div className="animate-fade stagger-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+        <div className="animate-fade stagger-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
           <div className="card" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => navigate('/plan')}>
             <p className="label" style={{ marginBottom: '4px' }}>Retire at</p>
-            <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>52</p>
-            <p style={{ fontSize: '11px', color: 'var(--success)', margin: 0 }}>on track ✓</p>
+            <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>
+              {profile?.retirement_plan?.targetAge || '—'}
+            </p>
+            <p style={{ fontSize: '11px', color: profile?.retirement_plan?.onTrack ? 'var(--success)' : 'var(--sand-500)', margin: 0 }}>
+              {profile?.retirement_plan ? (profile.retirement_plan.onTrack ? 'on track ✓' : 'needs attention') : 'set up plan →'}
+            </p>
           </div>
           <div className="card" style={{ padding: '16px' }}>
             <p className="label" style={{ marginBottom: '4px' }}>Savings rate</p>
             <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>{Math.round(analysis.savingsRate)}%</p>
-            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{fmt(analysis.availableToSave)}/mo</p>
+            <p style={{ fontSize: '11px', color: analysis.savingsRate >= 20 ? 'var(--success)' : 'var(--sand-500)', margin: 0 }}>
+              {analysis.savingsRate >= 20 ? 'excellent ✓' : `${fmt(analysis.availableToSave)}/mo`}
+            </p>
           </div>
         </div>
       )}
 
       {/* Watchlist */}
       {isVisible('watchlist') && stocks.length > 0 && (
-        <div className="animate-fade stagger-3" style={{ marginBottom: '12px' }}>
+        <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <p className="label">Watchlist</p>
             <button className="btn-ghost" onClick={() => navigate('/grow')} style={{ fontSize: '11px', padding: '3px 8px' }}>View all →</button>
@@ -491,6 +767,10 @@ export default function Home() {
           totalLiabilities={analysis.totalLiabilities}
           availableToSave={analysis.availableToSave}
         />
+      )}
+
+      {milestone && (
+        <MilestoneOverlay amount={milestone} onClose={() => setMilestone(null)} />
       )}
     </div>
   )

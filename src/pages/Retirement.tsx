@@ -196,38 +196,53 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
 
   const chartData = plan ? buildChartData() : null
 
-  const lineChartData = chartData ? {
+  const lineChartData = chartData && plan ? {
     labels: chartData.labels,
     datasets: [
       {
-        label: 'Conservative (4%)',
+        // Upper bound (aggressive) - fills down to conservative to create the band
+        label: 'High (10%)',
+        data: chartData.aggressive,
+        borderColor: 'rgba(122,158,110,0.25)',
+        backgroundColor: 'rgba(122,158,110,0.08)',
+        fill: '+1', // fill to the next dataset (conservative) to create the band
+        tension: 0.4,
+        pointRadius: 0,
+        borderWidth: 1,
+      },
+      {
+        // Lower bound (conservative)
+        label: 'Low (4%)',
         data: chartData.conservative,
-        borderColor: 'rgba(192,57,43,0.6)',
-        backgroundColor: 'rgba(192,57,43,0.05)',
+        borderColor: 'rgba(192,57,43,0.25)',
+        backgroundColor: 'transparent',
         fill: false,
         tension: 0.4,
         pointRadius: 0,
-        borderWidth: 2
+        borderWidth: 1,
       },
       {
-        label: 'Moderate (7%)',
+        // Main projection (moderate)
+        label: 'Expected (7%)',
         data: chartData.moderate,
         borderColor: 'var(--accent)',
-        backgroundColor: 'rgba(26,18,8,0.05)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        borderWidth: 2.5
-      },
-      {
-        label: 'Aggressive (10%)',
-        data: chartData.aggressive,
-        borderColor: 'rgba(122,158,110,0.8)',
-        backgroundColor: 'rgba(122,158,110,0.05)',
+        backgroundColor: 'transparent',
         fill: false,
         tension: 0.4,
         pointRadius: 0,
-        borderWidth: 2
+        borderWidth: 2.5,
+      },
+      {
+        // Target nest egg horizontal line
+        label: `Target: ${fmt(plan.targetNestEgg)}`,
+        data: Array(chartData.labels.length).fill(plan.targetNestEgg),
+        borderColor: 'rgba(192,57,43,0.5)',
+        backgroundColor: 'transparent',
+        fill: false,
+        tension: 0,
+        pointRadius: 0,
+        borderWidth: 1.5,
+        borderDash: [5, 4],
       }
     ]
   } : null
@@ -419,21 +434,30 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
               {chartData && [
-                { label: 'Conservative', value: chartData.conservative[chartData.conservative.length - 1], rate: '4%', color: 'var(--danger)' },
-                { label: 'Moderate', value: chartData.moderate[chartData.moderate.length - 1], rate: '7%', color: 'var(--accent)' },
-                { label: 'Aggressive', value: chartData.aggressive[chartData.aggressive.length - 1], rate: '10%', color: 'var(--success)' },
+                { label: 'Conservative', value: chartData.conservative[chartData.conservative.length - 1], rate: '4%', color: 'rgba(192,57,43,0.7)', note: 'floor' },
+                { label: 'Expected', value: chartData.moderate[chartData.moderate.length - 1], rate: '7%', color: 'var(--accent)', note: 'most likely' },
+                { label: 'Optimistic', value: chartData.aggressive[chartData.aggressive.length - 1], rate: '10%', color: 'var(--success)', note: 'ceiling' },
               ].map((item, i) => (
                 <div key={i} className="card" style={{ padding: '14px', textAlign: 'center' }}>
                   <p style={{ fontSize: '10px', color: item.color, fontWeight: '700', margin: '0 0 4px', letterSpacing: '0.05em' }}>{item.rate}</p>
                   <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{fmt(item.value)}</p>
-                  <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>{item.label}</p>
+                  <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>{item.note}</p>
                 </div>
               ))}
             </div>
 
+            {plan && (
+              <div style={{ marginBottom: '16px', padding: '12px 14px', background: plan.onTrack ? 'rgba(122,158,110,0.08)' : 'rgba(192,57,43,0.05)', borderRadius: 'var(--radius-sm)', border: `0.5px solid ${plan.onTrack ? 'rgba(122,158,110,0.2)' : 'rgba(192,57,43,0.15)'}` }}>
+                <p style={{ fontSize: '13px', fontWeight: '600', color: plan.onTrack ? 'var(--success)' : 'var(--danger)', margin: '0 0 2px' }}>
+                  {plan.onTrack ? `On track — projected to exceed your target by ${fmt(plan.projectedNestEgg - plan.targetNestEgg)}` : `Shortfall of ${fmt(plan.shortfall)} at expected 7% return`}
+                </p>
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Target: {fmt(plan.targetNestEgg)} (25× annual spend). The shaded band shows your range of outcomes.</p>
+              </div>
+            )}
+
             <div className="card-muted" style={{ padding: '16px' }}>
               <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>Contributing {fmt(plan.monthlyContribution)}/mo starting now</p>
-              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>Projections assume consistent monthly contributions and don't account for inflation, taxes, or market volatility. The moderate (7%) scenario aligns with historical S&P 500 averages.</p>
+              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>The shaded range shows your 4%–10% return scenarios. The dashed red line is your target nest egg. The solid line is the expected 7% projection, matching historical S&P 500 averages.</p>
             </div>
           </div>
         )}

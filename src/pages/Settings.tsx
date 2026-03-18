@@ -15,8 +15,11 @@ const ACCENT_COLORS = [
 ]
 
 const SECTIONS = [
+  { id: 'health', label: 'Financial Health Score', required: false },
+  { id: 'insights', label: 'Key Insights', required: false },
   { id: 'focus', label: "Today's Focus", required: false },
   { id: 'stats', label: 'Quick Stats', required: false },
+  { id: 'cashflow', label: 'Cash Flow', required: false },
   { id: 'watchlist', label: 'Watchlist', required: false },
   { id: 'news', label: 'News Preview', required: false },
   { id: 'goals', label: 'Goals', required: false },

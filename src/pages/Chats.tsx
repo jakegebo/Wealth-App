@@ -20,10 +20,12 @@ const TOPIC_ICONS: Record<string, string> = {
 }
 
 const QUICK_TOPICS = [
-  { id: 'general', label: 'General advice', icon: '💬', prompt: 'Give me a summary of my overall financial health and the most important things I should focus on right now.' },
+  { id: 'general', label: 'Weekly digest', icon: '📋', prompt: 'Give me a concise weekly financial summary. Cover: (1) my overall financial health in 2 sentences, (2) the single most important thing to focus on this week, (3) one specific action I can take today. Be direct and specific to my actual numbers.' },
   { id: 'debt', label: 'Debt strategy', icon: '💳', prompt: 'Help me create a detailed debt payoff strategy based on my current debts and income.' },
   { id: 'investment', label: 'Investing', icon: '📈', prompt: 'Based on my financial situation, what should I be investing in and how should I allocate my available savings?' },
   { id: 'retirement', label: 'Retirement', icon: '🏖️', prompt: 'Analyze my retirement trajectory. Am I on track? What should I do to retire earlier or more comfortably?' },
+  { id: 'general', label: 'General advice', icon: '💬', prompt: 'Give me a summary of my overall financial health and the most important things I should focus on right now.' },
+  { id: 'general', label: 'Portfolio review', icon: '🗂️', prompt: 'Review my investment portfolio and asset allocation. Are my holdings well-diversified? What would you change, add, or remove based on my goals and timeline? Be specific about my actual holdings.' },
 ]
 
 function timeAgo(dateStr: string) {
@@ -90,8 +92,8 @@ export default function Chats() {
         <div style={{ marginBottom: '24px' }}>
           <p className="label" style={{ marginBottom: '10px' }}>Start a conversation</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            {QUICK_TOPICS.map(topic => (
-              <button key={topic.id} onClick={() => createChat(topic.id, topic.label, topic.prompt)}
+            {QUICK_TOPICS.map((topic, idx) => (
+              <button key={idx} onClick={() => createChat(topic.id, topic.label, topic.prompt)}
                 style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
                 <div style={{ fontSize: '20px', marginBottom: '6px' }}>{topic.icon}</div>
                 <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{topic.label}</p>
