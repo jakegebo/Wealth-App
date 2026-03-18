@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useProfile } from '../contexts/ProfileContext'
 
 interface Asset {
   name: string
@@ -27,6 +28,7 @@ const ASSET_CATEGORIES = ['retirement', 'investment', 'savings', 'real_estate', 
 
 export default function Onboarding() {
   const navigate = useNavigate()
+  const { updateProfile } = useProfile()
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -105,6 +107,7 @@ export default function Onboarding() {
       await supabase.from('profiles').insert({ user_id: userId, profile_data: profileData })
     }
 
+    await updateProfile({ profile_data: profileData })
     setSaving(false)
     navigate('/dashboard')
   }

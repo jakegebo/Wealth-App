@@ -67,7 +67,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = async (updates: Record<string, any>) => {
     // Optimistic local updates
-    if ('profile_data' in updates) setProfileData(updates.profile_data)
+    if ('profile_data' in updates) { setProfileData(updates.profile_data); setHasProfile(true) }
     if ('analysis' in updates) setAnalysis(updates.analysis)
     if ('chat_refs' in updates) setChatRefs(updates.chat_refs)
     if ('watchlist' in updates) setWatchlist(updates.watchlist)
