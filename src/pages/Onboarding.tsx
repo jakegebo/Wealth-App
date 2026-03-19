@@ -37,12 +37,17 @@ export default function Onboarding() {
   const [searchParams] = useSearchParams()
   const fromSettings = searchParams.get('from') === 'settings'
   const { updateProfile } = useProfile()
+
+  const [view, setView] = useState<'hub' | 'section'>(() => {
+    return searchParams.get('step') !== null ? 'section' : 'hub'
+  })
   const [step, setStep] = useState(() => {
     const s = parseInt(searchParams.get('step') || '0')
     return isNaN(s) ? 0 : Math.max(0, Math.min(s, 4))
   })
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [hasExistingProfile, setHasExistingProfile] = useState(false)
 
   const [age, setAge] = useState('')
   const [income, setIncome] = useState('')
@@ -64,6 +69,7 @@ export default function Onboarding() {
   const loadExisting = async (uid: string) => {
     const { data } = await supabase.from('profiles').select('profile_data').eq('user_id', uid).single()
     if (data?.profile_data) {
+      setHasExistingProfile(true)
       const p = data.profile_data
       setAge(p.age?.toString() || '')
       setIncome(p.monthly_income?.toString() || '')
@@ -121,39 +127,46 @@ export default function Onboarding() {
     setGoals(updated)
   }
 
-  const handleSave = async () => {
+  const buildProfileData = () => ({
+    age: parseInt(age) || null,
+    monthly_income: parseFloat(income) || 0,
+    monthly_expenses: parseFloat(expenses) || 0,
+    additional_context: context,
+    assets: assets.filter(a => a.name && a.value),
+    debts: debts.filter(d => d.name && d.balance),
+    goals: goals.filter(g => g.name && g.target_amount)
+  })
+
+  const persistProfile = async () => {
     if (!userId) return
     setSaving(true)
-
-    const profileData = {
-      age: parseInt(age) || null,
-      monthly_income: parseFloat(income) || 0,
-      monthly_expenses: parseFloat(expenses) || 0,
-      additional_context: context,
-      assets: assets.filter(a => a.name && a.value),
-      debts: debts.filter(d => d.name && d.balance),
-      goals: goals.filter(g => g.name && g.target_amount)
-    }
-
+    const profileData = buildProfileData()
     const { data: existing } = await supabase.from('profiles').select('id').eq('user_id', userId).single()
-
     if (existing) {
       await supabase.from('profiles').update({ profile_data: profileData, analysis: null, updated_at: new Date().toISOString() }).eq('user_id', userId)
     } else {
       await supabase.from('profiles').insert({ user_id: userId, profile_data: profileData })
     }
-
     await updateProfile({ profile_data: profileData })
     setSaving(false)
+  }
+
+  const handleSaveSection = async () => {
+    await persistProfile()
+    setView('hub')
+  }
+
+  const handleFinish = async () => {
+    await persistProfile()
     navigate(fromSettings ? '/settings' : '/dashboard')
   }
 
-  const steps = [
-    { title: 'Income & expenses', subtitle: 'Your monthly cash flow' },
-    { title: 'Assets', subtitle: 'What you own' },
-    { title: 'Debts', subtitle: 'What you owe' },
-    { title: 'Goals', subtitle: 'What you\'re working toward' },
-    { title: 'Context', subtitle: 'Anything else we should know' },
+  const sections = [
+    { title: 'Income & expenses', subtitle: 'Monthly cash flow', complete: !!(age || income || expenses) },
+    { title: 'Assets', subtitle: 'What you own', complete: assets.some(a => a.name && a.value) },
+    { title: 'Debts', subtitle: 'What you owe', complete: debts.length > 0 },
+    { title: 'Goals', subtitle: 'What you\'re working toward', complete: goals.some(g => g.name && g.target_amount) },
+    { title: 'Context', subtitle: 'Anything else we should know', complete: context.length > 0 },
   ]
 
   const inputStyle = {
@@ -179,7 +192,7 @@ export default function Onboarding() {
       {/* Header */}
       <div style={{ background: 'var(--sand-50)', borderBottom: '0.5px solid var(--sand-300)', padding: '20px' }}>
         <div style={{ maxWidth: '520px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '28px', height: '28px', background: 'var(--accent)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ color: 'var(--sand-50)', fontWeight: '700', fontSize: '12px' }}>W</span>
@@ -187,30 +200,20 @@ export default function Onboarding() {
               <span style={{ fontWeight: '600', fontSize: '15px', color: 'var(--sand-900)' }}>WealthApp</span>
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
-              {fromSettings && (
-                <button onClick={() => navigate('/settings')} className="btn-ghost" style={{ fontSize: '13px' }}>Cancel</button>
+              {view === 'section' && (
+                <button onClick={() => setView('hub')} className="btn-ghost" style={{ fontSize: '13px' }}>← Back</button>
               )}
-              {step > 0 && (
-                <button onClick={() => setStep(s => s - 1)} className="btn-ghost" style={{ fontSize: '13px' }}>← Back</button>
+              {fromSettings && view === 'hub' && (
+                <button onClick={() => navigate('/settings')} className="btn-ghost" style={{ fontSize: '13px' }}>Cancel</button>
               )}
             </div>
           </div>
-
-          {/* Progress — clickable to jump between sections */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-            {steps.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => setStep(i)}
-                title={s.title}
-                style={{ flex: 1, height: '6px', borderRadius: '3px', background: i <= step ? 'var(--accent)' : 'var(--sand-300)', transition: 'background 0.3s', border: 'none', cursor: 'pointer', padding: 0 }}
-              />
-            ))}
-          </div>
-          <div>
-            <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{steps[step].title}</h2>
-            <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>{steps[step].subtitle}</p>
-          </div>
+          {view === 'section' && (
+            <div style={{ marginTop: '14px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{sections[step].title}</h2>
+              <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>{sections[step].subtitle}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -218,8 +221,51 @@ export default function Onboarding() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' }}>
         <div style={{ maxWidth: '520px', margin: '0 auto' }}>
 
+          {/* Hub */}
+          {view === 'hub' && (
+            <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {!hasExistingProfile && (
+                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 8px', lineHeight: '1.5' }}>
+                  Fill in whichever sections apply to you. You can come back and update anything at any time.
+                </p>
+              )}
+              {sections.map((section, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setStep(i); setView('section') }}
+                  style={{
+                    background: 'var(--sand-50)',
+                    border: '0.5px solid var(--sand-300)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    textAlign: 'left',
+                    width: '100%',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                      background: section.complete ? 'var(--success)' : 'var(--sand-300)',
+                    }} />
+                    <div>
+                      <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>{section.title}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{section.subtitle}</p>
+                    </div>
+                  </div>
+                  <span style={{ color: 'var(--sand-400)', flexShrink: 0, fontSize: '16px' }}>→</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Step 0: Income */}
-          {step === 0 && (
+          {view === 'section' && step === 0 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)', marginBottom: '8px' }}>Your age</label>
@@ -263,7 +309,7 @@ export default function Onboarding() {
           )}
 
           {/* Step 1: Assets */}
-          {step === 1 && (
+          {view === 'section' && step === 1 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {assets.map((asset, i) => (
                 <div key={i} className="card" style={{ padding: '16px' }}>
@@ -346,7 +392,7 @@ export default function Onboarding() {
           )}
 
           {/* Step 2: Debts */}
-          {step === 2 && (
+          {view === 'section' && step === 2 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {debts.length === 0 && (
                 <div className="card-muted" style={{ padding: '20px', textAlign: 'center' }}>
@@ -388,7 +434,7 @@ export default function Onboarding() {
           )}
 
           {/* Step 3: Goals */}
-          {step === 3 && (
+          {view === 'section' && step === 3 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {goals.map((goal, i) => (
                 <div key={i} className="card" style={{ padding: '16px' }}>
@@ -421,7 +467,7 @@ export default function Onboarding() {
           )}
 
           {/* Step 4: Context */}
-          {step === 4 && (
+          {view === 'section' && step === 4 && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="card-muted" style={{ padding: '16px' }}>
                 <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 8px', fontWeight: '500' }}>This helps us personalize everything</p>
@@ -443,18 +489,23 @@ export default function Onboarding() {
       {/* Footer */}
       <div style={{ background: 'var(--sand-50)', borderTop: '0.5px solid var(--sand-300)', padding: '16px 20px 32px' }}>
         <div style={{ maxWidth: '520px', margin: '0 auto' }}>
-          {step < steps.length - 1 ? (
-            <button onClick={() => setStep(s => s + 1)} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '15px', borderRadius: 'var(--radius-md)' }}>
-              Continue →
-            </button>
-          ) : (
-            <button onClick={handleSave} disabled={saving} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '15px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          {view === 'section' ? (
+            <button onClick={handleSaveSection} disabled={saving} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '15px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               {saving ? (
                 <>
                   <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   Saving...
                 </>
-              ) : (fromSettings ? 'Save changes →' : 'Build my plan →')}
+              ) : 'Save →'}
+            </button>
+          ) : (
+            <button onClick={handleFinish} disabled={saving} className="btn-primary" style={{ width: '100%', padding: '14px', fontSize: '15px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              {saving ? (
+                <>
+                  <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  Saving...
+                </>
+              ) : (fromSettings ? 'Done →' : 'Build my plan →')}
             </button>
           )}
         </div>
