@@ -232,7 +232,7 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const initialized = useRef(false)
 
-  useEffect(() => { loadChat() }, [id])
+  useEffect(() => { initialized.current = false; loadChat() }, [id])
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
