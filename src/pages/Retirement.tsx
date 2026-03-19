@@ -372,18 +372,18 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
               <div className="card" style={{ gridColumn: '1 / -1', padding: '20px' }}>
                 <p className="label" style={{ marginBottom: '4px' }}>Projected at retirement ({plan.targetAge})</p>
-                <p style={{ fontSize: '40px', fontWeight: '300', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: '0 0 4px', letterSpacing: '-1.5px' }}>{fmt(plan.projectedNestEgg)}</p>
+                <p style={{ fontSize: '40px', fontWeight: '300', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: '0 0 4px', letterSpacing: '-1.5px' }}>{fmt(plan.projectedNestEgg ?? 0)}</p>
                 <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>at 7% avg annual return · {plan.yearsToRetirement} years away</p>
               </div>
               <div className="card" style={{ padding: '16px' }}>
                 <p className="label" style={{ marginBottom: '4px' }}>Target</p>
-                <p style={{ fontSize: '22px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-0.5px' }}>{fmt(plan.targetNestEgg)}</p>
+                <p style={{ fontSize: '22px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-0.5px' }}>{fmt(plan.targetNestEgg ?? 0)}</p>
                 <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>25× annual spend</p>
               </div>
               <div className="card" style={{ padding: '16px' }}>
                 <p className="label" style={{ marginBottom: '4px' }}>{plan.onTrack ? 'Surplus' : 'Shortfall'}</p>
                 <p style={{ fontSize: '22px', fontWeight: '400', color: plan.onTrack ? 'var(--success)' : 'var(--danger)', margin: '0 0 2px', letterSpacing: '-0.5px' }}>
-                  {plan.onTrack ? '+' : '-'}{fmt(Math.abs(plan.projectedNestEgg - plan.targetNestEgg))}
+                  {plan.onTrack ? '+' : '-'}{fmt(Math.abs((plan.projectedNestEgg ?? 0) - (plan.targetNestEgg ?? 0)))}
                 </p>
                 <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{plan.onTrack ? 'ahead of target' : 'behind target'}</p>
               </div>
@@ -393,10 +393,10 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
             <div className="card" style={{ marginBottom: '16px' }}>
               <p className="label" style={{ marginBottom: '12px' }}>Key numbers</p>
               {[
-                { label: 'Current retirement savings', value: fmt(plan.currentSavings) },
-                { label: 'Monthly contribution', value: fmt(plan.monthlyContribution) },
-                { label: 'Years to retirement', value: `${plan.yearsToRetirement} years` },
-                { label: 'Monthly income in retirement', value: `${fmt(plan.monthlyInRetirement)}/mo` },
+                { label: 'Current retirement savings', value: fmt(plan.currentSavings ?? 0) },
+                { label: 'Monthly contribution', value: fmt(plan.monthlyContribution ?? 0) },
+                { label: 'Years to retirement', value: `${plan.yearsToRetirement ?? 0} years` },
+                { label: 'Monthly income in retirement', value: `${fmt(plan.monthlyInRetirement ?? 0)}/mo` },
               ].map((item, i, arr) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < arr.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
                   <span style={{ fontSize: '13px', color: 'var(--sand-600)' }}>{item.label}</span>
@@ -552,14 +552,14 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
             {plan && (
               <div style={{ marginBottom: '16px', padding: '12px 14px', background: plan.onTrack ? 'rgba(122,158,110,0.08)' : 'rgba(192,57,43,0.05)', borderRadius: 'var(--radius-sm)', border: `0.5px solid ${plan.onTrack ? 'rgba(122,158,110,0.2)' : 'rgba(192,57,43,0.15)'}` }}>
                 <p style={{ fontSize: '13px', fontWeight: '600', color: plan.onTrack ? 'var(--success)' : 'var(--danger)', margin: '0 0 2px' }}>
-                  {plan.onTrack ? `On track — projected to exceed your target by ${fmt(plan.projectedNestEgg - plan.targetNestEgg)}` : `Shortfall of ${fmt(plan.shortfall)} at expected 7% return`}
+                  {plan.onTrack ? `On track — projected to exceed your target by ${fmt((plan.projectedNestEgg ?? 0) - (plan.targetNestEgg ?? 0))}` : `Shortfall of ${fmt(plan.shortfall ?? 0)} at expected 7% return`}
                 </p>
-                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Target: {fmt(plan.targetNestEgg)} (25× annual spend). The shaded band shows your range of outcomes.</p>
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>Target: {fmt(plan.targetNestEgg ?? 0)} (25× annual spend). The shaded band shows your range of outcomes.</p>
               </div>
             )}
 
             <div className="card-muted" style={{ padding: '16px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>Contributing {fmt(plan.monthlyContribution)}/mo starting now</p>
+              <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>Contributing {fmt(plan.monthlyContribution ?? 0)}/mo starting now</p>
               <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>The shaded range shows your 4%–10% return scenarios. The dashed red line is your target nest egg. The solid line is the expected 7% projection, matching historical S&P 500 averages.</p>
             </div>
           </div>

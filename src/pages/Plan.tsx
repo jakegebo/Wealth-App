@@ -673,7 +673,7 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
                 {retirementPlan ? (
                   <>
                     <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 4px' }}>Save/mo</p>
-                    <p style={{ fontSize: '18px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(retirementPlan.monthlyContribution)}</p>
+                    <p style={{ fontSize: '18px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(retirementPlan.monthlyContribution ?? 0)}</p>
                   </>
                 ) : null}
                 <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '4px 0 0' }}>View full plan →</p>
