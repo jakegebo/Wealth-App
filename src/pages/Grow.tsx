@@ -127,6 +127,26 @@ function inferIdeaTags(idea: string): IdeaTag[] {
   return tags.slice(0, 3)
 }
 
+function getIdeaTags(idea: any): IdeaTag[] {
+  if (typeof idea === 'string') return inferIdeaTags(idea)
+  const tags: IdeaTag[] = []
+  const categoryTags: Record<string, IdeaTag> = {
+    skill:      { label: 'Skill-based', color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
+    passive:    { label: 'Passive', color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
+    digital:    { label: 'Digital', color: '#5b7fcf', bg: 'rgba(91,127,207,0.12)' },
+    investing:  { label: 'Investing', color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
+    business:   { label: 'Business', color: 'var(--sand-700)', bg: 'var(--sand-200)' },
+  }
+  const effortTags: Record<string, IdeaTag> = {
+    low:    { label: 'Low effort', color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
+    medium: { label: 'Med effort', color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
+    high:   { label: 'High effort', color: '#c0392b', bg: 'rgba(192,57,43,0.1)' },
+  }
+  if (idea.category && categoryTags[idea.category]) tags.push(categoryTags[idea.category])
+  if (idea.effort && effortTags[idea.effort]) tags.push(effortTags[idea.effort])
+  return tags.slice(0, 2)
+}
+
 function getGoalSuggestions(goals: any[]): GoalSuggestion[] {
   if (!goals?.length) return []
   return goals.slice(0, 3).map(goal => {
@@ -161,11 +181,12 @@ function GrowthSection({
 }: {
   profile: any
   analysis: any
-  nwHistory: Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string }>
+  nwHistory: Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[]; monthly_income: number; monthly_expenses: number } }>
   ideaProgress: Record<string, string>
   navigate: (path: string) => void
 }) {
   const [tab, setTab] = useState<'wealth' | 'goals' | 'income'>('wealth')
+  const [debtCollapsed, setDebtCollapsed] = useState(false)
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -209,6 +230,39 @@ function GrowthSection({
   const liabChange = liabCurrent - liabOldest
 
   const sparkNW = nwHistory.map(h => h.net_worth)
+
+  // Per-asset historical delta from snapshots
+  const assetDeltaMap = new Map<string, number>()
+  const debtDeltaMap = new Map<string, number>()
+  const debtHistoryMap = new Map<string, number[]>()
+  const goalHistoryMap = new Map<string, number[]>()
+  if (nwHistory.length >= 2) {
+    const firstSnap = nwHistory.find(h => h.snapshot?.assets?.length)
+    const lastSnap = [...nwHistory].reverse().find(h => h.snapshot?.assets?.length)
+    if (firstSnap && lastSnap && firstSnap !== lastSnap) {
+      for (const la of lastSnap.snapshot!.assets) {
+        const ea = firstSnap.snapshot!.assets.find(a => a.name === la.name)
+        if (ea != null) assetDeltaMap.set(la.name, (la.value || 0) - (ea.value || 0))
+      }
+      for (const ld of (lastSnap.snapshot!.debts || [])) {
+        const ed = firstSnap.snapshot!.debts?.find(d => d.name === ld.name)
+        if (ed != null) debtDeltaMap.set(ld.name, (ed.balance || 0) - (ld.balance || 0)) // positive = paid down
+      }
+    }
+    for (const h of nwHistory) {
+      if (h.snapshot?.debts) {
+        for (const d of h.snapshot.debts) {
+          if (!debtHistoryMap.has(d.name)) debtHistoryMap.set(d.name, [])
+          debtHistoryMap.get(d.name)!.push(d.balance || 0)
+        }
+      }
+      if (!h.snapshot?.goals) continue
+      for (const g of h.snapshot.goals) {
+        if (!goalHistoryMap.has(g.name)) goalHistoryMap.set(g.name, [])
+        goalHistoryMap.get(g.name)!.push(g.current_amount || 0)
+      }
+    }
+  }
 
   // Goals on-track
   const goalsOnTrack = goals.filter((g: any) => {
@@ -377,9 +431,15 @@ function GrowthSection({
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
                           <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(asset.value || 0)}</p>
-                          <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: meta.trend === 'up' ? 'var(--success)' : meta.trend === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
-                            {meta.trend === 'up' ? '▲ Appreciating' : meta.trend === 'down' ? '▼ Depreciating' : '→ Stable'}
-                          </p>
+                          {assetDeltaMap.has(asset.name) ? (
+                            <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: (assetDeltaMap.get(asset.name) ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                              {(assetDeltaMap.get(asset.name) ?? 0) >= 0 ? '▲' : '▼'} {fmtDelta(assetDeltaMap.get(asset.name)!)} all time
+                            </p>
+                          ) : (
+                            <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: meta.trend === 'up' ? 'var(--success)' : meta.trend === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
+                              {meta.trend === 'up' ? '▲ Appreciating' : meta.trend === 'down' ? '▼ Depreciating' : '→ Stable'}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {/* Mini allocation bar */}
@@ -396,41 +456,125 @@ function GrowthSection({
           {/* Debts breakdown */}
           {debts.length > 0 && (
             <div className="card" style={{ padding: '14px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Debts</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {debts.map((debt: any, i: number) => {
-                  const rate = debt.interest_rate || 0
-                  const isHigh = rate >= 15
-                  const isMed = rate >= 8
-                  const rateColor = isHigh ? 'var(--danger)' : isMed ? 'var(--warning)' : 'var(--success)'
-                  const maxDebt = Math.max(...debts.map((d: any) => d.balance || 0))
-                  const pct = maxDebt > 0 ? Math.round(((debt.balance || 0) / maxDebt) * 100) : 0
-                  return (
-                    <div key={i}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{isHigh ? '⚠️' : '💳'}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{debt.name}</p>
-                          <p style={{ fontSize: '10px', margin: 0, color: rateColor, fontWeight: isHigh ? '600' : '400' }}>
-                            {rate}% APR · {isHigh ? 'High rate — prioritize payoff!' : isMed ? 'Medium rate' : 'Low rate'}
-                          </p>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(debt.balance || 0)}</p>
-                          <p style={{ fontSize: '10px', color: 'var(--success)', margin: '1px 0 0', fontWeight: '600' }}>▼ Paying off</p>
-                        </div>
+              {/* Header row with minimize toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: debtCollapsed ? '0' : '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Debts</p>
+                  {debtCollapsed && (
+                    <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>
+                      {debts.length} item{debts.length !== 1 ? 's' : ''} · {fmt(liabCurrent)}
+                      {liabChange < 0 && hasHistory && (
+                        <span style={{ color: 'var(--success)', fontWeight: '600' }}> · ▼ {fmtDelta(Math.abs(liabChange))} paid off</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setDebtCollapsed(c => !c)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '6px', fontSize: '13px', color: 'var(--sand-400)', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <span style={{ fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{debtCollapsed ? 'Show' : 'Hide'}</span>
+                  <span style={{ fontSize: '10px' }}>{debtCollapsed ? '▼' : '▲'}</span>
+                </button>
+              </div>
+
+              {!debtCollapsed && (
+                <>
+                  {/* Total debt sparkline chart */}
+                  {nwHistory.length >= 2 && (
+                    <div style={{ marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total debt over time</p>
+                        <p style={{ fontSize: '10px', fontWeight: '600', margin: 0, color: liabChange <= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                          {liabChange <= 0 ? `▼ ${fmtDelta(Math.abs(liabChange))} paid off` : `▲ ${fmtDelta(liabChange)} added`}
+                        </p>
                       </div>
-                      <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 0.5s ease', opacity: 0.6 }} />
+                      {(() => {
+                        const sparkLiab = nwHistory.map(h => h.total_liabilities)
+                        const linePath = buildSparkPath(sparkLiab, 300, 44)
+                        if (!linePath) return null
+                        const pts = sparkLiab
+                        const fillPath = `${linePath} L 300,44 L 0,44 Z`
+                        const isDown = liabChange <= 0
+                        return (
+                          <svg width="100%" height="44" viewBox="0 0 300 44" preserveAspectRatio="none" style={{ display: 'block' }}>
+                            <defs>
+                              <linearGradient id="debtGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={isDown ? '#7a9e6e' : '#c0503b'} stopOpacity="0.15" />
+                                <stop offset="100%" stopColor={isDown ? '#7a9e6e' : '#c0503b'} stopOpacity="0" />
+                              </linearGradient>
+                            </defs>
+                            <path d={fillPath} fill="url(#debtGrad)" />
+                            <path d={linePath} fill="none" stroke={isDown ? 'var(--success)' : 'var(--danger)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )
+                      })()}
+                      {/* X-axis date labels */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                        <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0 }}>
+                          {new Date(nwHistory[0].recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                        <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0 }}>
+                          {new Date(nwHistory[nwHistory.length - 1].recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-              {highRateDebt && (
-                <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(192,57,43,0.07)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.15)' }}>
-                  <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0 }}>⚠ High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
-                </div>
+                  )}
+
+                  {/* Individual debt rows */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {debts.map((debt: any, i: number) => {
+                      const rate = debt.interest_rate || 0
+                      const isHigh = rate >= 15
+                      const isMed = rate >= 8
+                      const rateColor = isHigh ? 'var(--danger)' : isMed ? 'var(--warning)' : 'var(--success)'
+                      const maxDebt = Math.max(...debts.map((d: any) => d.balance || 0))
+                      const pct = maxDebt > 0 ? Math.round(((debt.balance || 0) / maxDebt) * 100) : 0
+                      const debtHist = debtHistoryMap.get(debt.name)
+                      const debtSparkPath = debtHist && debtHist.length >= 2 ? buildSparkPath(debtHist, 280, 28) : null
+                      const debtDelta = debtDeltaMap.get(debt.name)
+                      return (
+                        <div key={i}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                            <span style={{ fontSize: '18px', flexShrink: 0 }}>{isHigh ? '⚠️' : '💳'}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{debt.name}</p>
+                              <p style={{ fontSize: '10px', margin: 0, color: rateColor, fontWeight: isHigh ? '600' : '400' }}>
+                                {rate}% APR · {isHigh ? 'High rate — prioritize payoff!' : isMed ? 'Medium rate' : 'Low rate'}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(debt.balance || 0)}</p>
+                              {debtDelta != null ? (
+                                <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: debtDelta > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                  {debtDelta > 0 ? `▼ ${fmtDelta(debtDelta)} paid off` : `▲ ${fmtDelta(Math.abs(debtDelta))} added`}
+                                </p>
+                              ) : (
+                                <p style={{ fontSize: '10px', color: 'var(--success)', margin: '1px 0 0', fontWeight: '600' }}>▼ Paying off</p>
+                              )}
+                            </div>
+                          </div>
+                          {/* Balance bar */}
+                          <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: debtSparkPath ? '6px' : '0' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 0.5s ease', opacity: 0.6 }} />
+                          </div>
+                          {/* Per-debt balance sparkline */}
+                          {debtSparkPath && (
+                            <svg width="100%" height="28" viewBox="0 0 280 28" preserveAspectRatio="none" style={{ display: 'block', opacity: 0.65 }}>
+                              <path d={debtSparkPath} fill="none" stroke={rateColor} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2" />
+                            </svg>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {highRateDebt && (
+                    <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(192,57,43,0.07)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.15)' }}>
+                      <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0 }}>⚠ High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -512,6 +656,28 @@ function GrowthSection({
                 <div style={{ height: '7px', background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '10px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: statusColor, borderRadius: '4px', transition: 'width 0.5s ease' }} />
                 </div>
+
+                {/* Goal sparkline (history of current_amount) */}
+                {(() => {
+                  const hist = goalHistoryMap.get(goal.name)
+                  if (!hist || hist.length < 2) return null
+                  const sparkPath = buildSparkPath(hist, 280, 32)
+                  if (!sparkPath) return null
+                  const delta = hist[hist.length - 1] - hist[0]
+                  return (
+                    <div style={{ marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progress history</p>
+                        <p style={{ fontSize: '10px', margin: 0, fontWeight: '600', color: delta >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                          {delta >= 0 ? '+' : ''}{fmtDelta(delta)} total
+                        </p>
+                      </div>
+                      <svg width="100%" height="32" viewBox="0 0 280 32" preserveAspectRatio="none" style={{ display: 'block' }}>
+                        <path d={sparkPath} fill="none" stroke={statusColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+                      </svg>
+                    </div>
+                  )
+                })()}
 
                 {/* Status */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -926,7 +1092,7 @@ export default function Grow() {
   const { preferences } = useTheme()
   const { userId, profileData: profile, analysis, chatRefs, watchlist, savedIdeas, incomeIdeas, loading: profileLoading, updateProfile } = useProfile()
 
-  const [ideas, setIdeas] = useState<string[]>([])
+  const [ideas, setIdeas] = useState<any[]>([])
   const [loadingIdeas, setLoadingIdeas] = useState(false)
   const [articles, setArticles] = useState<Article[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
@@ -969,7 +1135,7 @@ export default function Grow() {
   const [goalSuggestions, setGoalSuggestions] = useState<GoalSuggestion[]>([])
   const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
   const [showGoals, setShowGoals] = useState(false)
-  const [nwHistory, setNwHistory] = useState<Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string }>>([])
+  const [nwHistory, setNwHistory] = useState<Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[]; monthly_income: number; monthly_expenses: number } }>>([])
 
   const searchTimeout = useRef<any>(null)
   const longPressTimer = useRef<any>(null)
@@ -1201,19 +1367,32 @@ export default function Grow() {
     await updateProfile({ watchlist: newList })
   }
 
-  const toggleSaved = async (idea: string) => {
-    const newSaved = savedIdeas.includes(idea) ? savedIdeas.filter(i => i !== idea) : [...savedIdeas, idea]
+  const toggleSaved = async (idea: any) => {
+    const key = typeof idea === 'string' ? idea : idea.title
+    const newSaved = savedIdeas.includes(key) ? savedIdeas.filter(i => i !== key) : [...savedIdeas, key]
     await updateProfile({ saved_income_ideas: newSaved })
   }
 
-  const openIdeaChat = async (idea: string) => {
+  const openIdeaChat = async (idea: any) => {
     if (!userId) return
-    const key = `money_idea_${idea.slice(0, 30)}`
+    const ideaTitle = typeof idea === 'string' ? idea : idea.title
+    const ideaDesc = typeof idea === 'string' ? '' : idea.description
+    const key = `money_idea_${ideaTitle.slice(0, 30)}`
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
-    const { data } = await supabase.from('chats').insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] }).select().single()
+    const { data } = await supabase.from('chats').insert({ user_id: userId, title: ideaTitle.slice(0, 40), topic: 'general', messages: [] }).select().single()
     if (data) {
       await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
-      navigate(`/chat/${data.id}`, { state: { prompt: `I want to explore this income idea: "${idea}". Give me: 1) Realistic income potential, 2) Time to first dollar, 3) Exact steps to start, 4) Skills/resources needed.` } })
+      const prompt = `I want to do a deep dive on this income idea: "${ideaTitle}"${ideaDesc ? `\n\n${ideaDesc}` : ''}
+
+Please give me a thorough breakdown:
+1. Why this specifically fits my situation and background
+2. Realistic income expectations — what I'd likely earn in month 1, month 3, month 6, and year 1
+3. Barriers to entry — what makes this hard and how to get past them
+4. Startup costs and capital I'd need upfront and ongoing
+5. The exact 5 steps to get started this week
+6. What separates people who succeed at this vs those who don't
+7. Common mistakes and pitfalls to avoid`
+      navigate(`/chat/${data.id}`, { state: { prompt } })
     }
   }
 
@@ -1634,24 +1813,33 @@ export default function Grow() {
                 <div key={i} style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', height: '72px', animation: 'pulse 1.5s infinite' }} />
               ))
             ) : visibleIdeas.map((idea, i) => {
-              const isExpanded = expandedIdea === idea
-              const tags = inferIdeaTags(idea)
-              const progress = ideaProgress[idea]
+              const ideaTitle = typeof idea === 'string' ? idea : idea.title
+              const ideaDesc = typeof idea === 'string' ? '' : idea.description
+              const ideaRange = typeof idea === 'string' ? '' : idea.monthly_range
+              const ideaTimeline = typeof idea === 'string' ? '' : idea.timeline
+              const isExpanded = expandedIdea === ideaTitle
+              const tags = getIdeaTags(idea)
+              const progress = ideaProgress[ideaTitle]
               const progressOpt = PROGRESS_OPTIONS.find(p => p.key === progress)
               return (
                 <div
                   key={i}
                   className="card"
-                  onClick={() => setExpandedIdea(isExpanded ? null : idea)}
+                  onClick={() => setExpandedIdea(isExpanded ? null : ideaTitle)}
                   style={{ padding: '14px', cursor: 'pointer', animationDelay: `${i * 0.05}s`, transition: 'all var(--transition)', userSelect: 'none' }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: tags.length > 0 ? '6px' : '0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: (tags.length > 0 || ideaRange) ? '6px' : '0' }}>
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', flex: 1 }}>
                       {tags.map(tag => (
                         <span key={tag.label} style={{ fontSize: '9px', fontWeight: '700', color: tag.color, background: tag.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>
                           {tag.label}
                         </span>
                       ))}
+                      {ideaRange && (
+                        <span style={{ fontSize: '9px', fontWeight: '700', color: '#7a9e6e', background: 'rgba(122,158,110,0.12)', padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>
+                          {ideaRange}
+                        </span>
+                      )}
                     </div>
                     {progressOpt && (
                       <span style={{ fontSize: '9px', fontWeight: '700', color: progressOpt.color, background: progressOpt.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em', flexShrink: 0, marginLeft: '4px' }}>
@@ -1659,23 +1847,31 @@ export default function Grow() {
                       </span>
                     )}
                   </div>
-                  <p style={{
-                    fontSize: '13px', color: 'var(--sand-900)', margin: 0, lineHeight: '1.5',
-                    display: isExpanded ? 'block' : '-webkit-box',
-                    WebkitLineClamp: isExpanded ? undefined : 2,
-                    WebkitBoxOrient: isExpanded ? undefined : 'vertical' as any,
-                    overflow: isExpanded ? 'visible' : 'hidden'
-                  }}>
-                    {idea}
+                  <p style={{ fontSize: '13px', fontWeight: ideaDesc ? '600' : '400', color: 'var(--sand-900)', margin: '0', lineHeight: '1.4' }}>
+                    {ideaTitle}
                   </p>
+                  {ideaDesc && (
+                    <p style={{
+                      fontSize: '12px', color: 'var(--sand-600)', margin: '3px 0 0', lineHeight: '1.5',
+                      display: isExpanded ? 'block' : '-webkit-box',
+                      WebkitLineClamp: isExpanded ? undefined : 2,
+                      WebkitBoxOrient: isExpanded ? undefined : 'vertical' as any,
+                      overflow: isExpanded ? 'visible' : 'hidden'
+                    }}>
+                      {ideaDesc}
+                    </p>
+                  )}
                   {isExpanded && (
                     <div className="animate-fade" onClick={e => e.stopPropagation()}>
+                      {ideaTimeline && (
+                        <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '8px 0 0', fontStyle: 'italic' }}>{ideaTimeline}</p>
+                      )}
                       {/* Progress selector */}
                       <div style={{ display: 'flex', gap: '4px', marginTop: '12px' }}>
                         {PROGRESS_OPTIONS.map(opt => (
                           <button
                             key={opt.key}
-                            onClick={() => saveIdeaProgress(idea, opt.key)}
+                            onClick={() => saveIdeaProgress(ideaTitle, opt.key)}
                             style={{
                               flex: 1, padding: '6px 4px', borderRadius: 'var(--radius-sm)', fontSize: '10px', fontWeight: '600',
                               cursor: 'pointer', fontFamily: 'inherit', border: `0.5px solid ${progress === opt.key ? opt.color : 'var(--sand-300)'}`,
@@ -1690,8 +1886,8 @@ export default function Grow() {
                       <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                         <button
                           onClick={() => toggleSaved(idea)}
-                          style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--sand-300)', background: savedIdeas.includes(idea) ? 'rgba(200,148,58,0.1)' : 'var(--sand-100)', color: savedIdeas.includes(idea) ? 'var(--warning)' : 'var(--sand-700)' }}>
-                          {savedIdeas.includes(idea) ? 'Saved' : 'Save'}
+                          style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--sand-300)', background: savedIdeas.includes(ideaTitle) ? 'rgba(200,148,58,0.1)' : 'var(--sand-100)', color: savedIdeas.includes(ideaTitle) ? 'var(--warning)' : 'var(--sand-700)' }}>
+                          {savedIdeas.includes(ideaTitle) ? 'Saved' : 'Save'}
                         </button>
                         <button
                           onClick={() => openIdeaChat(idea)}

@@ -9,7 +9,7 @@ export default async function handler(req: any, res: any) {
   const { method } = req
 
   if (method === 'POST') {
-    const { userId, netWorth, totalAssets, totalLiabilities } = req.body
+    const { userId, netWorth, totalAssets, totalLiabilities, snapshot } = req.body
     if (!userId) return res.status(400).json({ error: 'Missing userId' })
 
     // Only save if value has changed from last entry
@@ -25,13 +25,15 @@ export default async function handler(req: any, res: any) {
       return res.json({ message: 'No change' })
     }
 
-    const { error } = await supabase.from('net_worth_history').insert({
+    const record: any = {
       user_id: userId,
       net_worth: netWorth,
       total_assets: totalAssets,
-      total_liabilities: totalLiabilities
-    })
+      total_liabilities: totalLiabilities,
+    }
+    if (snapshot) record.snapshot = snapshot
 
+    const { error } = await supabase.from('net_worth_history').insert(record)
     if (error) return res.status(500).json({ error: error.message })
     return res.json({ message: 'Saved' })
   }
@@ -42,10 +44,10 @@ export default async function handler(req: any, res: any) {
 
     const { data, error } = await supabase
       .from('net_worth_history')
-      .select('net_worth, total_assets, total_liabilities, recorded_at')
+      .select('net_worth, total_assets, total_liabilities, recorded_at, snapshot')
       .eq('user_id', userId)
       .order('recorded_at', { ascending: true })
-      .limit(90)
+      .limit(180)
 
     if (error) return res.status(500).json({ error: error.message })
     return res.json({ history: data || [] })

@@ -18,16 +18,44 @@ function buildContributionSummary(assets: any[], age?: number): string {
   const year = new Date().getFullYear()
   const items: string[] = []
   for (const a of assets ?? []) {
-    if (a.category !== 'retirement' || !a.yearlyContributions?.length) continue
-    const thisYear = a.yearlyContributions.find((c: any) => c.year === year)
-    if (!thisYear) continue
-    const det = detectLimit(a.name, age)
-    if (!det) continue
-    const contributed = thisYear.amount || 0
-    const pct = Math.min(100, Math.round((contributed / det.limit) * 100))
-    const maxed = contributed >= det.limit
-    const remaining = Math.max(0, det.limit - contributed)
-    items.push(`${a.name} (${det.accountType}): $${contributed.toLocaleString()} / $${det.limit.toLocaleString()} — ${pct}%${maxed ? ' MAXED ✓' : ` ($${remaining.toLocaleString()} left)`}`)
+    if (a.category !== 'retirement') continue
+    const det = detectLimit(a.account_type || a.name, age) || detectLimit(a.name, age)
+
+    // Prefer annual_contribution field; fall back to yearlyContributions for current year
+    const thisYearEntry = a.yearlyContributions?.find((c: any) => c.year === year)
+    const contributed = a.annual_contribution || thisYearEntry?.amount || 0
+    const isContributing = a.is_contributing ?? (contributed > 0)
+
+    if (!isContributing && contributed === 0) {
+      if (det) items.push(`${a.name} (${det.accountType}): not currently contributing`)
+      continue
+    }
+
+    const parts: string[] = []
+    if (det) {
+      const pct = Math.min(100, Math.round((contributed / det.limit) * 100))
+      const maxed = contributed >= det.limit
+      const remaining = Math.max(0, det.limit - contributed)
+      parts.push(`$${contributed.toLocaleString()} / $${det.limit.toLocaleString()} (${pct}%${maxed ? ' MAXED ✓' : `, $${remaining.toLocaleString()} left`})`)
+    } else if (contributed > 0) {
+      parts.push(`$${contributed.toLocaleString()}/yr`)
+    }
+
+    if (a.contribution_pct) parts.push(`${a.contribution_pct}% of salary`)
+
+    if (a.employer_match_pct && a.employer_match_cap) {
+      const matchDesc = `employer matches ${a.employer_match_pct}% on up to ${a.employer_match_cap}% of salary`
+      parts.push(matchDesc)
+      // Check if they're capturing the full match
+      if (a.contribution_pct && a.contribution_pct >= a.employer_match_cap) {
+        parts.push('capturing full match ✓')
+      } else if (a.contribution_pct && a.contribution_pct < a.employer_match_cap) {
+        parts.push(`⚠ only capturing ${a.contribution_pct}% of ${a.employer_match_cap}% available match`)
+      }
+    }
+
+    const label = det ? `${a.name} (${det.accountType})` : a.name
+    items.push(`${label}: ${parts.join(', ')}`)
   }
   return items.length ? items.join(' | ') : 'none recorded'
 }

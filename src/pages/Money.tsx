@@ -42,7 +42,7 @@ function formatContent(content: string) {
 export default function Money() {
   const navigate = useNavigate()
   const { userId, profileData: profile, chatRefs, savedIdeas, incomeIdeas, loading: profileLoading, updateProfile } = useProfile()
-  const [ideas, setIdeas] = useState<string[]>([])
+  const [ideas, setIdeas] = useState<any[]>([])
   const [loadingIdeas, setLoadingIdeas] = useState(false)
   const [activeTab, setActiveTab] = useState<'ideas' | 'saved' | 'chat'>('ideas')
   const [activeTopic, setActiveTopic] = useState('ideas')
@@ -74,19 +74,32 @@ export default function Money() {
     setLoadingIdeas(false)
   }
 
-  const toggleSaved = async (idea: string) => {
-    const newSaved = savedIdeas.includes(idea) ? savedIdeas.filter(i => i !== idea) : [...savedIdeas, idea]
+  const toggleSaved = async (idea: any) => {
+    const key = typeof idea === 'string' ? idea : idea.title
+    const newSaved = savedIdeas.includes(key) ? savedIdeas.filter(i => i !== key) : [...savedIdeas, key]
     await updateProfile({ saved_income_ideas: newSaved })
   }
 
-  const openIdeaChat = async (idea: string) => {
+  const openIdeaChat = async (idea: any) => {
     if (!userId) return
-    const key = `money_idea_${idea.slice(0, 30)}`
+    const ideaTitle = typeof idea === 'string' ? idea : idea.title
+    const ideaDesc = typeof idea === 'string' ? '' : idea.description
+    const key = `money_idea_${ideaTitle.slice(0, 30)}`
     if (chatRefs[key]) { navigate(`/chat/${chatRefs[key]}`); return }
-    const { data } = await supabase.from('chats').insert({ user_id: userId, title: idea.slice(0, 40), topic: 'general', messages: [] }).select().single()
+    const { data } = await supabase.from('chats').insert({ user_id: userId, title: ideaTitle.slice(0, 40), topic: 'general', messages: [] }).select().single()
     if (data) {
       await updateProfile({ chat_refs: { ...chatRefs, [key]: data.id } })
-      navigate(`/chat/${data.id}`, { state: { prompt: `I want to explore this income idea: "${idea}". Give me: 1) Realistic income potential, 2) Time to first dollar, 3) Exact steps to start, 4) Skills/resources needed.` } })
+      const prompt = `I want to do a deep dive on this income idea: "${ideaTitle}"${ideaDesc ? `\n\n${ideaDesc}` : ''}
+
+Please give me a thorough breakdown:
+1. Why this specifically fits my situation and background
+2. Realistic income expectations — what I'd likely earn in month 1, month 3, month 6, and year 1
+3. Barriers to entry — what makes this hard and how to get past them
+4. Startup costs and capital I'd need upfront and ongoing
+5. The exact 5 steps to get started this week
+6. What separates people who succeed at this vs those who don't
+7. Common mistakes and pitfalls to avoid`
+      navigate(`/chat/${data.id}`, { state: { prompt } })
     }
   }
 
@@ -176,24 +189,58 @@ export default function Money() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {ideas.map((idea, i) => (
-                  <div key={i} className="card" style={{ padding: '16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <div style={{ width: '28px', height: '28px', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>{i + 1}</span>
+                {ideas.map((idea, i) => {
+                  const title = typeof idea === 'string' ? idea : idea.title
+                  const description = typeof idea === 'string' ? '' : idea.description
+                  const range = typeof idea === 'string' ? '' : idea.monthly_range
+                  const timeline = typeof idea === 'string' ? '' : idea.timeline
+                  const effort = typeof idea === 'string' ? '' : idea.effort
+                  const isSaved = savedIdeas.includes(title)
+                  const effortColors: Record<string, { color: string; bg: string }> = {
+                    low: { color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
+                    medium: { color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
+                    high: { color: '#c0392b', bg: 'rgba(192,57,43,0.1)' },
+                  }
+                  const effortStyle = effort ? effortColors[effort] : null
+                  return (
+                    <div key={i} className="card" style={{ padding: '16px' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                        <div style={{ width: '28px', height: '28px', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>{i + 1}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: '14px', fontWeight: description ? '600' : '400', color: 'var(--sand-900)', margin: '0 0 4px', lineHeight: '1.4' }}>{title}</p>
+                          {description && (
+                            <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 8px', lineHeight: '1.5' }}>{description}</p>
+                          )}
+                          {(range || timeline || effortStyle) && (
+                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                              {range && (
+                                <span style={{ fontSize: '11px', fontWeight: '600', color: '#7a9e6e', background: 'rgba(122,158,110,0.12)', padding: '2px 8px', borderRadius: '20px' }}>{range}</span>
+                              )}
+                              {timeline && (
+                                <span style={{ fontSize: '11px', color: 'var(--sand-600)', background: 'var(--sand-200)', padding: '2px 8px', borderRadius: '20px' }}>{timeline}</span>
+                              )}
+                              {effortStyle && (
+                                <span style={{ fontSize: '11px', fontWeight: '600', color: effortStyle.color, background: effortStyle.bg, padding: '2px 8px', borderRadius: '20px' }}>{effort} effort</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          <button onClick={() => toggleSaved(idea)}
+                            style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: isSaved ? 'rgba(200,148,58,0.1)' : 'var(--sand-200)', border: 'none', cursor: 'pointer', fontSize: '15px' }}>
+                            {isSaved ? '⭐' : '☆'}
+                          </button>
+                          <button onClick={() => openIdeaChat(idea)}
+                            style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            →
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <p style={{ fontSize: '14px', color: 'var(--sand-900)', margin: 0, lineHeight: '1.5', flex: 1 }}>{idea}</p>
-                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                      <button onClick={() => toggleSaved(idea)}
-                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: savedIdeas.includes(idea) ? 'rgba(200,148,58,0.1)' : 'var(--sand-200)', border: 'none', cursor: 'pointer', fontSize: '15px' }}>
-                        {savedIdeas.includes(idea) ? '⭐' : '☆'}
-                      </button>
-                      <button onClick={() => openIdeaChat(idea)}
-                        style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        →
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

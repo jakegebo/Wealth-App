@@ -74,7 +74,7 @@ export default function Settings() {
       <div style={{ padding: '52px 20px 20px', maxWidth: '680px', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => navigate(-1)}
+            <button onClick={() => navigate('/dashboard')}
               style={{ background: 'var(--sand-200)', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-700)' }}>
               ←
             </button>

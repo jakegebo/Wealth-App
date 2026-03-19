@@ -399,29 +399,67 @@ export default function Plan() {
   const [expandedDebt, setExpandedDebt] = useState<number | null>(null)
   const [expandedAction, setExpandedAction] = useState<number | null>(null)
   const [loadingAdvice, setLoadingAdvice] = useState<string | null>(null)
+  const [minimizedAdvice, setMinimizedAdvice] = useState<Record<string, boolean>>({})
 
-  const fetchGoalAdvice = async (goal: Goal) => {
-    if (goalAdvice[goal.name] || loadingAdvice === goal.name) return
+  const stripAdviceMeta = (text: string) =>
+    text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
+
+  const formatAdvice = (text: string) => {
+    const clean = stripAdviceMeta(text)
+    return clean.split('\n').map((line, i) => {
+      if (!line.trim()) return null
+      if (line.startsWith('**') && line.endsWith('**'))
+        return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-800)', margin: '6px 0 2px', fontSize: '12px' }}>{line.slice(2, -2)}</p>
+      if (line.startsWith('- '))
+        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0 }}>·</span><span style={{ fontSize: '12px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.slice(2)}</span></div>
+      if (/^\d+\./.test(line))
+        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700', fontSize: '11px', flexShrink: 0 }}>{line.match(/^\d+/)![0]}.</span><span style={{ fontSize: '12px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.replace(/^\d+\.\s*/, '')}</span></div>
+      return <p key={i} style={{ fontSize: '12px', color: 'var(--sand-700)', margin: '3px 0', lineHeight: '1.55' }}>{line}</p>
+    }).filter(Boolean)
+  }
+
+  const fetchGoalAdvice = async (goal: Goal, force = false) => {
+    if (!force && goalAdvice[goal.name]) return
+    if (loadingAdvice === goal.name) return
     setLoadingAdvice(goal.name)
 
     const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+    const pct = Math.round(goal.percentage)
+    const remaining = goal.targetAmount - goal.currentAmount
+    const monthsLeft = goal.monthlyNeeded > 0 ? Math.ceil(remaining / goal.monthlyNeeded) : null
+    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+
+    // Craft prompt that adapts to where they are in the goal
+    let progressContext: string
+    if (pct >= 100) {
+      progressContext = `I've fully achieved this goal — I have ${fmt(goal.currentAmount)} against a ${fmt(goal.targetAmount)} target, a surplus of ${fmt(goal.currentAmount - goal.targetAmount)}. What should I do with this money now?`
+    } else if (pct >= 75) {
+      progressContext = `I'm ${pct}% of the way there — ${fmt(remaining)} left to reach ${fmt(goal.targetAmount)}. At ${fmt(goal.monthlyNeeded)}/mo I'm ${monthsLeft ? `~${monthsLeft} months away` : 'close'}. How do I make the final push and what should I do once I hit it?`
+    } else if (pct >= 40) {
+      progressContext = `I'm ${pct}% funded (${fmt(goal.currentAmount)} of ${fmt(goal.targetAmount)}). I need ${fmt(goal.monthlyNeeded)}/mo and have ${fmt(availableToSave)}/mo available. Am I on track? What's the best way to accelerate?`
+    } else if (pct >= 10) {
+      progressContext = `I've started but I'm only ${pct}% funded — ${fmt(goal.currentAmount)} of ${fmt(goal.targetAmount)}. I need ${fmt(goal.monthlyNeeded)}/mo. What's the best account or vehicle to hold this money, and how do I build momentum?`
+    } else {
+      progressContext = `I'm just getting started on this goal (${pct}% funded, ${fmt(goal.currentAmount)} saved). My target is ${fmt(goal.targetAmount)}. I have ${fmt(availableToSave)}/mo surplus. What's the single best first step and where should I keep this money?`
+    }
+
+    const prompt = `Goal: "${goal.name}" — ${progressContext}
+
+Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff. End with one concrete action I can take today.`
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{
-            role: 'user',
-            content: `Give me a 2-3 sentence advice recap for my "${goal.name}" goal. I have ${fmt(goal.currentAmount)} saved toward a ${fmt(goal.targetAmount)} target (${Math.round(goal.percentage)}% complete). I can save ${fmt(goal.monthlyNeeded)}/mo toward this. Be direct and specific — what's the single most important thing I should do right now? Keep it under 60 words.`
-          }],
+          messages: [{ role: 'user', content: prompt }],
           profile: profile || {},
-          topic: 'general'
+          topic: 'goals'
         })
       })
       const data = await res.json()
-      const advice = data.message || 'Unable to load advice.'
-      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: advice } })
+      const raw = data.message || 'Unable to load advice.'
+      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: raw } })
     } catch {
       await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: 'Unable to load advice. Please try again.' } })
     }
@@ -446,6 +484,9 @@ export default function Plan() {
     const result = await res.json()
     await updateProfile({ analysis: result })
     setUpdatingGoal(null)
+    // Refresh advice with new progress context
+    const updatedGoal = result.goals?.find((g: any) => g.name === goal.name) || goal
+    setTimeout(() => fetchGoalAdvice(updatedGoal, true), 200)
   }
 
   const openChat = async (key: string, prompt: string, title: string) => {
@@ -536,28 +577,37 @@ export default function Plan() {
                   {!isAchieved && <ProgressBar value={goal.percentage} color={goalColor} />}
 
                   {/* Goal Advice Recap */}
-                  <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ marginTop: '12px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
                     {advice ? (
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                        <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-                          <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                      <>
+                        {/* Header row — always visible */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', cursor: 'pointer' }}
+                          onClick={() => setMinimizedAdvice(m => ({ ...m, [goal.name]: !m[goal.name] }))}>
+                          <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                          </div>
+                          <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-600)', margin: 0, flex: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>AI Analysis</p>
+                          <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAdvice[goal.name] ? 'none' : 'rotate(180deg)' }}>▾</span>
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>{advice}</p>
-                          <button
-                            onClick={async () => {
-                              const newAdvice = { ...goalAdvice }
-                              delete newAdvice[goal.name]
-                              await updateProfile({ goal_advice: newAdvice })
-                              setTimeout(() => fetchGoalAdvice(goal), 100)
-                            }}
-                            style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '10px', cursor: 'pointer', padding: '4px 0 0', fontFamily: 'inherit' }}>
-                            ↻ Refresh advice
-                          </button>
-                        </div>
-                      </div>
+                        {/* Collapsible body */}
+                        {!minimizedAdvice[goal.name] && (
+                          <div style={{ padding: '0 12px 10px' }}>
+                            <div>{formatAdvice(advice)}</div>
+                            <button
+                              onClick={async () => {
+                                const newAdvice = { ...goalAdvice }
+                                delete newAdvice[goal.name]
+                                await updateProfile({ goal_advice: newAdvice })
+                                setTimeout(() => fetchGoalAdvice(goal, true), 100)
+                              }}
+                              style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '10px', cursor: 'pointer', padding: '6px 0 0', fontFamily: 'inherit' }}>
+                              ↻ Refresh
+                            </button>
+                          </div>
+                        )}
+                      </>
                     ) : loadingAdvice === goal.name ? (
-                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '10px 12px' }}>
                         <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
                         </div>
@@ -568,11 +618,11 @@ export default function Plan() {
                     ) : (
                       <button
                         onClick={() => fetchGoalAdvice(goal)}
-                        style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '12px', cursor: 'pointer', padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '12px', cursor: 'pointer', padding: '10px 12px', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
                         <div style={{ width: '18px', height: '18px', background: 'var(--sand-300)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <span style={{ color: 'var(--sand-600)', fontSize: '7px', fontWeight: '700' }}>AI</span>
                         </div>
-                        Get AI advice recap
+                        Get AI analysis
                       </button>
                     )}
                   </div>

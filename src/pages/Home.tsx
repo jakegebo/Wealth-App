@@ -447,7 +447,7 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
   )
 }
 
-function InsightsStrip({ analysis, profile }: { analysis: Analysis; profile: any }) {
+function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; profile: any; refreshing?: boolean }) {
   const insights = generateInsights(analysis, profile)
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   const [chatInsight, setChatInsight] = useState<Insight | null>(null)
@@ -461,7 +461,15 @@ function InsightsStrip({ analysis, profile }: { analysis: Analysis; profile: any
   return (
     <>
       <div className="animate-fade stagger-1" style={{ marginBottom: '12px' }}>
-        <p className="label" style={{ marginBottom: '8px' }}>Key Insights</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <p className="label" style={{ margin: 0 }}>Key Insights</p>
+          {refreshing && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div style={{ width: '10px', height: '10px', border: '1.5px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              <span style={{ fontSize: '10px', color: 'var(--sand-400)', fontWeight: '500' }}>updating</span>
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {insights.map((insight, i) => {
             const c = typeColors[insight.type]
@@ -534,6 +542,258 @@ function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => 
   )
 }
 
+const RECAP_PERIODS = ['1D', '1W', '1M'] as const
+type RecapPeriod = typeof RECAP_PERIODS[number] | 'custom'
+
+function MarketRecap() {
+  const [period, setPeriod] = useState<RecapPeriod>('1W')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [recap, setRecap] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+
+  const formatRecap = (text: string) =>
+    text.split('\n').map((line, i) => {
+      if (!line.trim()) return <div key={i} style={{ height: '5px' }} />
+      if (line.startsWith('**') && line.endsWith('**'))
+        return <p key={i} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '10px 0 4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{line.slice(2, -2)}</p>
+      if (line.startsWith('- '))
+        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px', alignItems: 'flex-start' }}>
+          <span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0, marginTop: '1px' }}>·</span>
+          <span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
+        </div>
+      return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
+    })
+
+  const fetchRecap = async (p: RecapPeriod, from?: string, to?: string) => {
+    setLoading(true)
+    setRecap('')
+    const now = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    let fromStr = todayStr
+    let toStr = todayStr
+
+    if (p === '1D') {
+      fromStr = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+    } else if (p === '1W') {
+      fromStr = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
+    } else if (p === '1M') {
+      fromStr = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+    } else if (p === 'custom' && from && to) {
+      fromStr = from
+      toStr = to
+    } else {
+      setLoading(false)
+      return
+    }
+
+    try {
+      const [newsRes, snapRes] = await Promise.all([
+        fetch(`/api/news?category=markets&from=${fromStr}&to=${toStr}`),
+        fetch('/api/stocks?symbols=SPY,QQQ,DIA,GLD,BTC-USD'),
+      ])
+      const [newsData, snapData] = await Promise.all([newsRes.json(), snapRes.json()])
+
+      const res = await fetch('/api/market-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot: snapData.quotes || [],
+          news: (newsData.articles || []).slice(0, 10).map((a: any) => ({ title: a.title, description: a.description })),
+          period: p,
+          fromDate: fromStr,
+          toDate: toStr,
+        }),
+      })
+      const data = await res.json()
+      setRecap(data.brief || 'Unable to generate recap.')
+      setUpdatedAt(new Date())
+    } catch {
+      setRecap('Unable to load market recap. Check your connection.')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchRecap('1W') }, [])
+
+  const handlePeriod = (p: RecapPeriod) => {
+    setPeriod(p)
+    if (p !== 'custom') {
+      setShowCalendar(false)
+      fetchRecap(p)
+    } else {
+      setShowCalendar(true)
+    }
+  }
+
+  const applyCustom = () => {
+    if (!fromDate || !toDate) return
+    setShowCalendar(false)
+    fetchRecap('custom', fromDate, toDate)
+  }
+
+  return (
+    <div className="animate-fade" style={{ marginBottom: '12px' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <p className="label">Market Recap</p>
+        <button
+          onClick={() => fetchRecap(period, fromDate || undefined, toDate || undefined)}
+          disabled={loading}
+          style={{ background: 'none', border: 'none', color: 'var(--sand-400)', cursor: loading ? 'not-allowed' : 'pointer', padding: '2px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontFamily: 'inherit' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 0.8s linear infinite' : 'none' }}>
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+          </svg>
+          {updatedAt && !loading && <span style={{ color: 'var(--sand-400)' }}>Updated {updatedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>}
+        </button>
+      </div>
+
+      <div className="card" style={{ padding: '14px' }}>
+        {/* Period selector */}
+        <div style={{ display: 'flex', gap: '5px', marginBottom: '12px', alignItems: 'center' }}>
+          {RECAP_PERIODS.map(p => (
+            <button
+              key={p}
+              onClick={() => handlePeriod(p)}
+              style={{
+                padding: '5px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: '600',
+                cursor: 'pointer', fontFamily: 'inherit', border: 'none',
+                background: period === p ? 'var(--accent)' : 'var(--sand-200)',
+                color: period === p ? 'var(--sand-50)' : 'var(--sand-600)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {p}
+            </button>
+          ))}
+          {/* Calendar toggle */}
+          <button
+            onClick={() => handlePeriod('custom')}
+            title="Custom date range"
+            style={{
+              padding: '5px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: '600',
+              cursor: 'pointer', fontFamily: 'inherit', border: 'none', display: 'flex', alignItems: 'center', gap: '4px',
+              background: period === 'custom' ? 'var(--accent)' : 'var(--sand-200)',
+              color: period === 'custom' ? 'var(--sand-50)' : 'var(--sand-600)',
+              transition: 'all 0.15s',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            Custom
+          </button>
+        </div>
+
+        {/* Custom date range inputs */}
+        {showCalendar && (
+          <div className="animate-fade" style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || new Date().toISOString().split('T')[0]}
+              onChange={e => setFromDate(e.target.value)}
+              style={{ flex: 1, minWidth: '120px', fontSize: '12px', padding: '6px 10px', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', background: 'var(--sand-100)', color: 'var(--sand-900)', fontFamily: 'inherit', outline: 'none' }}
+            />
+            <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>to</span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate}
+              max={new Date().toISOString().split('T')[0]}
+              onChange={e => setToDate(e.target.value)}
+              style={{ flex: 1, minWidth: '120px', fontSize: '12px', padding: '6px 10px', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', background: 'var(--sand-100)', color: 'var(--sand-900)', fontFamily: 'inherit', outline: 'none' }}
+            />
+            <button
+              onClick={applyCustom}
+              disabled={!fromDate || !toDate}
+              className="btn-primary"
+              style={{ fontSize: '12px', padding: '6px 14px', flexShrink: 0, opacity: (!fromDate || !toDate) ? 0.5 : 1 }}
+            >
+              Go
+            </button>
+          </div>
+        )}
+
+        {/* Period label for custom */}
+        {period === 'custom' && fromDate && toDate && !showCalendar && (
+          <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '-4px 0 10px', fontWeight: '500' }}>
+            {new Date(fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} — {new Date(toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </p>
+        )}
+
+        {/* Content */}
+        {loading ? (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ width: '20px', height: '20px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              </div>
+            </div>
+            {/* Skeleton lines */}
+            {[80, 60, 90, 55, 75].map((w, i) => (
+              <div key={i} style={{ height: '10px', width: `${w}%`, background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '8px', animation: 'pulse 1.2s infinite', animationDelay: `${i * 80}ms` }} />
+            ))}
+          </div>
+        ) : recap ? (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+              <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+              </div>
+              <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', margin: 0, letterSpacing: '0.04em', textTransform: 'uppercase' }}>AI-generated</p>
+            </div>
+            <div>{formatRecap(recap)}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function getSuggestedQuestions(type: 'assets' | 'debts' | 'savings', profile: any): string[] {
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const assets = profile?.assets || []
+  const debts = profile?.debts || []
+
+  if (type === 'assets') {
+    const topAsset = [...assets].sort((a: any, b: any) => (b.value || 0) - (a.value || 0))[0]
+    const cats = new Set(assets.map((a: any) => a.category))
+    const q: string[] = []
+    if (topAsset) q.push(`Am I too concentrated in ${topAsset.name}?`)
+    if (!cats.has('retirement')) q.push('Should I open a retirement account?')
+    else q.push('Am I contributing enough to my retirement accounts?')
+    q.push('Where should I put my next dollar?')
+    return q.slice(0, 3)
+  }
+  if (type === 'debts') {
+    const sorted = [...debts].sort((a: any, b: any) => (b.interest_rate || 0) - (a.interest_rate || 0))
+    const highRate = sorted[0]
+    const q: string[] = []
+    if (highRate) q.push(`Should I pay off ${highRate.name} first or invest instead?`)
+    if (debts.length > 1) q.push('What order should I pay off my debts?')
+    q.push('Should I use avalanche or snowball method?')
+    if (highRate && (highRate.interest_rate || 0) > 15) q.push(`Can I refinance or balance-transfer ${highRate.name}?`)
+    return q.slice(0, 3)
+  }
+  if (type === 'savings') {
+    const avail = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+    return [
+      avail > 0 ? `What's the best way to split my ${fmt(avail)}/mo surplus?` : 'How do I free up more money to save?',
+      'Should I prioritize emergency fund, retirement, or debt payoff?',
+      'What accounts should I be using to maximize returns?',
+    ]
+  }
+  return []
+}
+
 function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWorth, totalAssets, totalLiabilities, availableToSave }: {
   type: 'assets' | 'debts' | 'savings'
   analysis: string
@@ -549,44 +809,97 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   const titles = { assets: 'Asset Breakdown', debts: 'Debt Overview', savings: 'Savings Power' }
   const colors = { assets: 'var(--sand-900)', debts: 'var(--danger)', savings: 'var(--success)' }
 
-  const formatAnalysis = (text: string) => text.split('\n').map((line, i) => {
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chips, setChips] = useState<string[]>([])
+  const chatBottomRef = useRef<HTMLDivElement>(null)
+
+  const parseFollowUps = (text: string): string[] => {
+    const m = text.match(/<followups>([\s\S]*?)<\/followups>/)
+    if (!m) return []
+    try { return JSON.parse(m[1]) } catch { return [] }
+  }
+  const stripMeta = (text: string) =>
+    text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
+
+  useEffect(() => {
+    if (!loading && analysis) {
+      const parsed = parseFollowUps(analysis)
+      setChips(parsed.length ? parsed : getSuggestedQuestions(type, profile))
+    }
+  }, [analysis, loading])
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  const sendChat = async (question: string) => {
+    if (!question.trim() || chatLoading || loading) return
+    const userMsg = { role: 'user' as const, content: question }
+    const newMessages = [...chatMessages, userMsg]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+    setChips([])
+
+    // First follow-up: give the AI context of what analysis was shown
+    const apiMessages = chatMessages.length === 0 && analysis
+      ? [{ role: 'assistant' as const, content: stripMeta(analysis) }, userMsg]
+      : newMessages
+
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, profile, topic: type })
+      })
+      const d = await r.json()
+      const raw = d.message || ''
+      setChips(parseFollowUps(raw))
+      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+    } catch {}
+    setChatLoading(false)
+  }
+
+  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
     if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
     if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
     if (line === '') return <div key={i} style={{ height: '6px' }} />
     return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
   })
 
-  // Asset allocation donut data
   const categoryColors: Record<string, string> = {
-    retirement: 'var(--accent)',
-    investment: 'var(--success)',
-    savings: '#5a8fc4',
-    real_estate: '#c4955a',
-    crypto: '#9b5ac4',
-    other: 'var(--sand-400)',
+    retirement: 'var(--accent)', investment: 'var(--success)', savings: '#5a8fc4',
+    real_estate: '#c4955a', crypto: '#9b5ac4', other: 'var(--sand-400)',
   }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
           <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
         </div>
-        <div style={{ padding: '16px 24px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+        {/* Header */}
+        <div style={{ padding: '12px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: colors[type] }}>{titles[type]}</h2>
           <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
         </div>
-        <div style={{ overflowY: 'auto', padding: '20px 24px', flex: 1 }}>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: 'auto', padding: '20px 24px 8px', flex: 1 }}>
+
+          {/* Type-specific data */}
           {type === 'assets' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(totalAssets)}</p>
               <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 16px' }}>total assets</p>
-              {/* Category breakdown */}
               {(() => {
                 const byCategory: Record<string, number> = {}
-                profile?.assets?.forEach((a: any) => {
-                  byCategory[a.category] = (byCategory[a.category] || 0) + (a.value || 0)
-                })
+                profile?.assets?.forEach((a: any) => { byCategory[a.category] = (byCategory[a.category] || 0) + (a.value || 0) })
                 return Object.entries(byCategory).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
                   <div key={cat} style={{ marginBottom: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
@@ -615,6 +928,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               </div>
             </div>
           )}
+
           {type === 'debts' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--danger)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(totalLiabilities)}</p>
@@ -630,6 +944,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               ))}
             </div>
           )}
+
           {type === 'savings' && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--success)', margin: '0 0 4px', letterSpacing: '-1px' }}>{fmt(availableToSave)}<span style={{ fontSize: '16px', color: 'var(--sand-500)' }}>/mo</span></p>
@@ -649,7 +964,9 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
               </div>
             </div>
           )}
-          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
+
+          {/* AI Analysis */}
+          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
@@ -658,18 +975,293 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
             </div>
             {loading ? (
               <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
-                {[0, 150, 300].map(d => (
-                  <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />
-                ))}
+                {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
               </div>
             ) : (
-              <div>{formatAnalysis(analysis)}</div>
+              <div>{formatText(analysis)}</div>
             )}
+          </div>
+
+          {/* Chat thread */}
+          {chatMessages.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px' }}>
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '85%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-100)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
+                    {msg.role === 'assistant'
+                      ? <div style={{ fontSize: '13px', color: 'var(--sand-800)', lineHeight: '1.55' }}>{formatText(msg.content)}</div>
+                      : <p style={{ fontSize: '13px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.55' }}>{msg.content}</p>
+                    }
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                  </div>
+                  <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '16px 16px 16px 4px', padding: '12px 14px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Fixed bottom: suggested chips + input */}
+        <div style={{ borderTop: '0.5px solid var(--sand-200)', padding: '10px 20px 28px', flexShrink: 0, background: 'var(--sand-50)' }}>
+          {/* Suggested question chips */}
+          {chips.length > 0 && !chatLoading && (
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '10px', paddingBottom: '2px', WebkitOverflowScrolling: 'touch' as any }}>
+              {chips.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendChat(q)}
+                  disabled={loading}
+                  style={{ flexShrink: 0, background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '20px', padding: '6px 12px', fontSize: '12px', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Text input */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendChat(chatInput)}
+              placeholder={loading ? 'Generating analysis…' : 'Ask a follow-up question…'}
+              disabled={loading || chatLoading}
+              style={{ flex: 1, borderRadius: '20px', fontSize: '14px', padding: '10px 16px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-900)', fontFamily: 'inherit', outline: 'none' }}
+            />
+            <button
+              onClick={() => sendChat(chatInput)}
+              disabled={!chatInput.trim() || loading || chatLoading}
+              style={{ width: '40px', height: '40px', borderRadius: '50%', background: chatInput.trim() && !loading && !chatLoading ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={chatInput.trim() && !loading ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
+  action: { priority: number; title: string; description: string; impact: string; timeframe: string }
+  analysis: string
+  loading: boolean
+  profile: any
+  onClose: () => void
+}) {
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chips, setChips] = useState<string[]>([])
+  const chatBottomRef = useRef<HTMLDivElement>(null)
+
+  const parseFollowUps = (text: string): string[] => {
+    const m = text.match(/<followups>([\s\S]*?)<\/followups>/)
+    if (!m) return []
+    try { return JSON.parse(m[1]) } catch { return [] }
+  }
+  const stripMeta = (text: string) =>
+    text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
+
+  useEffect(() => {
+    if (!loading && analysis) {
+      const parsed = parseFollowUps(analysis)
+      setChips(parsed.length ? parsed : [
+        'What do I do on day one to start this?',
+        'How long until I see real results?',
+        'What are the biggest risks I should watch for?',
+      ])
+    }
+  }, [analysis, loading])
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  const sendChat = async (question: string) => {
+    if (!question.trim() || chatLoading || loading) return
+    const userMsg = { role: 'user' as const, content: question }
+    const newMessages = [...chatMessages, userMsg]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+    setChips([])
+
+    const apiMessages = chatMessages.length === 0 && analysis
+      ? [{ role: 'assistant' as const, content: stripMeta(analysis) }, userMsg]
+      : newMessages
+
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, profile, topic: 'general' })
+      })
+      const d = await r.json()
+      const raw = d.message || ''
+      setChips(parseFollowUps(raw))
+      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+    } catch {}
+    setChatLoading(false)
+  }
+
+  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
+    if (/^\*\*(.+)\*\*$/.test(line)) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '12px 0 4px', fontSize: '14px' }}>{line.replace(/\*\*/g, '')}</p>
+    if (line.match(/^\d+\.\s/)) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '5px', alignItems: 'flex-start' }}><span style={{ color: 'var(--accent)', fontWeight: '700', fontSize: '13px', flexShrink: 0 }}>{line.match(/^(\d+\.)/)?.[1]}</span><span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.replace(/^\d+\.\s/, '')}</span></div>
+    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'flex-start' }}><span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0 }}>·</span><span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
+    if (line === '') return <div key={i} style={{ height: '6px' }} />
+    return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '12px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, marginRight: '12px' }}>
+              <p style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', margin: '0 0 4px' }}>This week's focus</p>
+              <h2 style={{ fontSize: '17px', fontWeight: '600', margin: '0 0 6px', color: 'var(--sand-900)', lineHeight: '1.35' }}>{action.title}</h2>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '2px 8px', borderRadius: '20px', fontWeight: '500' }}>{action.timeframe}</span>
+                <span style={{ fontSize: '10px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '2px 8px', borderRadius: '20px', fontWeight: '500' }}>{action.impact} impact</span>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)', flexShrink: 0 }}>×</button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: 'auto', padding: '16px 20px 8px', flex: 1 }}>
+
+          {/* AI plan */}
+          <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+              </div>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Your game plan</p>
+            </div>
+            {loading ? (
+              <div>
+                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', marginBottom: '12px' }}>
+                  {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                </div>
+                {[75, 55, 90, 60, 80, 45].map((w, i) => (
+                  <div key={i} style={{ height: '9px', width: `${w}%`, background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '8px', animation: 'pulse 1.2s infinite', animationDelay: `${i * 70}ms` }} />
+                ))}
+              </div>
+            ) : (
+              <div>{formatText(analysis)}</div>
+            )}
+          </div>
+
+          {/* Chat thread */}
+          {chatMessages.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px' }}>
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '85%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-100)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
+                    {msg.role === 'assistant'
+                      ? <div style={{ fontSize: '13px', color: 'var(--sand-800)', lineHeight: '1.55' }}>{formatText(msg.content)}</div>
+                      : <p style={{ fontSize: '13px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.55' }}>{msg.content}</p>
+                    }
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                  </div>
+                  <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '16px 16px 16px 4px', padding: '12px 14px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Fixed bottom: chips + input */}
+        <div style={{ borderTop: '0.5px solid var(--sand-200)', padding: '10px 20px 28px', flexShrink: 0, background: 'var(--sand-50)' }}>
+          {chips.length > 0 && !chatLoading && (
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '10px', paddingBottom: '2px', WebkitOverflowScrolling: 'touch' as any }}>
+              {chips.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendChat(q)}
+                  disabled={loading}
+                  style={{ flexShrink: 0, background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '20px', padding: '6px 12px', fontSize: '12px', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendChat(chatInput)}
+              placeholder={loading ? 'Building your plan…' : 'Ask about this plan…'}
+              disabled={loading || chatLoading}
+              style={{ flex: 1, borderRadius: '20px', fontSize: '14px', padding: '10px 16px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-900)', fontFamily: 'inherit', outline: 'none' }}
+            />
+            <button
+              onClick={() => sendChat(chatInput)}
+              disabled={!chatInput.trim() || loading || chatLoading}
+              style={{ width: '38px', height: '38px', borderRadius: '50%', background: chatInput.trim() && !loading ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: chatInput.trim() && !loading ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.15s' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={chatInput.trim() && !loading ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function financialFingerprint(p: any): string {
+  if (!p) return ''
+  return JSON.stringify({
+    assets: (p.assets || []).map((a: any) => ({ n: a.name, v: a.value })),
+    debts: (p.debts || []).map((d: any) => ({ n: d.name, b: d.balance })),
+    goals: (p.goals || []).map((g: any) => ({ n: g.name, c: g.current_amount })),
+    income: p.monthly_income,
+    expenses: p.monthly_expenses,
+  })
 }
 
 export default function Home() {
@@ -678,6 +1270,7 @@ export default function Home() {
   const { userId, userEmail, profileData: profile, analysis, chatRefs, hasProfile, loading: profileLoading, updateProfile } = useProfile()
   const firstName = userEmail.split('@')[0] || 'there'
   const [analyzing, setAnalyzing] = useState(false)
+  const [insightsRefreshing, setInsightsRefreshing] = useState(false)
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [analysisError, setAnalysisError] = useState(false)
@@ -686,20 +1279,37 @@ export default function Home() {
   const [editingGoalIdx, setEditingGoalIdx] = useState<number | null>(null)
   const [goalInputVal, setGoalInputVal] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
+  const [focusPlan, setFocusPlan] = useState<{ analysis: string; loading: boolean } | null>(null)
+  const prevFingerprintRef = useRef<string>('')
+  const analysisInProgressRef = useRef(false)
 
   useEffect(() => {
     if (profileLoading) return
     if (!hasProfile) { navigate('/onboarding'); return }
     if (analysis) {
-      saveNetWorthHistory(userId!, analysis)
+      saveNetWorthHistory(userId!, analysis, profile)
       checkMilestone(analysis.netWorth)
     } else if (profile) {
       runAnalysis(profile)
     }
+    // Seed fingerprint on load so we only react to future changes
+    if (profile) prevFingerprintRef.current = financialFingerprint(profile)
     // Load last analyzed timestamp
     const stored = localStorage.getItem(`lastAnalyzed_${userId}`)
     if (stored) setLastAnalyzedAt(stored)
   }, [profileLoading])
+
+  // Auto-refresh insights when financial data changes
+  useEffect(() => {
+    if (!profile || !analysis || analysisInProgressRef.current) return
+    const fp = financialFingerprint(profile)
+    if (prevFingerprintRef.current && fp !== prevFingerprintRef.current) {
+      prevFingerprintRef.current = fp
+      runAnalysis(profile, true)
+    } else if (!prevFingerprintRef.current) {
+      prevFingerprintRef.current = fp
+    }
+  }, [profile])
 
   const checkMilestone = (netWorth: number) => {
     const key = getMilestoneKey(netWorth)
@@ -712,8 +1322,15 @@ export default function Home() {
     }
   }
 
-  const saveNetWorthHistory = async (uid: string, analysisData: Analysis) => {
+  const saveNetWorthHistory = async (uid: string, analysisData: Analysis, profileData?: any) => {
     try {
+      const snapshot = profileData ? {
+        assets: (profileData.assets || []).map((a: any) => ({ name: a.name, category: a.category, value: a.value || 0 })),
+        debts: (profileData.debts || []).map((d: any) => ({ name: d.name, type: d.type, balance: d.balance || 0 })),
+        goals: (profileData.goals || []).map((g: any) => ({ name: g.name, current_amount: g.current_amount || 0, target_amount: g.target_amount || 0 })),
+        monthly_income: profileData.monthly_income || 0,
+        monthly_expenses: profileData.monthly_expenses || 0,
+      } : undefined
       await fetch('/api/networth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -721,14 +1338,18 @@ export default function Home() {
           userId: uid,
           netWorth: analysisData.netWorth,
           totalAssets: analysisData.totalAssets,
-          totalLiabilities: analysisData.totalLiabilities
+          totalLiabilities: analysisData.totalLiabilities,
+          snapshot,
         })
       })
     } catch (err) { console.error('Failed to save net worth history:', err) }
   }
 
-  const runAnalysis = async (profileData: any) => {
-    setAnalyzing(true)
+  const runAnalysis = async (profileData: any, silent = false) => {
+    if (analysisInProgressRef.current) return
+    analysisInProgressRef.current = true
+    if (silent) setInsightsRefreshing(true)
+    else setAnalyzing(true)
     setAnalysisError(false)
     try {
       const res = await fetch('/api/analyze', {
@@ -739,7 +1360,7 @@ export default function Home() {
       const result = await res.json()
       await updateProfile({ analysis: result })
       if (userId) {
-        saveNetWorthHistory(userId, result)
+        saveNetWorthHistory(userId, result, profileData)
         checkMilestone(result.netWorth)
         const now = new Date().toISOString()
         localStorage.setItem(`lastAnalyzed_${userId}`, now)
@@ -749,7 +1370,9 @@ export default function Home() {
       console.error('Analysis failed:', err)
       setAnalysisError(true)
     }
-    setAnalyzing(false)
+    if (silent) setInsightsRefreshing(false)
+    else setAnalyzing(false)
+    analysisInProgressRef.current = false
   }
 
   const openMiniDash = async (type: 'assets' | 'debts' | 'savings') => {
@@ -771,6 +1394,38 @@ export default function Home() {
       setMiniDash({ type, analysis: data.message || 'No response received.', loading: false })
     } catch {
       setMiniDash({ type, analysis: 'Unable to load analysis. Check your connection and try again.', loading: false })
+    }
+  }
+
+  const openFocusPlan = async (action: { title: string; description: string; impact: string; timeframe: string }) => {
+    setFocusPlan({ analysis: '', loading: true })
+    const goals = profile?.goals?.map((g: any) => `${g.name}: $${(g.current_amount || 0).toLocaleString()} / $${(g.target_amount || 0).toLocaleString()} (${g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0}%)`).join(', ') || 'none set'
+    const debts = profile?.debts?.sort((a: any, b: any) => b.interest_rate - a.interest_rate).map((d: any) => `${d.name}: $${(d.balance || 0).toLocaleString()} @ ${d.interest_rate}%`).join(', ') || 'none'
+    const avail = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+    const prompt = `My #1 financial priority this week is: "${action.title}". ${action.description}
+
+Here is my full financial context:
+- Monthly surplus available: $${avail.toLocaleString()}
+- Goals: ${goals}
+- Debts (highest rate first): ${debts}
+- This action has ${action.impact} impact and a ${action.timeframe} timeframe
+
+Please give me:
+1. WHY this is my best move right now — explain using my actual numbers, not generic advice
+2. A concrete step-by-step execution plan for THIS WEEK — first action, second action, etc. with exact amounts and where to do it
+3. How completing this specifically advances my goals
+4. What progress will look like at 30, 60, and 90 days with real numbers`
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'general' })
+      })
+      const data = await res.json()
+      setFocusPlan({ analysis: data.message || 'No response received.', loading: false })
+    } catch {
+      setFocusPlan({ analysis: 'Unable to load plan. Check your connection and try again.', loading: false })
     }
   }
 
@@ -796,7 +1451,6 @@ export default function Home() {
     )
     const updatedProfile = { ...profile, goals: updatedGoals }
     await updateProfile({ profile_data: updatedProfile })
-    await runAnalysis(updatedProfile)
     setSavingGoal(false)
     setEditingGoalIdx(null)
   }
@@ -908,7 +1562,7 @@ export default function Home() {
 
       {/* Key Insights */}
       {isVisible('insights') && (
-        <InsightsStrip analysis={analysis} profile={profile} />
+        <InsightsStrip analysis={analysis} profile={profile} refreshing={insightsRefreshing} />
       )}
 
       {/* Today's Focus */}
@@ -928,9 +1582,9 @@ export default function Home() {
             <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.impact} impact</span>
           </div>
           <button
-            onClick={() => openChat('action_0', `Give me a step by step plan for: ${topAction.title}. ${topAction.description}`, topAction.title)}
+            onClick={() => openFocusPlan(topAction)}
             style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
-            {chatRefs['action_0'] ? 'Continue plan →' : 'Make it happen →'}
+            Attack this →
           </button>
         </div>
       )}
@@ -983,6 +1637,9 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Market Recap */}
+      <MarketRecap />
 
       {/* Goals */}
       {isVisible('goals') && (profile?.goals?.length || 0) > 0 && (
@@ -1059,6 +1716,16 @@ export default function Home() {
           totalAssets={analysis.totalAssets}
           totalLiabilities={analysis.totalLiabilities}
           availableToSave={analysis.availableToSave}
+        />
+      )}
+
+      {focusPlan && analysis?.nextActions?.[0] && (
+        <FocusPlanSheet
+          action={analysis.nextActions[0]}
+          analysis={focusPlan.analysis}
+          loading={focusPlan.loading}
+          profile={profile}
+          onClose={() => setFocusPlan(null)}
         />
       )}
 

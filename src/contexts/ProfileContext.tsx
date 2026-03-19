@@ -9,7 +9,7 @@ interface ProfileContextType {
   chatRefs: Record<string, string>
   watchlist: string[]
   savedIdeas: string[]
-  incomeIdeas: string[]
+  incomeIdeas: any[]
   goalAdvice: Record<string, string>
   hasProfile: boolean
   loading: boolean
@@ -39,7 +39,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [chatRefs, setChatRefs] = useState<Record<string, string>>({})
   const [watchlist, setWatchlist] = useState<string[]>(['SPY', 'QQQ', 'AAPL'])
   const [savedIdeas, setSavedIdeas] = useState<string[]>([])
-  const [incomeIdeas, setIncomeIdeas] = useState<string[]>([])
+  const [incomeIdeas, setIncomeIdeas] = useState<any[]>([])
   const [goalAdvice, setGoalAdvice] = useState<Record<string, string>>({})
   const [hasProfile, setHasProfile] = useState(false)
   const [loading, setLoading] = useState(true)

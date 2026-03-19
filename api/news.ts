@@ -2,7 +2,7 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   const newsKey = process.env.NEWS_API_KEY
-  const { category = 'markets', page = '1' } = req.query
+  const { category = 'markets', page = '1', from: fromParam, to: toParam } = req.query
 
   const queries: Record<string, string> = {
     markets: 'stock market investing Wall Street S&P 500',
@@ -15,25 +15,27 @@ export default async function handler(req: any, res: any) {
   const query = encodeURIComponent(queries[category as string] || queries.markets)
 
   try {
-    // Try today first
     const today = new Date().toISOString().split('T')[0]
+    const fromDate = (fromParam as string) || today
+    const toDate = (toParam as string) || today
+
     let response = await fetch(
-      `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=10&page=${page}&from=${today}&apiKey=${newsKey}`
+      `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${fromDate}&to=${toDate}&apiKey=${newsKey}`
     )
     let data = await response.json()
     let articles = (data.articles || []).filter((a: any) =>
-      a.title && a.urlToImage && !a.title.includes('[Removed]') && a.description
+      a.title && !a.title.includes('[Removed]') && a.description
     )
 
-    // Fall back to last 7 days if nothing today
+    // Fall back to last 7 days if sparse
     if (articles.length < 3) {
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
       response = await fetch(
-        `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=10&page=${page}&from=${weekAgo}&apiKey=${newsKey}`
+        `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${weekAgo}&apiKey=${newsKey}`
       )
       data = await response.json()
       articles = (data.articles || []).filter((a: any) =>
-        a.title && a.urlToImage && !a.title.includes('[Removed]') && a.description
+        a.title && !a.title.includes('[Removed]') && a.description
       )
     }
 
