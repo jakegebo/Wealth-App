@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
@@ -185,8 +185,11 @@ function GrowthSection({
   ideaProgress: Record<string, string>
   navigate: (path: string) => void
 }) {
-  const [tab, setTab] = useState<'wealth' | 'goals' | 'income'>('wealth')
+  const [tab, setTab] = useState<'wealth' | 'goals' | 'income' | 'portfolio'>('wealth')
   const [debtCollapsed, setDebtCollapsed] = useState(false)
+  const [portfolioQuotes, setPortfolioQuotes] = useState<Record<string, any>>({})
+  const [portfolioLoading, setPortfolioLoading] = useState(false)
+  const portfolioFetched = useRef(false)
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -204,6 +207,47 @@ function GrowthSection({
   const income = profile?.monthly_income || 0
   const expenses = profile?.monthly_expenses || 0
   const availableToSave = income - expenses
+
+  // Collect all positions across all accounts
+  const allPositions: { accountName: string; accountCategory: string; accountType?: string; symbol: string; name?: string; shares: number; costBasis?: number }[] = []
+  for (const asset of assets) {
+    if (asset.positions?.length) {
+      for (const pos of asset.positions) {
+        if (pos.symbol && pos.shares > 0) {
+          allPositions.push({
+            accountName: asset.name,
+            accountCategory: asset.category,
+            accountType: asset.account_type,
+            symbol: pos.symbol,
+            name: pos.name,
+            shares: pos.shares,
+            costBasis: pos.costBasis,
+          })
+        }
+      }
+    }
+  }
+  const uniqueSymbols = [...new Set(allPositions.map(p => p.symbol))]
+
+  const fetchPortfolioPrices = useCallback(async () => {
+    if (!uniqueSymbols.length) return
+    setPortfolioLoading(true)
+    try {
+      const res = await fetch(`/api/stocks?symbols=${uniqueSymbols.join(',')}`)
+      const data = await res.json()
+      const map: Record<string, any> = {}
+      for (const q of data.quotes || []) map[q.symbol] = q
+      setPortfolioQuotes(map)
+    } catch { }
+    setPortfolioLoading(false)
+  }, [uniqueSymbols.join(',')])
+
+  useEffect(() => {
+    if (tab === 'portfolio' && !portfolioFetched.current) {
+      portfolioFetched.current = true
+      fetchPortfolioPrices()
+    }
+  }, [tab, fetchPortfolioPrices])
 
   // Net worth history — only treat as meaningful if history spans at least 24 hours
   // (prevents fake "all time" deltas from multiple saves during onboarding)
@@ -299,19 +343,24 @@ function GrowthSection({
       <p className="label" style={{ marginBottom: '12px' }}>Your Growth</p>
 
       {/* Tab pills */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-        {(['wealth', 'goals', 'income'] as const).map(key => (
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
+        {([
+          { key: 'wealth', label: 'Wealth' },
+          { key: 'portfolio', label: 'Portfolio' },
+          { key: 'goals', label: 'Goals' },
+          { key: 'income', label: 'Income' },
+        ] as const).map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             style={{
               padding: '7px 18px', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
-              cursor: 'pointer', fontFamily: 'inherit', border: 'none',
+              cursor: 'pointer', fontFamily: 'inherit', border: 'none', flexShrink: 0,
               background: tab === key ? 'var(--accent)' : 'var(--sand-200)',
               color: tab === key ? 'var(--sand-50)' : 'var(--sand-600)',
-              transition: 'all 0.2s', textTransform: 'capitalize'
+              transition: 'all 0.2s'
             }}>
-            {key}
+            {label}
           </button>
         ))}
       </div>
@@ -658,6 +707,196 @@ function GrowthSection({
           )}
         </div>
       )}
+
+      {/* ── PORTFOLIO TAB ── */}
+      {tab === 'portfolio' && (() => {
+        if (allPositions.length === 0) {
+          return (
+            <div style={{ textAlign: 'center', padding: '32px 16px', background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)' }}>
+              <p style={{ fontSize: '15px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>No holdings entered yet</p>
+              <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: '0 0 16px', lineHeight: '1.5' }}>
+                Go to your profile → Assets and add your exact shares for retirement, brokerage, or crypto accounts to see live market tracking here.
+              </p>
+              <button className="btn-primary" onClick={() => navigate('/onboarding?step=2')} style={{ fontSize: '13px', padding: '9px 22px' }}>
+                Add Holdings
+              </button>
+            </div>
+          )
+        }
+
+        // Group positions by account
+        const byAccount: Record<string, typeof allPositions> = {}
+        for (const pos of allPositions) {
+          const key = pos.accountName
+          if (!byAccount[key]) byAccount[key] = []
+          byAccount[key].push(pos)
+        }
+
+        // Compute totals
+        let totalLiveValue = 0
+        let totalCostBasis = 0
+        let hasCostBasis = false
+
+        for (const pos of allPositions) {
+          const q = portfolioQuotes[pos.symbol]
+          if (q) totalLiveValue += pos.shares * q.price
+          if (pos.costBasis != null) {
+            totalCostBasis += pos.shares * pos.costBasis
+            hasCostBasis = true
+          }
+        }
+        const totalGain = hasCostBasis ? totalLiveValue - totalCostBasis : null
+        const totalGainPct = hasCostBasis && totalCostBasis > 0 ? (totalGain! / totalCostBasis) * 100 : null
+
+        const ACCOUNT_ICONS: Record<string, string> = {
+          retirement: '🏦', brokerage: '📈', investment: '📈', crypto: '₿', savings: '🏧', real_estate: '🏠', other: '💼'
+        }
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Summary card */}
+            <div className="card" style={{ padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Live Portfolio Value</p>
+                  {portfolioLoading ? (
+                    <p style={{ fontSize: '24px', color: 'var(--sand-400)', margin: 0 }}>Loading…</p>
+                  ) : (
+                    <p style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.8px' }}>
+                      {Object.keys(portfolioQuotes).length > 0 ? fmt(totalLiveValue) : '—'}
+                    </p>
+                  )}
+                  {totalGain !== null && !portfolioLoading && Object.keys(portfolioQuotes).length > 0 && (
+                    <p style={{ fontSize: '13px', fontWeight: '600', color: totalGain >= 0 ? 'var(--success)' : 'var(--danger)', margin: '4px 0 0' }}>
+                      {totalGain >= 0 ? '+' : ''}{fmt(totalGain)} ({totalGainPct !== null ? `${totalGainPct >= 0 ? '+' : ''}${totalGainPct.toFixed(2)}%` : ''}) all time
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => { portfolioFetched.current = false; fetchPortfolioPrices() }}
+                  style={{ background: 'none', border: '0.5px solid var(--sand-300)', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', color: 'var(--sand-500)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Refresh
+                </button>
+              </div>
+              {hasCostBasis && !portfolioLoading && (
+                <div style={{ marginTop: '10px', display: 'flex', gap: '16px' }}>
+                  <div>
+                    <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Cost Basis</p>
+                    <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: 0 }}>{fmt(totalCostBasis)}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Unrealized P/L</p>
+                    <p style={{ fontSize: '13px', fontWeight: '600', color: totalGain! >= 0 ? 'var(--success)' : 'var(--danger)', margin: 0 }}>
+                      {totalGain! >= 0 ? '+' : ''}{fmt(totalGain!)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Per-account breakdown */}
+            {Object.entries(byAccount).map(([accountName, positions]) => {
+              const asset = assets.find((a: any) => a.name === accountName)
+              const icon = ACCOUNT_ICONS[asset?.category || 'other'] || '💼'
+              let acctLiveValue = 0
+              let acctCostBasis = 0
+              let acctHasCostBasis = false
+              for (const pos of positions) {
+                const q = portfolioQuotes[pos.symbol]
+                if (q) acctLiveValue += pos.shares * q.price
+                if (pos.costBasis != null) { acctCostBasis += pos.shares * pos.costBasis; acctHasCostBasis = true }
+              }
+              const acctGain = acctHasCostBasis ? acctLiveValue - acctCostBasis : null
+
+              return (
+                <div key={accountName} className="card" style={{ padding: '14px' }}>
+                  {/* Account header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>{icon}</span>
+                      <div>
+                        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{accountName}</p>
+                        {asset?.account_type && (
+                          <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{asset.account_type}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      {portfolioLoading ? (
+                        <p style={{ fontSize: '14px', color: 'var(--sand-400)', margin: 0 }}>…</p>
+                      ) : Object.keys(portfolioQuotes).length > 0 ? (
+                        <>
+                          <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(acctLiveValue)}</p>
+                          {acctGain !== null && (
+                            <p style={{ fontSize: '10px', fontWeight: '600', color: acctGain >= 0 ? 'var(--success)' : 'var(--danger)', margin: '1px 0 0' }}>
+                              {acctGain >= 0 ? '+' : ''}{fmt(acctGain)}
+                            </p>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Position rows */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {positions.map((pos, pi) => {
+                      const q = portfolioQuotes[pos.symbol]
+                      const liveValue = q ? pos.shares * q.price : null
+                      const costTotal = pos.costBasis != null ? pos.shares * pos.costBasis : null
+                      const gain = liveValue != null && costTotal != null ? liveValue - costTotal : null
+                      const gainPct = gain != null && costTotal != null && costTotal > 0 ? (gain / costTotal) * 100 : null
+                      const todayChange = q ? pos.shares * q.change : null
+                      const isUp = q ? q.change >= 0 : null
+
+                      return (
+                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
+                              {pos.name && <span style={{ fontSize: '10px', color: 'var(--sand-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.name}</span>}
+                            </div>
+                            <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '1px 0 0' }}>
+                              {pos.shares} {pos.accountCategory === 'crypto' ? 'units' : 'shares'}
+                              {q && ` · $${q.price.toFixed(2)}/share`}
+                            </p>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            {portfolioLoading ? (
+                              <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: 0 }}>…</p>
+                            ) : liveValue !== null ? (
+                              <>
+                                <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(liveValue)}</p>
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '1px' }}>
+                                  {todayChange !== null && (
+                                    <span style={{ fontSize: '10px', fontWeight: '600', color: isUp ? 'var(--success)' : 'var(--danger)' }}>
+                                      {isUp ? '+' : ''}{fmt(todayChange)} today
+                                    </span>
+                                  )}
+                                  {gain !== null && gainPct !== null && (
+                                    <span style={{ fontSize: '10px', color: gain >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: '500' }}>
+                                      ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}% total)
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>—</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+
+            <p style={{ fontSize: '10px', color: 'var(--sand-400)', textAlign: 'center', margin: '4px 0 0', lineHeight: '1.5' }}>
+              Prices from Yahoo Finance · 15-min delay · Tap Refresh to update
+            </p>
+          </div>
+        )
+      })()}
 
       {/* ── GOALS TAB ── */}
       {tab === 'goals' && (

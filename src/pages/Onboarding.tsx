@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
@@ -6,6 +6,13 @@ import { useProfile } from '../contexts/ProfileContext'
 interface YearlyContribution {
   year: number
   amount: number
+}
+
+interface Position {
+  symbol: string
+  name?: string
+  shares: number
+  costBasis?: number  // per-share cost basis
 }
 
 interface IncomeSource {
@@ -21,6 +28,7 @@ interface Asset {
   value: number
   account_type?: string
   holdings?: string
+  positions?: Position[]
   annual_contribution?: number
   contribution_pct?: number
   is_contributing?: boolean
@@ -57,6 +65,149 @@ interface Goal {
   timeline: string
   priority: 'high' | 'medium' | 'low'
   monthly_contribution?: number
+}
+
+function HoldingsManager({
+  positions,
+  onChange,
+  inputStyle,
+  labelStyle,
+  isCrypto = false,
+}: {
+  positions: Position[]
+  onChange: (positions: Position[]) => void
+  inputStyle: React.CSSProperties
+  labelStyle: React.CSSProperties
+  isCrypto?: boolean
+}) {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<{ symbol: string; name: string }[]>([])
+  const [searching, setSearching] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const doSearch = (q: string) => {
+    if (!q.trim()) { setResults([]); setSearching(false); return }
+    setSearching(true)
+    fetch(`/api/stocks?search=${encodeURIComponent(q)}`)
+      .then(r => r.json())
+      .then(data => { setResults(data.results || []); setSearching(false) })
+      .catch(() => { setResults([]); setSearching(false) })
+  }
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => doSearch(val), 400)
+  }
+
+  const addPosition = (symbol: string, name: string) => {
+    if (!positions.some(p => p.symbol === symbol)) {
+      onChange([...positions, { symbol, name, shares: 0 }])
+    }
+    setSearch('')
+    setResults([])
+  }
+
+  const removePosition = (idx: number) => onChange(positions.filter((_, i) => i !== idx))
+
+  const updatePosition = (idx: number, field: keyof Position, value: any) => {
+    const updated = [...positions]
+    updated[idx] = { ...updated[idx], [field]: value }
+    onChange(updated)
+  }
+
+  const placeholder = isCrypto ? 'Search crypto (e.g. Bitcoin, Ethereum, Solana)...' : 'Search stocks, ETFs (e.g. AAPL, SPY, FXAIX)...'
+
+  return (
+    <div>
+      <label style={labelStyle}>Holdings</label>
+      <div style={{ position: 'relative', marginBottom: '8px' }}>
+        <input
+          value={search}
+          onChange={e => handleSearchChange(e.target.value)}
+          placeholder={placeholder}
+          style={inputStyle}
+          autoComplete="off"
+        />
+        {searching && (
+          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: 'var(--sand-400)' }}>searching…</span>
+        )}
+        {results.length > 0 && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+            background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)',
+            borderRadius: 'var(--radius-sm)', boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            maxHeight: '200px', overflowY: 'auto'
+          }}>
+            {results.map((r, i) => (
+              <button
+                key={i}
+                onClick={() => addPosition(r.symbol, r.name)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '10px 12px', background: 'none', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                  borderBottom: i < results.length - 1 ? '0.5px solid var(--sand-200)' : 'none'
+                }}
+              >
+                <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent)', minWidth: '64px', flexShrink: 0 }}>{r.symbol}</span>
+                <span style={{ fontSize: '12px', color: 'var(--sand-600)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {positions.length === 0 && (
+        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0, fontStyle: 'italic' }}>
+          Search above and tap a result to add a holding
+        </p>
+      )}
+
+      {positions.map((pos, idx) => (
+        <div key={idx} style={{
+          display: 'grid', gridTemplateColumns: 'auto 1fr 1fr auto',
+          gap: '6px', alignItems: 'center', marginBottom: '6px',
+          padding: '8px 10px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)'
+        }}>
+          <div style={{ minWidth: '64px' }}>
+            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent)', margin: 0 }}>{pos.symbol}</p>
+            {pos.name && <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0, maxWidth: '70px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.name}</p>}
+          </div>
+          <div>
+            <p style={{ fontSize: '9px', color: 'var(--sand-500)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>
+              {isCrypto ? 'Units' : 'Shares'}
+            </p>
+            <input
+              type="number" placeholder="0" min="0" step="any"
+              value={pos.shares || ''}
+              onChange={e => updatePosition(idx, 'shares', parseFloat(e.target.value) || 0)}
+              style={{ ...inputStyle, padding: '6px 8px', fontSize: '13px' }}
+            />
+          </div>
+          <div>
+            <p style={{ fontSize: '9px', color: 'var(--sand-500)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Cost/share (opt)</p>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: 'var(--sand-400)' }}>$</span>
+              <input
+                type="number" placeholder="—" min="0" step="any"
+                value={pos.costBasis || ''}
+                onChange={e => updatePosition(idx, 'costBasis', parseFloat(e.target.value) || undefined)}
+                style={{ ...inputStyle, padding: '6px 8px 6px 18px', fontSize: '13px' }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => removePosition(idx)}
+            style={{ background: 'none', border: 'none', color: 'var(--sand-400)', cursor: 'pointer', fontSize: '18px', padding: '0 0 0 4px', lineHeight: 1 }}
+          >×</button>
+        </div>
+      ))}
+      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '4px 0 0', lineHeight: '1.4' }}>
+        Enter shares owned. Cost/share is optional — used for gain/loss tracking.
+      </p>
+    </div>
+  )
 }
 
 const RETIREMENT_ACCOUNT_TYPES = ['Roth IRA', 'Traditional IRA', '401(k)', 'Roth 401(k)', 'SEP-IRA', 'SIMPLE IRA', 'HSA', '403(b)', '457(b)', 'Pension', 'Other']
@@ -640,11 +791,12 @@ export default function Onboarding() {
                           <input type="number" placeholder="0" value={asset.value || ''} onChange={e => updateAsset(i, 'value', parseFloat(e.target.value) || 0)} style={{ ...inputStyle, paddingLeft: '26px' }} />
                         </div>
                       </div>
-                      <div>
-                        <label style={labelStyle}>What is it invested in?</label>
-                        <input placeholder="e.g. FXAIX 70%, FTIHX 20%, bonds 10%" value={asset.holdings || ''} onChange={e => updateAsset(i, 'holdings', e.target.value)} style={inputStyle} />
-                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0', lineHeight: '1.4' }}>Tickers, fund names, or rough allocation — whatever detail you have</p>
-                      </div>
+                      <HoldingsManager
+                        positions={asset.positions || []}
+                        onChange={pos => updateAsset(i, 'positions', pos)}
+                        inputStyle={inputStyle}
+                        labelStyle={labelStyle}
+                      />
                       {/* Contribution section */}
                       {(() => {
                         const is401k = /401\s*k|403\s*b|457\s*b/i.test(asset.account_type || asset.name)
@@ -838,11 +990,12 @@ export default function Onboarding() {
                           <input type="number" placeholder="0" value={asset.value || ''} onChange={e => updateAsset(i, 'value', parseFloat(e.target.value) || 0)} style={{ ...inputStyle, paddingLeft: '26px' }} />
                         </div>
                       </div>
-                      <div>
-                        <label style={labelStyle}>Holdings</label>
-                        <input placeholder="e.g. VTI 60%, VXUS 30%, BND 10%" value={asset.holdings || ''} onChange={e => updateAsset(i, 'holdings', e.target.value)} style={inputStyle} />
-                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0', lineHeight: '1.4' }}>Tickers, fund names, or asset mix</p>
-                      </div>
+                      <HoldingsManager
+                        positions={asset.positions || []}
+                        onChange={pos => updateAsset(i, 'positions', pos)}
+                        inputStyle={inputStyle}
+                        labelStyle={labelStyle}
+                      />
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <div>
                           <label style={labelStyle}>Cost basis</label>
@@ -954,18 +1107,13 @@ export default function Onboarding() {
                           <input type="number" placeholder="0" value={asset.value || ''} onChange={e => updateAsset(i, 'value', parseFloat(e.target.value) || 0)} style={{ ...inputStyle, paddingLeft: '26px' }} />
                         </div>
                       </div>
-                      <div>
-                        <label style={labelStyle}>Coins / tokens held</label>
-                        <input placeholder="e.g. BTC 0.5, ETH 3, SOL 20" value={asset.coins || ''} onChange={e => updateAsset(i, 'coins', e.target.value)} style={inputStyle} />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Total cost basis</label>
-                        <div style={{ position: 'relative' }}>
-                          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '14px' }}>$</span>
-                          <input type="number" placeholder="What you paid in total" value={asset.cost_basis || ''} onChange={e => updateAsset(i, 'cost_basis', parseFloat(e.target.value) || 0)} style={{ ...inputStyle, paddingLeft: '26px' }} />
-                        </div>
-                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0' }}>Optional — used for tax gain/loss calculations</p>
-                      </div>
+                      <HoldingsManager
+                        positions={asset.positions || []}
+                        onChange={pos => updateAsset(i, 'positions', pos)}
+                        inputStyle={inputStyle}
+                        labelStyle={labelStyle}
+                        isCrypto={true}
+                      />
                     </>)}
 
                     {/* Business */}
