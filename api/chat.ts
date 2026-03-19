@@ -152,21 +152,41 @@ Make follow-ups specific to the conversation — not generic. If you just covere
     // Cap context to last 20 messages to control latency and cost
     const contextMessages = messages.slice(-20)
 
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...contextMessages
-      ],
-      temperature: 0.35,
-      max_tokens: 2500
-    })
+    let completion
+    const models = ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama3-70b-8192']
+    let lastError: any
+    for (const model of models) {
+      try {
+        completion = await groq.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...contextMessages
+          ],
+          temperature: 0.35,
+          max_tokens: 2500
+        })
+        break
+      } catch (e: any) {
+        lastError = e
+        if (e?.status === 404 || e?.message?.toLowerCase().includes('model')) continue
+        throw e
+      }
+    }
+    if (!completion) throw lastError
 
     const message = completion.choices[0]?.message?.content || 'Something went wrong.'
     res.json({ message })
 
   } catch (err: any) {
-    console.error('Chat API error:', err)
-    res.status(500).json({ error: 'Failed to process chat', message: 'I ran into an error. Please try again.' })
+    console.error('Chat API error:', err?.message || err)
+    const isAuthError = err?.status === 401 || err?.message?.toLowerCase().includes('api key') || err?.message?.toLowerCase().includes('auth')
+    const isModelError = err?.status === 404 || err?.message?.toLowerCase().includes('model') || err?.message?.toLowerCase().includes('not found')
+    const message = isAuthError
+      ? 'API key error. Please check your GROQ_API_KEY in Vercel environment variables.'
+      : isModelError
+      ? 'Model not available. Please try again or contact support.'
+      : `Error: ${err?.message || 'Unknown error'}. Please try again.`
+    res.status(500).json({ error: 'Failed to process chat', message })
   }
 }
