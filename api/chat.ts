@@ -150,7 +150,8 @@ At the very end of every response, after "**Your move today:**", include a block
 Make follow-ups specific to the conversation — not generic. If you just covered debt payoff, suggest questions about investing the freed cash, credit score impact, etc.`
 
     // Cap context to last 20 messages to control latency and cost
-    const contextMessages = messages.slice(-20)
+    // Strip any extra properties (e.g. chartData) that Groq doesn't accept
+    const contextMessages = messages.slice(-20).map((m: any) => ({ role: m.role, content: m.content }))
 
     let completion
     const models = ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'llama3-70b-8192']
