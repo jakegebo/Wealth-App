@@ -1,11 +1,11 @@
-import Groq from 'groq-sdk'
+import Anthropic from '@anthropic-ai/sdk'
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { snapshot, news, period, fromDate, toDate } = req.body
+  const { snapshot, news, period, fromDate, toDate, messages } = req.body
 
   try {
     const periodLabel =
@@ -14,32 +14,68 @@ export default async function handler(req: any, res: any) {
       period === '1M' ? 'the last 30 days' :
       fromDate && toDate ? `${fromDate} to ${toDate}` : 'recent period'
 
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
     const snapText = snapshot?.length
-      ? snapshot.map((s: any) =>
-          `${s.symbol}: $${s.price} (${parseFloat(s.changePercent) >= 0 ? '+' : ''}${parseFloat(s.changePercent).toFixed(2)}%)`
-        ).join(' | ')
+      ? snapshot.map((s: any) => {
+          const pct = parseFloat(s.changePercent)
+          const sign = pct >= 0 ? '+' : ''
+          const endPrice = s.endPrice != null ? `$${parseFloat(s.endPrice).toFixed(2)}` : (s.price != null ? `$${parseFloat(s.price).toFixed(2)}` : '')
+          return `${s.symbol}: ${endPrice} (${sign}${pct.toFixed(2)}% over period)`
+        }).join(' | ')
       : 'Market data unavailable'
 
     const headlineText = news?.length
-      ? news.slice(0, 10).map((n: any, i: number) => `${i + 1}. ${n.title}${n.description ? ' — ' + n.description.slice(0, 100) : ''}`).join('\n')
+      ? news.slice(0, 10).map((n: any, i: number) =>
+          `${i + 1}. ${n.title}${n.description ? ' — ' + n.description.slice(0, 120) : ''}`
+        ).join('\n')
       : 'No headlines available'
 
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a sharp, concise market analyst writing for retail investors. Write a structured recap for ${periodLabel}.
+    const systemPrompt = `You are a sharp, accurate, and unbiased market analyst writing concise recaps for everyday retail investors. Today is ${today}.
 
-FORMAT YOUR RESPONSE EXACTLY LIKE THIS (use these exact bold headers):
+Period being analyzed: ${periodLabel}
+
+Market performance data for this period:
+${snapText}
+
+Recent relevant headlines:
+${headlineText}
+
+Guidelines:
+- Be accurate and unbiased — report what happened, not what should have happened
+- Use the real numbers from the data above. Be specific: say "SPY fell 2.1%" not "markets declined"
+- Cover what actually moved and why, based on the headlines and data
+- Keep language clear and accessible — no jargon without explanation
+- No disclaimers, no "please consult a financial advisor"
+- Never recommend specific buy/sell actions`
+
+    // Follow-up conversation mode
+    if (messages && messages.length > 0) {
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+      })
+      return res.json({ reply: response.content[0]?.type === 'text' ? response.content[0].text : '' })
+    }
+
+    // Initial recap
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: `Write a structured market recap for ${periodLabel}. Use this exact format:
 
 **Market Overview**
 One clear sentence on the overall market direction and tone for this period.
 
 **Key Moves**
-- [Item 1]: brief explanation with % or $ move if available
-- [Item 2]: brief explanation
-- [Item 3]: brief explanation
+- [Asset/Sector]: specific % move and brief reason
+- [Asset/Sector]: specific % move and brief reason
+- [Asset/Sector]: specific % move and brief reason
 
 **What's Driving It**
 2 sentences on the macro forces, catalysts, or news themes behind the moves.
@@ -47,32 +83,13 @@ One clear sentence on the overall market direction and tone for this period.
 **Investor Takeaway**
 1-2 sentences on what this means for a typical long-term retail investor.
 
-Rules:
-- Use real numbers from the snapshot and headlines
-- Be specific, not vague. Say "SPY fell 1.2%" not "markets declined"
-- Total response under 200 words
-- No disclaimers, no "please consult a financial advisor"
-- Never recommend specific buy/sell actions`
-        },
-        {
-          role: 'user',
-          content: `Period: ${periodLabel}
-
-Market snapshot: ${snapText}
-
-Top headlines:
-${headlineText}
-
-Write the market recap.`
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 400
+Keep the total response under 220 words. Use the actual numbers from the data provided.`
+      }]
     })
 
-    res.json({ brief: completion.choices[0]?.message?.content || '' })
-  } catch (err) {
-    console.error(err)
+    res.json({ brief: response.content[0]?.type === 'text' ? response.content[0].text : '' })
+  } catch (err: any) {
+    console.error('market-brief error:', err?.message || err)
     res.status(500).json({ error: 'Failed to generate brief' })
   }
 }

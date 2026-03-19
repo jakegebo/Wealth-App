@@ -132,7 +132,7 @@ function InlineText({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         part.startsWith('**') && part.endsWith('**')
-          ? <strong key={i} style={{ fontWeight: '600', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
+          ? <strong key={i} style={{ fontWeight: '700', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
           : <span key={i}>{part}</span>
       )}
     </>
@@ -153,11 +153,33 @@ function TextBlock({ content }: { content: string }) {
     }
 
     if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-      elements.push(
-        <p key={i} style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-600)', margin: '14px 0 6px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-          {line.trim().slice(2, -2)}
-        </p>
-      )
+      const headerText = line.trim().slice(2, -2)
+      const isCTA = headerText.toLowerCase().replace(/[^a-z\s]/g, '').includes('your move today')
+
+      if (isCTA) {
+        elements.push(
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: 'var(--accent)', borderRadius: '12px',
+            padding: '12px 16px', margin: '18px 0 10px'
+          }}>
+            <span style={{ fontSize: '18px', flexShrink: 0 }}>⚡</span>
+            <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-50)', margin: 0, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              {headerText}
+            </p>
+          </div>
+        )
+      } else {
+        elements.push(
+          <p key={i} style={{
+            fontSize: '13px', fontWeight: '700', color: 'var(--accent)',
+            margin: '18px 0 8px', letterSpacing: '0.03em', textTransform: 'uppercase',
+            borderLeft: '3px solid var(--accent)', paddingLeft: '10px', lineHeight: '1.4'
+          }}>
+            {headerText}
+          </p>
+        )
+      }
       i++; continue
     }
 
@@ -165,11 +187,15 @@ function TextBlock({ content }: { content: string }) {
       const num = line.match(/^(\d+)\./)?.[1]
       const text = line.replace(/^\d+\.\s/, '')
       elements.push(
-        <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'flex-start' }}>
+        <div key={i} style={{
+          display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start',
+          background: 'var(--sand-100)', borderRadius: '12px', padding: '10px 12px',
+          border: '0.5px solid var(--sand-200)'
+        }}>
           <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
             {num}
           </div>
-          <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
+          <p style={{ fontSize: '14px', lineHeight: '1.6', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
             <InlineText text={text} />
           </p>
         </div>
@@ -180,7 +206,7 @@ function TextBlock({ content }: { content: string }) {
     if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
       elements.push(
         <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '9px', opacity: 0.7 }} />
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '9px', opacity: 0.6 }} />
           <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
             <InlineText text={line.trim().slice(2)} />
           </p>
@@ -190,7 +216,7 @@ function TextBlock({ content }: { content: string }) {
     }
 
     elements.push(
-      <p key={i} style={{ fontSize: '14px', lineHeight: '1.7', margin: '0 0 8px', color: 'var(--sand-800)' }}>
+      <p key={i} style={{ fontSize: '14px', lineHeight: '1.75', margin: '0 0 8px', color: 'var(--sand-800)' }}>
         <InlineText text={line} />
       </p>
     )
@@ -503,7 +529,7 @@ export default function Chat() {
                   border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)',
                   borderRadius: msg.role === 'user' ? '20px 20px 4px 20px' : '4px 20px 20px 20px',
                   padding: msg.role === 'user' ? '12px 16px' : '16px 18px',
-                  boxShadow: msg.role === 'assistant' ? '0 2px 8px rgba(26,18,8,0.06)' : 'none'
+                  boxShadow: msg.role === 'assistant' ? '0 2px 14px rgba(26,18,8,0.09)' : 'none'
                 }}>
                   {msg.role === 'user'
                     ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.6' }}>{msg.content}</p>
@@ -557,7 +583,7 @@ export default function Chat() {
                     >
                       <span style={{
                         width: '18px', height: '18px', borderRadius: '50%',
-                        background: 'var(--sand-200)', color: 'var(--sand-600)',
+                        background: 'var(--accent)', color: 'var(--sand-50)',
                         fontSize: '10px', fontWeight: '700', display: 'flex',
                         alignItems: 'center', justifyContent: 'center', flexShrink: 0
                       }}>↗</span>

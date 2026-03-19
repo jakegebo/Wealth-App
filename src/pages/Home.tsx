@@ -553,59 +553,83 @@ function MarketRecap() {
   const [recap, setRecap] = useState('')
   const [loading, setLoading] = useState(false)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+  const [followUpInput, setFollowUpInput] = useState('')
+  const [followUpLoading, setFollowUpLoading] = useState(false)
+  const [lastContext, setLastContext] = useState<{ snapshot: any[]; news: any[]; period: string; fromDate: string; toDate: string } | null>(null)
 
-  const formatRecap = (text: string) =>
+  const formatText = (text: string) =>
     text.split('\n').map((line, i) => {
       if (!line.trim()) return <div key={i} style={{ height: '5px' }} />
-      if (line.startsWith('**') && line.endsWith('**'))
-        return <p key={i} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '10px 0 4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{line.slice(2, -2)}</p>
+      if (line.trim().startsWith('**') && line.trim().endsWith('**'))
+        return <p key={i} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', margin: '12px 0 5px', textTransform: 'uppercase', letterSpacing: '0.06em', borderLeft: '3px solid var(--accent)', paddingLeft: '8px' }}>{line.trim().slice(2, -2)}</p>
       if (line.startsWith('- '))
-        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px', alignItems: 'flex-start' }}>
+        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'flex-start' }}>
           <span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0, marginTop: '1px' }}>·</span>
           <span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
         </div>
       return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
     })
 
+  const KEY_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'GLD', 'BTC-USD']
+
   const fetchRecap = async (p: RecapPeriod, from?: string, to?: string) => {
     setLoading(true)
     setRecap('')
-    const now = new Date()
-    const todayStr = now.toISOString().split('T')[0]
+    setChatMessages([])
+    const todayStr = new Date().toISOString().split('T')[0]
     let fromStr = todayStr
     let toStr = todayStr
+    let apiPeriod = '1W'
 
     if (p === '1D') {
       fromStr = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+      apiPeriod = '1D'
     } else if (p === '1W') {
       fromStr = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
+      apiPeriod = '1W'
     } else if (p === '1M') {
       fromStr = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+      apiPeriod = '1M'
     } else if (p === 'custom' && from && to) {
       fromStr = from
       toStr = to
+      const days = (new Date(to).getTime() - new Date(from).getTime()) / 86400000
+      apiPeriod = days <= 2 ? '1D' : days <= 10 ? '1W' : days <= 45 ? '1M' : '1Y'
     } else {
       setLoading(false)
       return
     }
 
     try {
-      const [newsRes, snapRes] = await Promise.all([
+      // Fetch news + period-specific historical prices for key symbols in parallel
+      const [newsRes, ...histResponses] = await Promise.all([
         fetch(`/api/news?category=markets&from=${fromStr}&to=${toStr}`),
-        fetch('/api/stocks?symbols=SPY,QQQ,DIA,GLD,BTC-USD'),
+        ...KEY_SYMBOLS.map(sym => fetch(`/api/stocks?symbol=${sym}&period=${apiPeriod}`)),
       ])
-      const [newsData, snapData] = await Promise.all([newsRes.json(), snapRes.json()])
+      const newsData = await newsRes.json()
+      const histData = await Promise.all(histResponses.map(r => r.json()))
+
+      // Build period snapshot: start price → end price → % change over the actual period
+      const periodSnapshot = KEY_SYMBOLS.map((sym, i) => {
+        const prices: number[] = (histData[i].prices || []).filter((p: any) => p != null)
+        if (prices.length < 2) return null
+        const startPrice = prices[0]
+        const endPrice = prices[prices.length - 1]
+        const change = endPrice - startPrice
+        const changePercent = ((change / startPrice) * 100).toFixed(2)
+        return { symbol: sym, startPrice, endPrice, change, changePercent }
+      }).filter(Boolean)
+
+      const newsArticles = (newsData.articles || []).slice(0, 10).map((a: any) => ({ title: a.title, description: a.description }))
+
+      const ctx = { snapshot: periodSnapshot, news: newsArticles, period: p, fromDate: fromStr, toDate: toStr }
+      setLastContext(ctx)
 
       const res = await fetch('/api/market-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          snapshot: snapData.quotes || [],
-          news: (newsData.articles || []).slice(0, 10).map((a: any) => ({ title: a.title, description: a.description })),
-          period: p,
-          fromDate: fromStr,
-          toDate: toStr,
-        }),
+        body: JSON.stringify(ctx),
       })
       const data = await res.json()
       setRecap(data.brief || 'Unable to generate recap.')
@@ -614,6 +638,30 @@ function MarketRecap() {
       setRecap('Unable to load market recap. Check your connection.')
     }
     setLoading(false)
+  }
+
+  const sendFollowUp = async () => {
+    if (!followUpInput.trim() || followUpLoading || !recap) return
+    const userMsg = { role: 'user' as const, content: followUpInput.trim() }
+    const newMessages = [...chatMessages, userMsg]
+    setChatMessages(newMessages)
+    setFollowUpInput('')
+    setFollowUpLoading(true)
+    try {
+      const res = await fetch('/api/market-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(lastContext || {}),
+          messages: [{ role: 'assistant', content: recap }, ...newMessages],
+        }),
+      })
+      const data = await res.json()
+      setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply || 'Unable to respond.' }])
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }])
+    }
+    setFollowUpLoading(false)
   }
 
   useEffect(() => { fetchRecap('1W') }, [])
@@ -737,20 +785,91 @@ function MarketRecap() {
                 {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
               </div>
             </div>
-            {/* Skeleton lines */}
             {[80, 60, 90, 55, 75].map((w, i) => (
               <div key={i} style={{ height: '10px', width: `${w}%`, background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '8px', animation: 'pulse 1.2s infinite', animationDelay: `${i * 80}ms` }} />
             ))}
           </div>
         ) : recap ? (
           <div>
+            {/* Recap */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
               <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
               </div>
-              <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', margin: 0, letterSpacing: '0.04em', textTransform: 'uppercase' }}>AI-generated</p>
+              <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', margin: 0, letterSpacing: '0.04em', textTransform: 'uppercase' }}>AI Market Recap</p>
             </div>
-            <div>{formatRecap(recap)}</div>
+            <div>{formatText(recap)}</div>
+
+            {/* Follow-up conversation */}
+            {chatMessages.length > 0 && (
+              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ height: '0.5px', background: 'var(--sand-200)', marginBottom: '4px' }} />
+                {chatMessages.map((msg, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '8px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                    {msg.role === 'assistant' && (
+                      <div style={{ width: '20px', height: '20px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                        <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                      </div>
+                    )}
+                    <div style={{
+                      maxWidth: '85%',
+                      background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-100)',
+                      border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-200)',
+                      borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+                      padding: '10px 13px',
+                    }}>
+                      {msg.role === 'user'
+                        ? <p style={{ fontSize: '13px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.5' }}>{msg.content}</p>
+                        : <div style={{ fontSize: '13px' }}>{formatText(msg.content)}</div>
+                      }
+                    </div>
+                  </div>
+                ))}
+                {followUpLoading && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ width: '20px', height: '20px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                    </div>
+                    <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-200)', borderRadius: '4px 16px 16px 16px', padding: '12px 14px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Follow-up input */}
+            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                value={followUpInput}
+                onChange={e => setFollowUpInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendFollowUp() } }}
+                placeholder="Ask a follow-up question..."
+                disabled={followUpLoading}
+                style={{
+                  flex: 1, fontSize: '13px', padding: '9px 14px', borderRadius: '20px',
+                  border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)',
+                  color: 'var(--sand-900)', outline: 'none', fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={sendFollowUp}
+                disabled={!followUpInput.trim() || followUpLoading}
+                style={{
+                  width: '34px', height: '34px', borderRadius: '50%', border: 'none', flexShrink: 0,
+                  background: followUpInput.trim() && !followUpLoading ? 'var(--accent)' : 'var(--sand-300)',
+                  cursor: followUpInput.trim() && !followUpLoading ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.2s',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke={followUpInput.trim() && !followUpLoading ? 'var(--sand-50)' : 'var(--sand-500)'}
+                  strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -1560,11 +1679,6 @@ Please give me:
         <HealthScoreCard analysis={analysis} profile={profile} />
       )}
 
-      {/* Key Insights */}
-      {isVisible('insights') && (
-        <InsightsStrip analysis={analysis} profile={profile} refreshing={insightsRefreshing} />
-      )}
-
       {/* Today's Focus */}
       {isVisible('focus') && topAction && (
         <div className="animate-fade stagger-2" style={{ marginBottom: '12px', background: 'var(--accent)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
@@ -1587,6 +1701,11 @@ Please give me:
             Attack this →
           </button>
         </div>
+      )}
+
+      {/* Key Insights */}
+      {isVisible('insights') && (
+        <InsightsStrip analysis={analysis} profile={profile} refreshing={insightsRefreshing} />
       )}
 
       {/* Quick Stats */}

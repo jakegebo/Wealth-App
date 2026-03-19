@@ -256,7 +256,7 @@ export default function Onboarding() {
     } catch { }
   }
 
-  const persistProfile = async () => {
+  const persistProfile = async (forceSnapshot = false) => {
     if (!userId) return
     setSaving(true)
     const profileData = buildProfileData()
@@ -267,17 +267,19 @@ export default function Onboarding() {
       await supabase.from('profiles').insert({ user_id: userId, profile_data: profileData })
     }
     await updateProfile({ profile_data: profileData })
-    await saveSnapshot(profileData)
+    // Snapshot if: finishing onboarding (forceSnapshot=true), OR editing an already-complete profile
+    // Never snapshot on intermediate section saves during initial setup — that creates fake "all time" deltas
+    if (forceSnapshot || hasExistingProfile) await saveSnapshot(profileData)
     setSaving(false)
   }
 
   const handleSaveSection = async () => {
-    await persistProfile()
+    await persistProfile(false)
     setView('hub')
   }
 
   const handleFinish = async () => {
-    await persistProfile()
+    await persistProfile(true)
     navigate('/dashboard')
   }
 
@@ -687,11 +689,16 @@ export default function Onboarding() {
                                   <div style={{ position: 'relative' }}>
                                     <input
                                       type="number" placeholder="6" min="0" max="100"
-                                      value={asset.contribution_pct || ''}
+                                      value={asset.contribution_pct ?? ''}
                                       onChange={e => {
-                                        const pct = parseFloat(e.target.value) || 0
-                                        updateAsset(i, 'contribution_pct', pct)
-                                        if (grossNum) updateAsset(i, 'annual_contribution', Math.round(grossNum * pct / 100))
+                                        const pct = e.target.value === '' ? undefined : parseFloat(e.target.value)
+                                        const updated = [...assets]
+                                        updated[i] = {
+                                          ...updated[i],
+                                          contribution_pct: pct,
+                                          ...(grossNum && pct != null ? { annual_contribution: Math.round(grossNum * pct / 100) } : {}),
+                                        }
+                                        setAssets(updated)
                                       }}
                                       style={{ ...inputStyle, paddingRight: '28px' }} />
                                     <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>%</span>

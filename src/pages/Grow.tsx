@@ -205,10 +205,14 @@ function GrowthSection({
   const expenses = profile?.monthly_expenses || 0
   const availableToSave = income - expenses
 
-  // Net worth history
-  const hasHistory = nwHistory.length >= 2
+  // Net worth history — only treat as meaningful if history spans at least 24 hours
+  // (prevents fake "all time" deltas from multiple saves during onboarding)
   const latest = nwHistory[nwHistory.length - 1]
   const earliest = nwHistory[0]
+  const historySpanMs = nwHistory.length >= 2
+    ? new Date(latest.recorded_at).getTime() - new Date(earliest.recorded_at).getTime()
+    : 0
+  const hasHistory = nwHistory.length >= 2 && historySpanMs >= 24 * 60 * 60 * 1000
 
   // Find ~30 day reference point
   const ref30 = [...nwHistory].reverse().find(h => {
@@ -231,12 +235,12 @@ function GrowthSection({
 
   const sparkNW = nwHistory.map(h => h.net_worth)
 
-  // Per-asset historical delta from snapshots
+  // Per-asset historical delta from snapshots — only if history is meaningful
   const assetDeltaMap = new Map<string, number>()
   const debtDeltaMap = new Map<string, number>()
   const debtHistoryMap = new Map<string, number[]>()
   const goalHistoryMap = new Map<string, number[]>()
-  if (nwHistory.length >= 2) {
+  if (hasHistory) {
     const firstSnap = nwHistory.find(h => h.snapshot?.assets?.length)
     const lastSnap = [...nwHistory].reverse().find(h => h.snapshot?.assets?.length)
     if (firstSnap && lastSnap && firstSnap !== lastSnap) {
@@ -414,44 +418,104 @@ function GrowthSection({
           )}
 
           {/* Assets breakdown */}
-          {assets.length > 0 && (
-            <div className="card" style={{ padding: '14px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {assets.map((asset: any, i: number) => {
-                  const meta = getMeta(asset.category)
-                  const pct = assetCurrent > 0 ? Math.round(((asset.value || 0) / assetCurrent) * 100) : 0
-                  return (
-                    <div key={i}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '18px', flexShrink: 0 }}>{meta.icon}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</p>
-                          <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{meta.label} · {pct}% of assets</p>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(asset.value || 0)}</p>
-                          {assetDeltaMap.has(asset.name) ? (
-                            <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: (assetDeltaMap.get(asset.name) ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                              {(assetDeltaMap.get(asset.name) ?? 0) >= 0 ? '▲' : '▼'} {fmtDelta(assetDeltaMap.get(asset.name)!)} all time
-                            </p>
-                          ) : (
-                            <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: meta.trend === 'up' ? 'var(--success)' : meta.trend === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
-                              {meta.trend === 'up' ? '▲ Appreciating' : meta.trend === 'down' ? '▼ Depreciating' : '→ Stable'}
-                            </p>
-                          )}
-                        </div>
+          {assets.length > 0 && (() => {
+            const TYPICAL_GROWTH: Record<string, { label: string; color: 'up' | 'neutral' | 'down' }> = {
+              retirement:   { label: '~7–10%/yr avg', color: 'up' },
+              investment:   { label: '~7–10%/yr avg', color: 'up' },
+              brokerage:    { label: '~7–10%/yr avg', color: 'up' },
+              real_estate:  { label: '~4–6%/yr avg',  color: 'up' },
+              crypto:       { label: 'High volatility', color: 'up' },
+              cash:         { label: '~4–5%/yr (HYSA)', color: 'neutral' },
+              savings:      { label: '~4–5%/yr (HYSA)', color: 'neutral' },
+              checking:     { label: 'Inflation risk',  color: 'neutral' },
+              vehicle:      { label: '~15–20%/yr loss', color: 'down' },
+              auto:         { label: '~15–20%/yr loss', color: 'down' },
+            }
+
+            const GROUPS = [
+              { trend: 'up'      as const, label: 'Appreciating', color: 'var(--success)', badgeBg: 'rgba(122,158,110,0.12)', arrow: '↑' },
+              { trend: 'neutral' as const, label: 'Stable',        color: 'var(--sand-500)', badgeBg: 'var(--sand-200)',        arrow: '→' },
+              { trend: 'down'    as const, label: 'Depreciating',  color: 'var(--danger)',  badgeBg: 'rgba(192,80,59,0.10)',   arrow: '↓' },
+            ]
+
+            const grouped = GROUPS.map(g => ({
+              ...g,
+              items: assets.filter((a: any) => getMeta(a.category).trend === g.trend),
+            })).filter(g => g.items.length > 0)
+
+            return (
+              <div className="card" style={{ padding: '14px' }}>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                  {grouped.map((group, gi) => (
+                    <div key={gi}>
+                      {/* Group header */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px' }}>
+                        <span style={{
+                          fontSize: '10px', fontWeight: '700', color: group.color,
+                          background: group.badgeBg, padding: '3px 9px', borderRadius: '20px',
+                          letterSpacing: '0.04em', textTransform: 'uppercase'
+                        }}>
+                          {group.arrow} {group.label}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>
+                          {group.items.length} asset{group.items.length !== 1 ? 's' : ''}
+                        </span>
                       </div>
-                      {/* Mini allocation bar */}
-                      <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: meta.trend === 'up' ? 'var(--success)' : meta.trend === 'down' ? 'var(--danger)' : 'var(--sand-400)', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {group.items.map((asset: any, i: number) => {
+                          const meta = getMeta(asset.category)
+                          const pct = assetCurrent > 0 ? Math.round(((asset.value || 0) / assetCurrent) * 100) : 0
+                          const delta = assetDeltaMap.has(asset.name) ? assetDeltaMap.get(asset.name)! : null
+                          const oldVal = delta != null ? (asset.value || 0) - delta : null
+                          const growthPct = delta != null && oldVal != null && oldVal > 0
+                            ? (delta / oldVal) * 100
+                            : null
+                          const typical = TYPICAL_GROWTH[asset.category?.toLowerCase()]
+
+                          return (
+                            <div key={i}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                                <span style={{ fontSize: '18px', flexShrink: 0 }}>{meta.icon}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</p>
+                                  <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{meta.label} · {pct}% of assets</p>
+                                </div>
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                  <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(asset.value || 0)}</p>
+                                  {growthPct != null ? (
+                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: delta! >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                      {delta! >= 0 ? '+' : ''}{growthPct.toFixed(1)}% ({fmtDelta(delta!)}) all time
+                                    </p>
+                                  ) : typical ? (
+                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: typical.color === 'up' ? 'var(--success)' : typical.color === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
+                                      {typical.label}
+                                    </p>
+                                  ) : (
+                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: group.color }}>
+                                      {group.arrow} {group.label}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
+                                <div style={{ height: '100%', width: `${pct}%`, background: group.color, borderRadius: '2px', transition: 'width 0.5s ease' }} />
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
+
+                      {gi < grouped.length - 1 && (
+                        <div style={{ height: '0.5px', background: 'var(--sand-200)', marginTop: '16px' }} />
+                      )}
                     </div>
-                  )
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Debts breakdown */}
           {debts.length > 0 && (
