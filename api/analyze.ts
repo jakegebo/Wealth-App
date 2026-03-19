@@ -1,6 +1,6 @@
-import Groq from 'groq-sdk'
+import Anthropic from '@anthropic-ai/sdk'
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // 2025 IRS contribution limits — infer from account name
 function detectLimit(name: string, age?: number): { limit: number; accountType: string } | null {
@@ -47,7 +47,7 @@ export default async function handler(req: any, res: any) {
     const existingAssets = profile.assets?.map((a: any) => `${a.name} (${a.category}${a.holdings ? `, holds: ${a.holdings}` : ''})`).join(', ') || 'none'
     const contributionSummary = buildContributionSummary(profile.assets, profile.age)
 
-    const prompt = `You are a personal financial coach. Analyze this person's finances and return ONLY a valid JSON object with no markdown, no code blocks, no extra text.
+    const systemPrompt = `You are a personal financial coach. Analyze this person's finances and return ONLY a valid JSON object with no markdown, no code blocks, no extra text.
 
 Return exactly this structure:
 {
@@ -94,18 +94,15 @@ Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount}, 
 Retirement contributions (${new Date().getFullYear()}): ${contributionSummary}
 Context: ${profile.additional_context || 'none'}`
 
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: userMsg }
-      ],
-      temperature: 0.3,
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      response_format: { type: 'json_object' }
+      temperature: 0.2,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMsg }]
     })
 
-    const raw = completion.choices[0]?.message?.content ?? '{}'
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : '{}'
     const analysis = JSON.parse(raw)
     res.json(analysis)
 
