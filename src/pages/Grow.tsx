@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { formatAIText } from '../lib/formatAIText'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -1129,12 +1130,8 @@ function StockDetail({
     }
   }
 
-  const formatAnalysis = (text: string) => text.split('\n').map((line, i) => {
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
-    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.slice(2)}</span></div>
-    if (line === '') return <div key={i} style={{ height: '4px' }} />
-    return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-700)' }}>{line}</p>
-  })
+  const formatAnalysis = (text: string) =>
+    formatAIText(text, { textColor: 'var(--sand-700)' })
 
   const has52w = quote.fiftyTwoWeekHigh && quote.fiftyTwoWeekLow
   const rangePercent = has52w

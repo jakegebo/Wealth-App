@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { formatAIText } from '../lib/formatAIText'
 
 interface Goal {
   name: string
@@ -630,19 +631,8 @@ export default function Plan() {
   const stripAdviceMeta = (text: string) =>
     text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
 
-  const formatAdvice = (text: string) => {
-    const clean = stripAdviceMeta(text)
-    return clean.split('\n').map((line, i) => {
-      if (!line.trim()) return null
-      if (line.startsWith('**') && line.endsWith('**'))
-        return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-800)', margin: '6px 0 2px', fontSize: '12px' }}>{line.slice(2, -2)}</p>
-      if (line.startsWith('- '))
-        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0 }}>·</span><span style={{ fontSize: '12px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.slice(2)}</span></div>
-      if (/^\d+\./.test(line))
-        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700', fontSize: '11px', flexShrink: 0 }}>{line.match(/^\d+/)![0]}.</span><span style={{ fontSize: '12px', lineHeight: '1.5', color: 'var(--sand-700)' }}>{line.replace(/^\d+\.\s*/, '')}</span></div>
-      return <p key={i} style={{ fontSize: '12px', color: 'var(--sand-700)', margin: '3px 0', lineHeight: '1.55' }}>{line}</p>
-    }).filter(Boolean)
-  }
+  const formatAdvice = (text: string) =>
+    formatAIText(stripAdviceMeta(text), { baseFontSize: '12px', textColor: 'var(--sand-700)' })
 
   const fetchGoalAdvice = async (goal: Goal, force = false) => {
     if (!force && goalAdvice[goal.name]) return

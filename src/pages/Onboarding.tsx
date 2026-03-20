@@ -34,6 +34,7 @@ interface Asset {
   is_contributing?: boolean
   employer_match_pct?: number
   employer_match_cap?: number
+  employer_match_maxed?: boolean
   yearlyContributions?: YearlyContribution[]
   monthly_contribution?: number
   cost_basis?: number
@@ -892,63 +893,106 @@ export default function Onboarding() {
                               )}
 
                               {/* Employer match (only for employer-sponsored accounts) */}
-                              {(is401k || isSIMPLE || /403|457/i.test(asset.account_type || '')) && (<>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                  <div>
-                                    <label style={labelStyle}>Employer match rate</label>
-                                    <div style={{ position: 'relative' }}>
-                                      <input
-                                        type="number" placeholder="100" min="0" max="200"
-                                        value={asset.employer_match_pct || ''}
-                                        onChange={e => updateAsset(i, 'employer_match_pct', parseFloat(e.target.value) || 0)}
-                                        style={{ ...inputStyle, paddingRight: '28px' }} />
-                                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>%</span>
+                              {(is401k || isSIMPLE || /403|457/i.test(asset.account_type || '')) && (() => {
+                                // Auto-compute match maxed from contribution vs cap when both are set
+                                const autoMatchMaxed = asset.contribution_pct != null && asset.employer_match_cap != null
+                                  ? asset.contribution_pct >= asset.employer_match_cap
+                                  : null
+                                const matchMaxed = autoMatchMaxed !== null ? autoMatchMaxed : (asset.employer_match_maxed ?? false)
+                                // Match capture progress (0–100) — how much of the potential match is being captured
+                                const matchCapturePct = asset.contribution_pct != null && asset.employer_match_cap != null && asset.employer_match_cap > 0
+                                  ? Math.min(100, Math.round((asset.contribution_pct / asset.employer_match_cap) * 100))
+                                  : null
+                                const unclaimed = asset.contribution_pct != null && asset.employer_match_cap != null && asset.employer_match_pct != null && asset.contribution_pct < asset.employer_match_cap
+                                  ? Math.round((parseFloat(grossIncome) || 0) * ((asset.employer_match_cap - asset.contribution_pct) / 100) * (asset.employer_match_pct / 100))
+                                  : 0
+                                return (
+                                  <>
+                                    {/* Section divider */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0 2px' }}>
+                                      <div style={{ flex: 1, height: '0.5px', background: 'var(--sand-300)' }} />
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Employer Match</span>
+                                      <div style={{ flex: 1, height: '0.5px', background: 'var(--sand-300)' }} />
                                     </div>
-                                    <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '3px 0 0', lineHeight: '1.3' }}>100 = dollar-for-dollar, 50 = 50¢/dollar</p>
-                                  </div>
-                                  <div>
-                                    <label style={labelStyle}>Match cap (% of salary)</label>
-                                    <div style={{ position: 'relative' }}>
-                                      <input
-                                        type="number" placeholder="6" min="0" max="100"
-                                        value={asset.employer_match_cap || ''}
-                                        onChange={e => updateAsset(i, 'employer_match_cap', parseFloat(e.target.value) || 0)}
-                                        style={{ ...inputStyle, paddingRight: '28px' }} />
-                                      <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>%</span>
-                                    </div>
-                                    <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '3px 0 0', lineHeight: '1.3' }}>max % of your salary employer matches on</p>
-                                  </div>
-                                </div>
 
-                                {/* Computed match value */}
-                                {matchValue > 0 && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(122,158,110,0.08)', border: '0.5px solid rgba(122,158,110,0.25)', borderRadius: 'var(--radius-sm)' }}>
-                                    <span style={{ fontSize: '16px' }}>🎁</span>
-                                    <div>
-                                      <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--success)', margin: 0 }}>
-                                        Employer adds {fmt(matchValue)}/yr
-                                      </p>
-                                      {asset.contribution_pct && asset.employer_match_cap && (
-                                        <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '1px 0 0' }}>
-                                          {asset.contribution_pct >= asset.employer_match_cap
-                                            ? 'You\'re contributing enough to capture the full match ✓'
-                                            : `Contribute at least ${asset.employer_match_cap}% to get the full match`}
-                                        </p>
+                                    {/* Match rate + cap inputs */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                      <div>
+                                        <label style={labelStyle}>Match rate</label>
+                                        <div style={{ position: 'relative' }}>
+                                          <input
+                                            type="number" placeholder="100" min="0" max="200"
+                                            value={asset.employer_match_pct || ''}
+                                            onChange={e => updateAsset(i, 'employer_match_pct', parseFloat(e.target.value) || 0)}
+                                            style={{ ...inputStyle, paddingRight: '28px' }} />
+                                          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>%</span>
+                                        </div>
+                                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '3px 0 0', lineHeight: '1.3' }}>100 = dollar-for-dollar</p>
+                                      </div>
+                                      <div>
+                                        <label style={labelStyle}>Match cap (% of salary)</label>
+                                        <div style={{ position: 'relative' }}>
+                                          <input
+                                            type="number" placeholder="6" min="0" max="100"
+                                            value={asset.employer_match_cap || ''}
+                                            onChange={e => updateAsset(i, 'employer_match_cap', parseFloat(e.target.value) || 0)}
+                                            style={{ ...inputStyle, paddingRight: '28px' }} />
+                                          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '13px' }}>%</span>
+                                        </div>
+                                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '3px 0 0', lineHeight: '1.3' }}>max % of salary employer matches</p>
+                                      </div>
+                                    </div>
+
+                                    {/* Employer match maxed status */}
+                                    <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: matchMaxed ? 'rgba(122,158,110,0.1)' : 'var(--sand-200)', border: `0.5px solid ${matchMaxed ? 'rgba(122,158,110,0.3)' : 'var(--sand-300)'}` }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: matchCapturePct !== null ? '6px' : 0 }}>
+                                        <div>
+                                          <p style={{ fontSize: '11px', fontWeight: '600', color: matchMaxed ? 'var(--success)' : 'var(--sand-700)', margin: 0 }}>
+                                            {matchMaxed ? '✓ Full match captured' : 'Capturing full employer match?'}
+                                          </p>
+                                          {matchValue > 0 && (
+                                            <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '1px 0 0' }}>
+                                              Employer adds {fmt(matchValue)}/yr free
+                                            </p>
+                                          )}
+                                        </div>
+                                        {/* Only show manual toggle when auto-compute isn't available */}
+                                        {autoMatchMaxed === null && (
+                                          <button
+                                            onClick={() => updateAsset(i, 'employer_match_maxed', !asset.employer_match_maxed)}
+                                            style={{ width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', background: asset.employer_match_maxed ? 'var(--accent)' : 'var(--sand-300)', flexShrink: 0 }}>
+                                            <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '3px', transition: 'left 0.2s', left: asset.employer_match_maxed ? '23px' : '3px' }} />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {/* Match capture progress bar */}
+                                      {matchCapturePct !== null && (
+                                        <>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                            <span style={{ fontSize: '10px', color: 'var(--sand-500)' }}>
+                                              You contribute {asset.contribution_pct}% vs {asset.employer_match_cap}% cap
+                                            </span>
+                                            <span style={{ fontSize: '10px', fontWeight: '700', color: matchMaxed ? 'var(--success)' : 'var(--accent)' }}>{matchCapturePct}%</span>
+                                          </div>
+                                          <div style={{ height: '4px', background: 'var(--sand-300)', borderRadius: '2px', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${matchCapturePct}%`, background: matchMaxed ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                          </div>
+                                        </>
                                       )}
                                     </div>
-                                  </div>
-                                )}
 
-                                {/* Warning: leaving match on table */}
-                                {asset.contribution_pct && asset.employer_match_cap && asset.employer_match_pct &&
-                                  asset.contribution_pct < asset.employer_match_cap && (
-                                  <div style={{ padding: '7px 10px', background: 'rgba(200,148,58,0.08)', border: '0.5px solid rgba(200,148,58,0.3)', borderRadius: 'var(--radius-sm)' }}>
-                                    <p style={{ fontSize: '11px', color: 'var(--warning)', margin: 0, fontWeight: '500' }}>
-                                      ⚠ You're leaving {fmt(Math.round((parseFloat(grossIncome) || 0) * ((asset.employer_match_cap - asset.contribution_pct) / 100) * (asset.employer_match_pct / 100)))}/yr of free employer match unclaimed. Consider bumping to {asset.employer_match_cap}%.
-                                    </p>
-                                  </div>
-                                )}
-                              </>)}
+                                    {/* Warning: leaving match on table */}
+                                    {unclaimed > 0 && (
+                                      <div style={{ padding: '7px 10px', background: 'rgba(200,148,58,0.08)', border: '0.5px solid rgba(200,148,58,0.3)', borderRadius: 'var(--radius-sm)' }}>
+                                        <p style={{ fontSize: '11px', color: 'var(--warning)', margin: 0, fontWeight: '500' }}>
+                                          ⚠ You're leaving {fmt(unclaimed)}/yr of free match unclaimed. Bump contributions to {asset.employer_match_cap}% to capture it.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )
+                              })()}
                             </>)}
                           </>
                         )

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
 import NetWorthChart from '../components/NetWorthChart'
+import { formatAIText } from '../lib/formatAIText'
 
 interface Analysis {
   netWorth: number
@@ -558,18 +559,7 @@ function MarketRecap() {
   const [followUpLoading, setFollowUpLoading] = useState(false)
   const [lastContext, setLastContext] = useState<{ snapshot: any[]; news: any[]; period: string; fromDate: string; toDate: string } | null>(null)
 
-  const formatText = (text: string) =>
-    text.split('\n').map((line, i) => {
-      if (!line.trim()) return <div key={i} style={{ height: '5px' }} />
-      if (line.trim().startsWith('**') && line.trim().endsWith('**'))
-        return <p key={i} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', margin: '12px 0 5px', textTransform: 'uppercase', letterSpacing: '0.06em', borderLeft: '3px solid var(--accent)', paddingLeft: '8px' }}>{line.trim().slice(2, -2)}</p>
-      if (line.startsWith('- '))
-        return <div key={i} style={{ display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'flex-start' }}>
-          <span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0, marginTop: '1px' }}>·</span>
-          <span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
-        </div>
-      return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
-    })
+  const formatText = (text: string) => formatAIText(text)
 
   const KEY_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'GLD', 'BTC-USD']
 
@@ -982,12 +972,7 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
     setChatLoading(false)
   }
 
-  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
-    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
-    if (line === '') return <div key={i} style={{ height: '6px' }} />
-    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
-  })
+  const formatText = (text: string) => formatAIText(stripMeta(text), { baseFontSize: '14px' })
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
@@ -1304,12 +1289,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
     setChatLoading(false)
   }
 
-  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
-    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
-    if (line === '') return <div key={i} style={{ height: '6px' }} />
-    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
-  })
+  const formatText = (text: string) => formatAIText(stripMeta(text), { baseFontSize: '14px' })
 
   const categoryColors: Record<string, string> = {
     retirement: 'var(--accent)', investment: 'var(--success)', savings: '#5a8fc4',
@@ -1629,13 +1609,7 @@ function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
     setChatLoading(false)
   }
 
-  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
-    if (/^\*\*(.+)\*\*$/.test(line)) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '12px 0 4px', fontSize: '14px' }}>{line.replace(/\*\*/g, '')}</p>
-    if (line.match(/^\d+\.\s/)) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '5px', alignItems: 'flex-start' }}><span style={{ color: 'var(--accent)', fontWeight: '700', fontSize: '13px', flexShrink: 0 }}>{line.match(/^(\d+\.)/)?.[1]}</span><span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.replace(/^\d+\.\s/, '')}</span></div>
-    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'flex-start' }}><span style={{ color: 'var(--accent)', fontWeight: '700', flexShrink: 0 }}>·</span><span style={{ fontSize: '13px', lineHeight: '1.55', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
-    if (line === '') return <div key={i} style={{ height: '6px' }} />
-    return <p key={i} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
-  })
+  const formatText = (text: string) => formatAIText(stripMeta(text))
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
