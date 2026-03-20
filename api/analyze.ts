@@ -58,7 +58,7 @@ Context: ${profile.additional_context || 'none'}`
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 2500,
       temperature: 0.2,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMsg }]
