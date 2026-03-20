@@ -109,7 +109,6 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setSavedIdeas(data.saved_income_ideas || [])
       setIncomeIdeas(data.income_ideas || [])
       setGoalAdvice(data.goal_advice || {})
-      fetchLiveQuotes(data.profile_data || null)
     }
     setLoading(false)
   }

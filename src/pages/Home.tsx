@@ -1867,6 +1867,7 @@ export default function Home() {
 
   const openMiniDash = async (type: 'assets' | 'debts' | 'savings') => {
     setMiniDash({ type, analysis: '', loading: true })
+    if (type === 'assets') refreshLiveQuotes()
     const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
     const totalAssets = analysis?.totalAssets ?? profile?.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) ?? 0
     const prompts = {

@@ -1391,6 +1391,7 @@ export default function Grow() {
     fetchStocks(watchlist)
     fetchSnap()
     fetchTrending()
+    refreshLiveQuotes()
     if (incomeIdeas.length > 0) setIdeas(incomeIdeas)
     else if (profile) generateIdeas(profile)
     if (profile?.goals || profile?.financial_goals) {
