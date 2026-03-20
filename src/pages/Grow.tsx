@@ -176,24 +176,63 @@ function getGoalSuggestions(goals: any[]): GoalSuggestion[] {
 function GrowthSection({
   profile,
   analysis,
-  nwHistory,
   ideaProgress,
   navigate,
   liveQuotes,
   liveQuotesLoading,
   refreshLiveQuotes,
+  updateProfile,
 }: {
   profile: any
   analysis: any
-  nwHistory: Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[]; monthly_income: number; monthly_expenses: number } }>
   ideaProgress: Record<string, string>
   navigate: (path: string) => void
   liveQuotes: Record<string, { price: number; change: number; changePercent: string }>
   liveQuotesLoading: boolean
   refreshLiveQuotes: () => Promise<void>
+  updateProfile: (updates: Record<string, any>) => Promise<void>
 }) {
-  const [tab, setTab] = useState<'wealth' | 'income' | 'portfolio'>('wealth')
-  const [debtCollapsed, setDebtCollapsed] = useState(false)
+  const [tab, setTab] = useState<'portfolio' | 'income'>('portfolio')
+
+  // Portfolio edit state
+  const [editingAccount, setEditingAccount] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{ symbol: string; name?: string; shares: number; costBasis?: number }[]>([])
+  const [newPosSymbol, setNewPosSymbol] = useState('')
+  const [newPosShares, setNewPosShares] = useState('')
+  const [newPosCost, setNewPosCost] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+
+  function startEdit(accountName: string) {
+    const asset = (profile?.assets || []).find((a: any) => a.name === accountName)
+    setEditDraft(asset?.positions?.map((p: any) => ({ ...p })) || [])
+    setNewPosSymbol('')
+    setNewPosShares('')
+    setNewPosCost('')
+    setEditingAccount(accountName)
+  }
+
+  async function saveEdit(accountName: string) {
+    setEditSaving(true)
+    const updatedAssets = (profile?.assets || []).map((a: any) =>
+      a.name === accountName
+        ? { ...a, positions: editDraft.filter(p => p.symbol && p.shares > 0) }
+        : a
+    )
+    await updateProfile({ profile_data: { ...profile, assets: updatedAssets } })
+    setEditingAccount(null)
+    setEditSaving(false)
+  }
+
+  function addNewPosition() {
+    const sym = newPosSymbol.trim().toUpperCase()
+    const shares = parseFloat(newPosShares)
+    if (!sym || isNaN(shares) || shares <= 0) return
+    const costBasis = newPosCost ? parseFloat(newPosCost) : undefined
+    setEditDraft(prev => [...prev, { symbol: sym, shares, ...(costBasis != null && !isNaN(costBasis) ? { costBasis } : {}) }])
+    setNewPosSymbol('')
+    setNewPosShares('')
+    setNewPosCost('')
+  }
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
@@ -235,94 +274,9 @@ function GrowthSection({
   const portfolioQuotes = liveQuotes
   const portfolioLoading = liveQuotesLoading
 
-  // Net worth history — only treat as meaningful if history spans at least 24 hours
-  // (prevents fake "all time" deltas from multiple saves during onboarding)
-  const latest = nwHistory[nwHistory.length - 1]
-  const earliest = nwHistory[0]
-  const historySpanMs = nwHistory.length >= 2
-    ? new Date(latest.recorded_at).getTime() - new Date(earliest.recorded_at).getTime()
-    : 0
-  const hasHistory = nwHistory.length >= 2 && historySpanMs >= 24 * 60 * 60 * 1000
-
-  // Find ~30 day reference point
-  const ref30 = [...nwHistory].reverse().find(h => {
-    const days = (Date.now() - new Date(h.recorded_at).getTime()) / 86400000
-    return days >= 28
-  }) || earliest
-
-  const nwCurrent = latest?.net_worth ?? (analysis?.netWorth ?? 0)
-  const nwOldest = earliest?.net_worth ?? nwCurrent
-  const nwChangeTotal = nwCurrent - nwOldest
-  const nwChange30 = ref30 && hasHistory ? nwCurrent - ref30.net_worth : null
-
-  const assetCurrent = latest?.total_assets ?? (analysis?.totalAssets ?? 0)
-  const assetOldest = earliest?.total_assets ?? assetCurrent
-  const assetChange = assetCurrent - assetOldest
-
-  const liabCurrent = latest?.total_liabilities ?? (analysis?.totalLiabilities ?? 0)
-  const liabOldest = earliest?.total_liabilities ?? liabCurrent
-  const liabChange = liabCurrent - liabOldest
-
-  const sparkNW = nwHistory.map(h => h.net_worth)
-
-  // Per-asset historical delta from snapshots — only if history is meaningful
-  const assetDeltaMap = new Map<string, number>()
-  const debtDeltaMap = new Map<string, number>()
-  const debtHistoryMap = new Map<string, number[]>()
-  const goalHistoryMap = new Map<string, number[]>()
-  if (hasHistory) {
-    const firstSnap = nwHistory.find(h => h.snapshot?.assets?.length)
-    const lastSnap = [...nwHistory].reverse().find(h => h.snapshot?.assets?.length)
-    if (firstSnap && lastSnap && firstSnap !== lastSnap) {
-      for (const la of lastSnap.snapshot!.assets) {
-        const ea = firstSnap.snapshot!.assets.find(a => a.name === la.name)
-        if (ea != null) assetDeltaMap.set(la.name, (la.value || 0) - (ea.value || 0))
-      }
-      for (const ld of (lastSnap.snapshot!.debts || [])) {
-        const ed = firstSnap.snapshot!.debts?.find(d => d.name === ld.name)
-        if (ed != null) debtDeltaMap.set(ld.name, (ed.balance || 0) - (ld.balance || 0)) // positive = paid down
-      }
-    }
-    for (const h of nwHistory) {
-      if (h.snapshot?.debts) {
-        for (const d of h.snapshot.debts) {
-          if (!debtHistoryMap.has(d.name)) debtHistoryMap.set(d.name, [])
-          debtHistoryMap.get(d.name)!.push(d.balance || 0)
-        }
-      }
-      if (!h.snapshot?.goals) continue
-      for (const g of h.snapshot.goals) {
-        if (!goalHistoryMap.has(g.name)) goalHistoryMap.set(g.name, [])
-        goalHistoryMap.get(g.name)!.push(g.current_amount || 0)
-      }
-    }
-  }
-
-  // Goals on-track
-  const goalsOnTrack = goals.filter((g: any) => {
-    if ((g.currentAmount || 0) >= (g.targetAmount || 0)) return true
-    return g.feasibility === 'achievable' || (g.monthlyNeeded > 0 && g.monthlyNeeded <= availableToSave)
-  }).length
-
   // Income streams
   const earningCount = Object.values(ideaProgress).filter(v => v === 'earning').length
   const inProgressCount = Object.values(ideaProgress).filter(v => v === 'in_progress').length
-
-  const ASSET_META: Record<string, { icon: string; trend: 'up' | 'down' | 'neutral'; label: string }> = {
-    retirement: { icon: '🏦', trend: 'up', label: 'Retirement' },
-    investment: { icon: '📈', trend: 'up', label: 'Investment' },
-    brokerage: { icon: '📈', trend: 'up', label: 'Brokerage' },
-    real_estate: { icon: '🏠', trend: 'up', label: 'Real Estate' },
-    cash: { icon: '💵', trend: 'neutral', label: 'Cash' },
-    savings: { icon: '🏧', trend: 'neutral', label: 'Savings' },
-    checking: { icon: '🏧', trend: 'neutral', label: 'Checking' },
-    vehicle: { icon: '🚗', trend: 'down', label: 'Vehicle' },
-    auto: { icon: '🚗', trend: 'down', label: 'Auto' },
-    crypto: { icon: '₿', trend: 'up', label: 'Crypto' },
-  }
-  const getMeta = (cat: string) => ASSET_META[cat?.toLowerCase()] || { icon: '💼', trend: 'neutral' as const, label: cat || 'Asset' }
-
-  const highRateDebt = debts.some((d: any) => (d.interest_rate || 0) >= 15)
 
   return (
     <div className="animate-fade" style={{ marginBottom: '24px' }}>
@@ -331,7 +285,6 @@ function GrowthSection({
       {/* Tab pills */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
         {([
-          { key: 'wealth', label: 'Wealth' },
           { key: 'portfolio', label: 'Portfolio' },
           { key: 'income', label: 'Income' },
         ] as const).map(({ key, label }) => (
@@ -350,348 +303,6 @@ function GrowthSection({
         ))}
       </div>
 
-      {/* ── WEALTH TAB ── */}
-      {tab === 'wealth' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-          {/* Top stats row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            {/* Net worth card with sparkline */}
-            <div className="card" style={{ padding: '14px', gridColumn: '1 / -1' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Net Worth</p>
-                  <p style={{ fontSize: '26px', fontWeight: '300', color: nwCurrent >= 0 ? 'var(--sand-900)' : 'var(--danger)', margin: 0, letterSpacing: '-0.8px' }}>{fmt(nwCurrent)}</p>
-                  {hasHistory && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: nwChangeTotal >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                        {nwChangeTotal >= 0 ? '▲' : '▼'} {fmtDelta(nwChangeTotal)}
-                      </span>
-                      <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>all time</span>
-                    </div>
-                  )}
-                </div>
-                {hasHistory && nwChange30 !== null && (
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>30 days</p>
-                    <p style={{ fontSize: '16px', fontWeight: '500', color: nwChange30 >= 0 ? 'var(--success)' : 'var(--danger)', margin: 0 }}>
-                      {nwChange30 >= 0 ? '+' : ''}{fmt(nwChange30)}
-                    </p>
-                  </div>
-                )}
-              </div>
-              {sparkNW.length >= 2 && (
-                <svg
-                  width="100%" height="48"
-                  style={{ display: 'block', marginTop: '12px', overflow: 'visible' }}
-                  viewBox="0 0 300 48" preserveAspectRatio="none">
-                  {/* Fill */}
-                  <defs>
-                    <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={nwChangeTotal >= 0 ? '#7a9e6e' : '#c0503b'} stopOpacity="0.18" />
-                      <stop offset="100%" stopColor={nwChangeTotal >= 0 ? '#7a9e6e' : '#c0503b'} stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  {(() => {
-                    const linePath = buildSparkPath(sparkNW, 300, 40)
-                    if (!linePath) return null
-                    const pts = sparkNW
-                    const min = Math.min(...pts), max = Math.max(...pts), range = max - min || 1
-                    const lastX = 300, lastY = 48 - ((pts[pts.length - 1] - min) / range) * 40
-                    const firstY = 48 - ((pts[0] - min) / range) * 40
-                    const fillPath = `${linePath} L ${lastX},48 L 0,48 Z`
-                    return (
-                      <>
-                        <path d={fillPath} fill="url(#nwGrad)" />
-                        <path d={linePath} fill="none" stroke={nwChangeTotal >= 0 ? 'var(--success)' : 'var(--danger)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </>
-                    )
-                  })()}
-                </svg>
-              )}
-            </div>
-
-            {/* Assets */}
-            <div className="card-muted" style={{ padding: '12px 14px' }}>
-              <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Assets</p>
-              <p style={{ fontSize: '18px', fontWeight: '400', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.3px' }}>{fmt(assetCurrent)}</p>
-              <p style={{ fontSize: '11px', fontWeight: '600', color: assetChange >= 0 ? 'var(--success)' : 'var(--danger)', margin: '4px 0 0' }}>
-                {assetChange >= 0 ? '▲' : '▼'} {fmtDelta(assetChange)}
-              </p>
-            </div>
-
-            {/* Debts */}
-            <div className="card-muted" style={{ padding: '12px 14px' }}>
-              <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Total Debt</p>
-              <p style={{ fontSize: '18px', fontWeight: '400', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.3px' }}>{fmt(liabCurrent)}</p>
-              {hasHistory ? (
-                <p style={{ fontSize: '11px', fontWeight: '600', color: liabChange <= 0 ? 'var(--success)' : 'var(--danger)', margin: '4px 0 0' }}>
-                  {liabChange <= 0 ? '▼' : '▲'} {fmtDelta(liabChange)} {liabChange > 0 ? '⚠' : ''}
-                </p>
-              ) : (
-                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0' }}>No history yet</p>
-              )}
-            </div>
-          </div>
-
-          {/* 30-day context strip */}
-          {nwChange30 !== null && (
-            <div style={{
-              padding: '10px 14px',
-              background: nwChange30 >= 0 ? 'rgba(122,158,110,0.08)' : 'rgba(192,57,43,0.07)',
-              border: `0.5px solid ${nwChange30 >= 0 ? 'rgba(122,158,110,0.25)' : 'rgba(192,57,43,0.2)'}`,
-              borderRadius: 'var(--radius-sm)'
-            }}>
-              <p style={{ fontSize: '13px', color: nwChange30 >= 0 ? 'var(--success)' : 'var(--danger)', margin: 0, fontWeight: '500' }}>
-                {nwChange30 >= 0 ? '↑' : '↓'} {nwChange30 >= 0 ? '+' : ''}{fmt(nwChange30)} in the last 30 days
-              </p>
-              <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '3px 0 0' }}>
-                {nwChange30 >= 0 ? 'Your wealth is growing — keep contributing consistently.' : 'Temporary dip. Review spending and increase savings rate.'}
-              </p>
-            </div>
-          )}
-
-          {/* Assets breakdown */}
-          {assets.length > 0 && (() => {
-            const TYPICAL_GROWTH: Record<string, { label: string; color: 'up' | 'neutral' | 'down' }> = {
-              retirement:   { label: '~7–10%/yr avg', color: 'up' },
-              investment:   { label: '~7–10%/yr avg', color: 'up' },
-              brokerage:    { label: '~7–10%/yr avg', color: 'up' },
-              real_estate:  { label: '~4–6%/yr avg',  color: 'up' },
-              crypto:       { label: 'High volatility', color: 'up' },
-              cash:         { label: '~4–5%/yr (HYSA)', color: 'neutral' },
-              savings:      { label: '~4–5%/yr (HYSA)', color: 'neutral' },
-              checking:     { label: 'Inflation risk',  color: 'neutral' },
-              vehicle:      { label: '~15–20%/yr loss', color: 'down' },
-              auto:         { label: '~15–20%/yr loss', color: 'down' },
-            }
-
-            const GROUPS = [
-              { trend: 'up'      as const, label: 'Appreciating', color: 'var(--success)', badgeBg: 'rgba(122,158,110,0.12)', arrow: '↑' },
-              { trend: 'neutral' as const, label: 'Stable',        color: 'var(--sand-500)', badgeBg: 'var(--sand-200)',        arrow: '→' },
-              { trend: 'down'    as const, label: 'Depreciating',  color: 'var(--danger)',  badgeBg: 'rgba(192,80,59,0.10)',   arrow: '↓' },
-            ]
-
-            const grouped = GROUPS.map(g => ({
-              ...g,
-              items: assets.filter((a: any) => getMeta(a.category).trend === g.trend),
-            })).filter(g => g.items.length > 0)
-
-            return (
-              <div className="card" style={{ padding: '14px' }}>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                  {grouped.map((group, gi) => (
-                    <div key={gi}>
-                      {/* Group header */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px' }}>
-                        <span style={{
-                          fontSize: '10px', fontWeight: '700', color: group.color,
-                          background: group.badgeBg, padding: '3px 9px', borderRadius: '20px',
-                          letterSpacing: '0.04em', textTransform: 'uppercase'
-                        }}>
-                          {group.arrow} {group.label}
-                        </span>
-                        <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>
-                          {group.items.length} asset{group.items.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {group.items.map((asset: any, i: number) => {
-                          const meta = getMeta(asset.category)
-                          const pct = assetCurrent > 0 ? Math.round(((asset.value || 0) / assetCurrent) * 100) : 0
-                          const delta = assetDeltaMap.has(asset.name) ? assetDeltaMap.get(asset.name)! : null
-                          const oldVal = delta != null ? (asset.value || 0) - delta : null
-                          const growthPct = delta != null && oldVal != null && oldVal > 0
-                            ? (delta / oldVal) * 100
-                            : null
-                          const typical = TYPICAL_GROWTH[asset.category?.toLowerCase()]
-
-                          return (
-                            <div key={i}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                                <span style={{ fontSize: '18px', flexShrink: 0 }}>{meta.icon}</span>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</p>
-                                  <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{meta.label} · {pct}% of assets</p>
-                                </div>
-                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                  <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(asset.value || 0)}</p>
-                                  {growthPct != null ? (
-                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: delta! >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                                      {delta! >= 0 ? '+' : ''}{growthPct.toFixed(1)}% ({fmtDelta(delta!)}) all time
-                                    </p>
-                                  ) : typical ? (
-                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: typical.color === 'up' ? 'var(--success)' : typical.color === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
-                                      {typical.label}
-                                    </p>
-                                  ) : (
-                                    <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: group.color }}>
-                                      {group.arrow} {group.label}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
-                                <div style={{ height: '100%', width: `${pct}%`, background: group.color, borderRadius: '2px', transition: 'width 0.5s ease' }} />
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {gi < grouped.length - 1 && (
-                        <div style={{ height: '0.5px', background: 'var(--sand-200)', marginTop: '16px' }} />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Debts breakdown */}
-          {debts.length > 0 && (
-            <div className="card" style={{ padding: '14px' }}>
-              {/* Header row with minimize toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: debtCollapsed ? '0' : '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Debts</p>
-                  {debtCollapsed && (
-                    <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>
-                      {debts.length} item{debts.length !== 1 ? 's' : ''} · {fmt(liabCurrent)}
-                      {liabChange < 0 && hasHistory && (
-                        <span style={{ color: 'var(--success)', fontWeight: '600' }}> · ▼ {fmtDelta(Math.abs(liabChange))} paid off</span>
-                      )}
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={() => setDebtCollapsed(c => !c)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '6px', fontSize: '13px', color: 'var(--sand-400)', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '4px' }}
-                >
-                  <span style={{ fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{debtCollapsed ? 'Show' : 'Hide'}</span>
-                  <span style={{ fontSize: '10px' }}>{debtCollapsed ? '▼' : '▲'}</span>
-                </button>
-              </div>
-
-              {!debtCollapsed && (
-                <>
-                  {/* Total debt sparkline chart */}
-                  {nwHistory.length >= 2 && (
-                    <div style={{ marginBottom: '14px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total debt over time</p>
-                        <p style={{ fontSize: '10px', fontWeight: '600', margin: 0, color: liabChange <= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                          {liabChange <= 0 ? `▼ ${fmtDelta(Math.abs(liabChange))} paid off` : `▲ ${fmtDelta(liabChange)} added`}
-                        </p>
-                      </div>
-                      {(() => {
-                        const sparkLiab = nwHistory.map(h => h.total_liabilities)
-                        const linePath = buildSparkPath(sparkLiab, 300, 44)
-                        if (!linePath) return null
-                        const pts = sparkLiab
-                        const fillPath = `${linePath} L 300,44 L 0,44 Z`
-                        const isDown = liabChange <= 0
-                        return (
-                          <svg width="100%" height="44" viewBox="0 0 300 44" preserveAspectRatio="none" style={{ display: 'block' }}>
-                            <defs>
-                              <linearGradient id="debtGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={isDown ? '#7a9e6e' : '#c0503b'} stopOpacity="0.15" />
-                                <stop offset="100%" stopColor={isDown ? '#7a9e6e' : '#c0503b'} stopOpacity="0" />
-                              </linearGradient>
-                            </defs>
-                            <path d={fillPath} fill="url(#debtGrad)" />
-                            <path d={linePath} fill="none" stroke={isDown ? 'var(--success)' : 'var(--danger)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )
-                      })()}
-                      {/* X-axis date labels */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
-                        <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0 }}>
-                          {new Date(nwHistory[0].recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                        <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0 }}>
-                          {new Date(nwHistory[nwHistory.length - 1].recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Individual debt rows */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {debts.map((debt: any, i: number) => {
-                      const rate = debt.interest_rate || 0
-                      const isHigh = rate >= 15
-                      const isMed = rate >= 8
-                      const rateColor = isHigh ? 'var(--danger)' : isMed ? 'var(--warning)' : 'var(--success)'
-                      const maxDebt = Math.max(...debts.map((d: any) => d.balance || 0))
-                      const pct = maxDebt > 0 ? Math.round(((debt.balance || 0) / maxDebt) * 100) : 0
-                      const debtHist = debtHistoryMap.get(debt.name)
-                      const debtSparkPath = debtHist && debtHist.length >= 2 ? buildSparkPath(debtHist, 280, 28) : null
-                      const debtDelta = debtDeltaMap.get(debt.name)
-                      return (
-                        <div key={i}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                            <span style={{ fontSize: '18px', flexShrink: 0 }}>{isHigh ? '⚠️' : '💳'}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{debt.name}</p>
-                              <p style={{ fontSize: '10px', margin: 0, color: rateColor, fontWeight: isHigh ? '600' : '400' }}>
-                                {rate}% APR · {isHigh ? 'High rate — prioritize payoff!' : isMed ? 'Medium rate' : 'Low rate'}
-                              </p>
-                            </div>
-                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(debt.balance || 0)}</p>
-                              {debtDelta != null ? (
-                                <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: debtDelta > 0 ? 'var(--success)' : 'var(--danger)' }}>
-                                  {debtDelta > 0 ? `▼ ${fmtDelta(debtDelta)} paid off` : `▲ ${fmtDelta(Math.abs(debtDelta))} added`}
-                                </p>
-                              ) : (
-                                <p style={{ fontSize: '10px', color: 'var(--success)', margin: '1px 0 0', fontWeight: '600' }}>▼ Paying off</p>
-                              )}
-                            </div>
-                          </div>
-                          {/* Balance bar */}
-                          <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: debtSparkPath ? '6px' : '0' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 0.5s ease', opacity: 0.6 }} />
-                          </div>
-                          {/* Per-debt balance sparkline */}
-                          {debtSparkPath && (
-                            <svg width="100%" height="28" viewBox="0 0 280 28" preserveAspectRatio="none" style={{ display: 'block', opacity: 0.65 }}>
-                              <path d={debtSparkPath} fill="none" stroke={rateColor} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2" />
-                            </svg>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {highRateDebt && (
-                    <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(192,57,43,0.07)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.15)' }}>
-                      <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0 }}>⚠ High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {!hasHistory && assets.length === 0 && debts.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '24px 16px', background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)' }}>
-              <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 6px', fontWeight: '500' }}>No financial data yet</p>
-              <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: '0 0 14px' }}>Set up your profile to start tracking wealth growth</p>
-              <button className="btn-primary" onClick={() => navigate('/onboarding')} style={{ fontSize: '13px', padding: '8px 20px' }}>Set up profile</button>
-            </div>
-          )}
-
-          {!hasHistory && (assets.length > 0 || debts.length > 0) && (
-            <p style={{ fontSize: '11px', color: 'var(--sand-400)', textAlign: 'center', margin: '4px 0' }}>
-              History builds as you refresh your analysis. Check back after your next update.
-            </p>
-          )}
-        </div>
-      )}
 
       {/* ── PORTFOLIO TAB ── */}
       {tab === 'portfolio' && (() => {
@@ -793,6 +404,8 @@ function GrowthSection({
               }
               const acctGain = acctHasCostBasis ? acctLiveValue - acctCostBasis : null
 
+              const isEditing = editingAccount === accountName
+
               return (
                 <div key={accountName} className="card" style={{ padding: '14px' }}>
                   {/* Account header */}
@@ -806,72 +419,181 @@ function GrowthSection({
                         )}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      {portfolioLoading ? (
-                        <p style={{ fontSize: '14px', color: 'var(--sand-400)', margin: 0 }}>…</p>
-                      ) : Object.keys(portfolioQuotes).length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {!isEditing && (
                         <>
-                          <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(acctLiveValue)}</p>
-                          {acctGain !== null && (
-                            <p style={{ fontSize: '10px', fontWeight: '600', color: acctGain >= 0 ? 'var(--success)' : 'var(--danger)', margin: '1px 0 0' }}>
-                              {acctGain >= 0 ? '+' : ''}{fmt(acctGain)}
-                            </p>
-                          )}
+                          {portfolioLoading ? (
+                            <p style={{ fontSize: '14px', color: 'var(--sand-400)', margin: 0 }}>…</p>
+                          ) : Object.keys(portfolioQuotes).length > 0 ? (
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(acctLiveValue)}</p>
+                              {acctGain !== null && (
+                                <p style={{ fontSize: '10px', fontWeight: '600', color: acctGain >= 0 ? 'var(--success)' : 'var(--danger)', margin: '1px 0 0' }}>
+                                  {acctGain >= 0 ? '+' : ''}{fmt(acctGain)}
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
+                          <button
+                            onClick={() => startEdit(accountName)}
+                            style={{ background: 'none', border: '0.5px solid var(--sand-300)', borderRadius: '7px', padding: '4px 10px', fontSize: '11px', color: 'var(--sand-500)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                            Edit
+                          </button>
                         </>
-                      ) : null}
+                      )}
+                      {isEditing && (
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            onClick={() => setEditingAccount(null)}
+                            style={{ background: 'none', border: '0.5px solid var(--sand-300)', borderRadius: '7px', padding: '4px 10px', fontSize: '11px', color: 'var(--sand-500)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => saveEdit(accountName)}
+                            disabled={editSaving}
+                            style={{ background: 'var(--accent)', border: 'none', borderRadius: '7px', padding: '4px 12px', fontSize: '11px', color: '#fff', cursor: editSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontWeight: '600', opacity: editSaving ? 0.7 : 1 }}>
+                            {editSaving ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Position rows */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {positions.map((pos, pi) => {
-                      const q = portfolioQuotes[pos.symbol]
-                      const liveValue = q ? pos.shares * q.price : null
-                      const costTotal = pos.costBasis != null ? pos.costBasis : null
-                      const gain = liveValue != null && costTotal != null ? liveValue - costTotal : null
-                      const gainPct = gain != null && costTotal != null && costTotal > 0 ? (gain / costTotal) * 100 : null
-                      const todayChange = q ? pos.shares * q.change : null
-                      const isUp = q ? q.change >= 0 : null
+                  {/* Edit mode */}
+                  {isEditing ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {/* Column labels */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 24px', gap: '6px', marginBottom: '2px' }}>
+                        <span style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Symbol</span>
+                        <span style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Shares</span>
+                        <span style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cost basis ($)</span>
+                        <span />
+                      </div>
 
-                      return (
-                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
-                              {pos.name && <span style={{ fontSize: '10px', color: 'var(--sand-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.name}</span>}
-                            </div>
-                            <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '1px 0 0' }}>
-                              {pos.shares} {pos.accountCategory === 'crypto' ? 'units' : 'shares'}
-                              {q && ` · $${q.price.toFixed(2)}/share`}
-                            </p>
-                          </div>
-                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            {portfolioLoading ? (
-                              <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: 0 }}>…</p>
-                            ) : liveValue !== null ? (
-                              <>
-                                <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(liveValue)}</p>
-                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '1px' }}>
-                                  {todayChange !== null && (
-                                    <span style={{ fontSize: '10px', fontWeight: '600', color: isUp ? 'var(--success)' : 'var(--danger)' }}>
-                                      {isUp ? '+' : ''}{fmt(todayChange)} today
-                                    </span>
-                                  )}
-                                  {gain !== null && gainPct !== null && (
-                                    <span style={{ fontSize: '10px', color: gain >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: '500' }}>
-                                      ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}% total)
-                                    </span>
-                                  )}
-                                </div>
-                              </>
-                            ) : (
-                              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>—</p>
-                            )}
-                          </div>
+                      {/* Existing positions */}
+                      {editDraft.map((pos, pi) => (
+                        <div key={pi} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 24px', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
+                          <input
+                            type="number"
+                            value={pos.shares}
+                            min={0}
+                            step="any"
+                            onChange={e => {
+                              const v = parseFloat(e.target.value)
+                              setEditDraft(prev => prev.map((p, i) => i === pi ? { ...p, shares: isNaN(v) ? 0 : v } : p))
+                            }}
+                            style={{ width: '100%', padding: '5px 7px', fontSize: '12px', border: '0.5px solid var(--sand-300)', borderRadius: '6px', background: 'var(--sand-50)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          />
+                          <input
+                            type="number"
+                            value={pos.costBasis ?? ''}
+                            min={0}
+                            step="any"
+                            placeholder="optional"
+                            onChange={e => {
+                              const v = parseFloat(e.target.value)
+                              setEditDraft(prev => prev.map((p, i) => i === pi ? { ...p, costBasis: isNaN(v) ? undefined : v } : p))
+                            }}
+                            style={{ width: '100%', padding: '5px 7px', fontSize: '12px', border: '0.5px solid var(--sand-300)', borderRadius: '6px', background: 'var(--sand-50)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          />
+                          <button
+                            onClick={() => setEditDraft(prev => prev.filter((_, i) => i !== pi))}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: 'var(--danger)', padding: '0', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            ×
+                          </button>
                         </div>
-                      )
-                    })}
-                  </div>
+                      ))}
+
+                      {/* Add new position row */}
+                      <div style={{ borderTop: '0.5px solid var(--sand-200)', marginTop: '4px', paddingTop: '8px' }}>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '0 0 5px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add position</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 40px', gap: '6px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={newPosSymbol}
+                            onChange={e => setNewPosSymbol(e.target.value.toUpperCase())}
+                            placeholder="AAPL"
+                            style={{ width: '100%', padding: '5px 7px', fontSize: '12px', border: '0.5px solid var(--sand-300)', borderRadius: '6px', background: 'var(--sand-50)', fontFamily: 'inherit', boxSizing: 'border-box', textTransform: 'uppercase' }}
+                          />
+                          <input
+                            type="number"
+                            value={newPosShares}
+                            onChange={e => setNewPosShares(e.target.value)}
+                            placeholder="0"
+                            min={0}
+                            step="any"
+                            style={{ width: '100%', padding: '5px 7px', fontSize: '12px', border: '0.5px solid var(--sand-300)', borderRadius: '6px', background: 'var(--sand-50)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          />
+                          <input
+                            type="number"
+                            value={newPosCost}
+                            onChange={e => setNewPosCost(e.target.value)}
+                            placeholder="optional"
+                            min={0}
+                            step="any"
+                            style={{ width: '100%', padding: '5px 7px', fontSize: '12px', border: '0.5px solid var(--sand-300)', borderRadius: '6px', background: 'var(--sand-50)', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                          />
+                          <button
+                            onClick={addNewPosition}
+                            style={{ background: 'var(--accent)', border: 'none', borderRadius: '6px', padding: '5px', fontSize: '14px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '28px' }}>
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Position rows (view mode) */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {positions.map((pos, pi) => {
+                        const q = portfolioQuotes[pos.symbol]
+                        const liveValue = q ? pos.shares * q.price : null
+                        const costTotal = pos.costBasis != null ? pos.costBasis : null
+                        const gain = liveValue != null && costTotal != null ? liveValue - costTotal : null
+                        const gainPct = gain != null && costTotal != null && costTotal > 0 ? (gain / costTotal) * 100 : null
+                        const todayChange = q ? pos.shares * q.change : null
+                        const isUp = q ? q.change >= 0 : null
+
+                        return (
+                          <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
+                                {pos.name && <span style={{ fontSize: '10px', color: 'var(--sand-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pos.name}</span>}
+                              </div>
+                              <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '1px 0 0' }}>
+                                {pos.shares} {pos.accountCategory === 'crypto' ? 'units' : 'shares'}
+                                {q && ` · $${q.price.toFixed(2)}/share`}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              {portfolioLoading ? (
+                                <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: 0 }}>…</p>
+                              ) : liveValue !== null ? (
+                                <>
+                                  <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(liveValue)}</p>
+                                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '1px' }}>
+                                    {todayChange !== null && (
+                                      <span style={{ fontSize: '10px', fontWeight: '600', color: isUp ? 'var(--success)' : 'var(--danger)' }}>
+                                        {isUp ? '+' : ''}{fmt(todayChange)} today
+                                      </span>
+                                    )}
+                                    {gain !== null && gainPct !== null && (
+                                      <span style={{ fontSize: '10px', color: gain >= 0 ? 'var(--success)' : 'var(--danger)', fontWeight: '500' }}>
+                                        ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}% total)
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              ) : (
+                                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>—</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1362,7 +1084,7 @@ export default function Grow() {
   const [goalSuggestions, setGoalSuggestions] = useState<GoalSuggestion[]>([])
   const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
   const [showGoals, setShowGoals] = useState(false)
-  const [nwHistory, setNwHistory] = useState<Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[]; monthly_income: number; monthly_expenses: number } }>>([])
+
 
   const searchTimeout = useRef<any>(null)
   const longPressTimer = useRef<any>(null)
@@ -1419,13 +1141,6 @@ export default function Grow() {
     setPage(1)
   }, [activeSection])
 
-  useEffect(() => {
-    if (!userId) return
-    fetch(`/api/networth?userId=${userId}`)
-      .then(r => r.json())
-      .then(d => setNwHistory(d.history || []))
-      .catch(() => {})
-  }, [userId])
 
   const fetchSnap = async () => {
     try {
@@ -1808,12 +1523,12 @@ Please give me a thorough breakdown:
       <GrowthSection
         profile={profile}
         analysis={analysis}
-        nwHistory={nwHistory}
         ideaProgress={ideaProgress}
         navigate={navigate}
         liveQuotes={liveQuotes}
         liveQuotesLoading={liveQuotesLoading}
         refreshLiveQuotes={refreshLiveQuotes}
+        updateProfile={updateProfile}
       />
 
       {/* Watchlist */}

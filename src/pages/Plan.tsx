@@ -205,7 +205,7 @@ function simulatePayoff(
     done: false,
   }))
 
-  const firstMonthInterest = state.map(d => Math.round(d.remaining * d.monthlyRate))
+  const firstMonthInterest = state.map(d => d.remaining * d.monthlyRate)
   const totalMinimums = state.reduce((s, d) => s + d.minPayment, 0)
   const isMinimumOnly = strategy === 'minimum'
   let totalInterest = 0
@@ -332,7 +332,7 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
   availableToSave: number
 }) {
   const [strategy, setStrategy] = useState<'minimum' | 'avalanche' | 'snowball'>('avalanche')
-  const [extraPayment, setExtraPayment] = useState(0)
+  const [extraPayment, setExtraPayment] = useState(100)
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (!profileDebts.length) return null
@@ -560,9 +560,15 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <p style={{ fontSize: '16px', fontWeight: '700', color: isFocus ? 'var(--accent)' : 'var(--sand-900)', margin: '0 0 1px' }}>{fmt(pmt.payment)}/mo</p>
-                    <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
-                      {payoffMo > 0 ? `Done in ${formatMonths(payoffMo)}` : '—'}
-                    </p>
+                    {isFocus && extraPayment > 0 ? (
+                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
+                        {fmt(debt.minPayment)} min + {fmt(extraPayment)} extra
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
+                        {payoffMo > 0 ? `Done in ${formatMonths(payoffMo)}` : '—'}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -586,11 +592,18 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
                       {fmt(pmt.principal)} to principal
                     </span>
                   </div>
-                  {isFocus && extraPayment > 0 && (
-                    <p style={{ fontSize: '10px', color: 'var(--accent)', margin: '5px 0 0', fontWeight: '600' }}>
-                      ↑ Includes {fmt(extraPayment)} extra — accelerates payoff by {formatMonths(Math.max(0, minResult.payoffMonth[debts.findIndex(d => d.name === debt.name)] - payoffMo))}
-                    </p>
-                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
+                    {isFocus && extraPayment > 0 ? (
+                      <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '600' }}>
+                        ↑ {fmt(extraPayment)} extra saves {formatMonths(Math.max(0, minResult.payoffMonth[debts.findIndex(d => d.name === debt.name)] - payoffMo))}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>
+                        {strategy !== 'minimum' ? 'minimum payment' : 'minimum only'}
+                      </span>
+                    )}
+                    {payoffMo > 0 && <span style={{ fontSize: '10px', color: 'var(--sand-500)', fontWeight: '600' }}>done in {formatMonths(payoffMo)}</span>}
+                  </div>
                 </div>
               </div>
             )

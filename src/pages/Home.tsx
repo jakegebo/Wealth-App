@@ -264,6 +264,19 @@ function CountUp({ value, duration = 1200 }: { value: number; duration?: number 
   return <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(display)}</span>
 }
 
+function buildSparkPath(prices: number[], w: number, h: number): string {
+  if (!prices || prices.length < 2) return ''
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  const range = max - min || 1
+  const pts = prices.map((p, i) => {
+    const x = (i / (prices.length - 1)) * w
+    const y = h - ((p - min) / range) * h
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+  return `M ${pts.join(' L ')}`
+}
+
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const hours = Math.floor(diff / 3600000)
@@ -1762,6 +1775,7 @@ export default function Home() {
   const [goalInputVal, setGoalInputVal] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
   const [focusPlan, setFocusPlan] = useState<{ analysis: string; loading: boolean } | null>(null)
+  const [nwHistory, setNwHistory] = useState<Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[] } }>>([])
   const prevFingerprintRef = useRef<string>('')
   const analysisInProgressRef = useRef(false)
 
@@ -1796,6 +1810,14 @@ export default function Home() {
       prevFingerprintRef.current = fp
     }
   }, [profile])
+
+  useEffect(() => {
+    if (!userId) return
+    fetch(`/api/networth?userId=${userId}`)
+      .then(r => r.json())
+      .then(d => setNwHistory(d.history || []))
+      .catch(() => {})
+  }, [userId])
 
   const checkMilestone = (netWorth: number) => {
     const key = getMilestoneKey(netWorth)
@@ -2060,6 +2082,244 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {/* Assets breakdown */}
+      {(() => {
+        const assets: any[] = profile?.assets || []
+        if (assets.length === 0) return null
+
+        const historySpanMs = nwHistory.length >= 2
+          ? new Date(nwHistory[nwHistory.length - 1].recorded_at).getTime() - new Date(nwHistory[0].recorded_at).getTime()
+          : 0
+        const hasHistory = nwHistory.length >= 2 && historySpanMs >= 24 * 60 * 60 * 1000
+
+        const assetDeltaMap = new Map<string, number>()
+        const debtDeltaMap = new Map<string, number>()
+        const debtHistoryMap = new Map<string, number[]>()
+        if (hasHistory) {
+          const firstSnap = nwHistory.find(h => h.snapshot?.assets?.length)
+          const lastSnap = [...nwHistory].reverse().find(h => h.snapshot?.assets?.length)
+          if (firstSnap && lastSnap && firstSnap !== lastSnap) {
+            for (const la of lastSnap.snapshot!.assets) {
+              const ea = firstSnap.snapshot!.assets.find((a: any) => a.name === la.name)
+              if (ea != null) assetDeltaMap.set(la.name, (la.value || 0) - (ea.value || 0))
+            }
+            for (const ld of (lastSnap.snapshot!.debts || [])) {
+              const ed = firstSnap.snapshot!.debts?.find((d: any) => d.name === ld.name)
+              if (ed != null) debtDeltaMap.set(ld.name, (ed.balance || 0) - (ld.balance || 0))
+            }
+          }
+          for (const h of nwHistory) {
+            if (!h.snapshot?.debts) continue
+            for (const d of h.snapshot.debts) {
+              if (!debtHistoryMap.has(d.name)) debtHistoryMap.set(d.name, [])
+              debtHistoryMap.get(d.name)!.push(d.balance || 0)
+            }
+          }
+        }
+
+        const ASSET_META: Record<string, { icon: string; trend: 'up' | 'down' | 'neutral'; label: string }> = {
+          retirement: { icon: '🏦', trend: 'up', label: 'Retirement' },
+          investment: { icon: '📈', trend: 'up', label: 'Investment' },
+          brokerage: { icon: '📈', trend: 'up', label: 'Brokerage' },
+          real_estate: { icon: '🏠', trend: 'up', label: 'Real Estate' },
+          cash: { icon: '💵', trend: 'neutral', label: 'Cash' },
+          savings: { icon: '🏧', trend: 'neutral', label: 'Savings' },
+          checking: { icon: '🏧', trend: 'neutral', label: 'Checking' },
+          vehicle: { icon: '🚗', trend: 'down', label: 'Vehicle' },
+          auto: { icon: '🚗', trend: 'down', label: 'Auto' },
+          crypto: { icon: '₿', trend: 'up', label: 'Crypto' },
+        }
+        const getMeta = (cat: string) => ASSET_META[cat?.toLowerCase()] || { icon: '💼', trend: 'neutral' as const, label: cat || 'Asset' }
+
+        const totalAssets = assets.reduce((s: number, a: any) => s + (a.value || 0), 0)
+
+        const GROUPS = [
+          { trend: 'up' as const, label: 'Appreciating', color: 'var(--success)', badgeBg: 'rgba(122,158,110,0.12)', arrow: '↑' },
+          { trend: 'neutral' as const, label: 'Stable', color: 'var(--sand-500)', badgeBg: 'var(--sand-200)', arrow: '→' },
+          { trend: 'down' as const, label: 'Depreciating', color: 'var(--danger)', badgeBg: 'rgba(192,80,59,0.10)', arrow: '↓' },
+        ]
+        const grouped = GROUPS.map(g => ({
+          ...g,
+          items: assets.filter((a: any) => getMeta(a.category).trend === g.trend),
+        })).filter(g => g.items.length > 0)
+
+        const fmtD = (n: number) => {
+          const abs = Math.abs(n), prefix = n >= 0 ? '+' : '-'
+          if (abs >= 1000000) return `${prefix}$${(abs / 1000000).toFixed(1)}M`
+          if (abs >= 1000) return `${prefix}$${(abs / 1000).toFixed(1)}k`
+          return `${prefix}$${abs.toFixed(0)}`
+        }
+
+        const TYPICAL_GROWTH: Record<string, { label: string; color: 'up' | 'neutral' | 'down' }> = {
+          retirement: { label: '~7–10%/yr avg', color: 'up' },
+          investment: { label: '~7–10%/yr avg', color: 'up' },
+          brokerage: { label: '~7–10%/yr avg', color: 'up' },
+          real_estate: { label: '~4–6%/yr avg', color: 'up' },
+          crypto: { label: 'High volatility', color: 'up' },
+          cash: { label: '~4–5%/yr (HYSA)', color: 'neutral' },
+          savings: { label: '~4–5%/yr (HYSA)', color: 'neutral' },
+          checking: { label: 'Inflation risk', color: 'neutral' },
+          vehicle: { label: '~15–20%/yr loss', color: 'down' },
+          auto: { label: '~15–20%/yr loss', color: 'down' },
+        }
+
+        return (
+          <div className="card animate-fade" style={{ marginBottom: '12px', padding: '14px' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {grouped.map((group, gi) => (
+                <div key={gi}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: group.color, background: group.badgeBg, padding: '3px 9px', borderRadius: '20px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      {group.arrow} {group.label}
+                    </span>
+                    <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>{group.items.length} asset{group.items.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {group.items.map((asset: any, i: number) => {
+                      const meta = getMeta(asset.category)
+                      const pct = totalAssets > 0 ? Math.round(((asset.value || 0) / totalAssets) * 100) : 0
+                      const delta = assetDeltaMap.has(asset.name) ? assetDeltaMap.get(asset.name)! : null
+                      const oldVal = delta != null ? (asset.value || 0) - delta : null
+                      const growthPct = delta != null && oldVal != null && oldVal > 0 ? (delta / oldVal) * 100 : null
+                      const typical = TYPICAL_GROWTH[asset.category?.toLowerCase()]
+                      return (
+                        <div key={i}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                            <span style={{ fontSize: '18px', flexShrink: 0 }}>{meta.icon}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</p>
+                              <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{meta.label} · {pct}% of assets</p>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(asset.value || 0)}</p>
+                              {growthPct != null ? (
+                                <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: delta! >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                  {delta! >= 0 ? '+' : ''}{growthPct.toFixed(1)}% ({fmtD(delta!)}) all time
+                                </p>
+                              ) : typical ? (
+                                <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: typical.color === 'up' ? 'var(--success)' : typical.color === 'down' ? 'var(--danger)' : 'var(--sand-400)' }}>
+                                  {typical.label}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: group.color, borderRadius: '2px', transition: 'width 0.5s ease' }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {gi < grouped.length - 1 && <div style={{ height: '0.5px', background: 'var(--sand-200)', marginTop: '16px' }} />}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Debts breakdown */}
+      {(() => {
+        const debts: any[] = profile?.debts || []
+        if (debts.length === 0) return null
+
+        const historySpanMs = nwHistory.length >= 2
+          ? new Date(nwHistory[nwHistory.length - 1].recorded_at).getTime() - new Date(nwHistory[0].recorded_at).getTime()
+          : 0
+        const hasHistory = nwHistory.length >= 2 && historySpanMs >= 24 * 60 * 60 * 1000
+
+        const debtDeltaMap = new Map<string, number>()
+        const debtHistoryMap = new Map<string, number[]>()
+        const totalLiab = nwHistory.length ? nwHistory[nwHistory.length - 1].total_liabilities : debts.reduce((s: number, d: any) => s + (d.balance || 0), 0)
+        const liabChange = (() => {
+          if (nwHistory.length < 2) return 0
+          return nwHistory[nwHistory.length - 1].total_liabilities - nwHistory[0].total_liabilities
+        })()
+
+        if (hasHistory) {
+          const firstSnap = nwHistory.find(h => h.snapshot?.assets?.length)
+          const lastSnap = [...nwHistory].reverse().find(h => h.snapshot?.assets?.length)
+          if (firstSnap && lastSnap && firstSnap !== lastSnap) {
+            for (const ld of (lastSnap.snapshot!.debts || [])) {
+              const ed = firstSnap.snapshot!.debts?.find((d: any) => d.name === ld.name)
+              if (ed != null) debtDeltaMap.set(ld.name, (ed.balance || 0) - (ld.balance || 0))
+            }
+          }
+          for (const h of nwHistory) {
+            if (!h.snapshot?.debts) continue
+            for (const d of h.snapshot.debts) {
+              if (!debtHistoryMap.has(d.name)) debtHistoryMap.set(d.name, [])
+              debtHistoryMap.get(d.name)!.push(d.balance || 0)
+            }
+          }
+        }
+
+        const fmtD = (n: number) => {
+          const abs = Math.abs(n), prefix = n >= 0 ? '+' : '-'
+          if (abs >= 1000000) return `${prefix}$${(abs / 1000000).toFixed(1)}M`
+          if (abs >= 1000) return `${prefix}$${(abs / 1000).toFixed(1)}k`
+          return `${prefix}$${abs.toFixed(0)}`
+        }
+
+        const highRateDebt = debts.some((d: any) => (d.interest_rate || 0) >= 15)
+
+        return (
+          <div className="card animate-fade" style={{ marginBottom: '12px', padding: '14px' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Debts</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {debts.map((debt: any, i: number) => {
+                const rate = debt.interest_rate || 0
+                const isHigh = rate >= 15
+                const isMed = rate >= 8
+                const rateColor = isHigh ? 'var(--danger)' : isMed ? 'var(--warning)' : 'var(--success)'
+                const maxDebt = Math.max(...debts.map((d: any) => d.balance || 0))
+                const pct = maxDebt > 0 ? Math.round(((debt.balance || 0) / maxDebt) * 100) : 0
+                const debtHist = debtHistoryMap.get(debt.name)
+                const debtSparkPath = debtHist && debtHist.length >= 2 ? buildSparkPath(debtHist, 280, 28) : null
+                const debtDelta = debtDeltaMap.get(debt.name)
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                      <span style={{ fontSize: '18px', flexShrink: 0 }}>{isHigh ? '⚠️' : '💳'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{debt.name}</p>
+                        <p style={{ fontSize: '10px', margin: 0, color: rateColor, fontWeight: isHigh ? '600' : '400' }}>
+                          {rate}% APR · {isHigh ? 'High rate — prioritize payoff!' : isMed ? 'Medium rate' : 'Low rate'}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(debt.balance || 0)}</p>
+                        {debtDelta != null ? (
+                          <p style={{ fontSize: '10px', margin: '1px 0 0', fontWeight: '600', color: debtDelta > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                            {debtDelta > 0 ? `▼ ${fmtD(debtDelta)} paid off` : `▲ ${fmtD(Math.abs(debtDelta))} added`}
+                          </p>
+                        ) : (
+                          <p style={{ fontSize: '10px', color: 'var(--success)', margin: '1px 0 0', fontWeight: '600' }}>▼ Paying off</p>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: debtSparkPath ? '6px' : '0' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 0.5s ease', opacity: 0.6 }} />
+                    </div>
+                    {debtSparkPath && (
+                      <svg width="100%" height="28" viewBox="0 0 280 28" preserveAspectRatio="none" style={{ display: 'block', opacity: 0.65 }}>
+                        <path d={debtSparkPath} fill="none" stroke={rateColor} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2" />
+                      </svg>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {highRateDebt && (
+              <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(192,57,43,0.07)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.15)' }}>
+                <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0 }}>⚠ High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Financial Health Score */}
       {isVisible('health') && (
