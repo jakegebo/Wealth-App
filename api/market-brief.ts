@@ -26,8 +26,8 @@ export default async function handler(req: any, res: any) {
       : 'Market data unavailable'
 
     const headlineText = news?.length
-      ? news.slice(0, 10).map((n: any, i: number) =>
-          `${i + 1}. ${n.title}${n.description ? ' — ' + n.description.slice(0, 120) : ''}`
+      ? news.slice(0, 8).map((n: any, i: number) =>
+          `${i + 1}. ${n.title}${n.description ? ' — ' + n.description.slice(0, 80) : ''}`
         ).join('\n')
       : 'No headlines available'
 
@@ -55,7 +55,7 @@ Guidelines:
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         system: systemPrompt,
-        messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+        messages: messages.slice(-8).map((m: any) => ({ role: m.role, content: m.content })),
       })
       return res.json({ reply: response.content[0]?.type === 'text' ? response.content[0].text : '' })
     }

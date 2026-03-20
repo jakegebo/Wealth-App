@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
+import { useProfile } from '../contexts/ProfileContext'
 
 const ACCENT_COLORS = [
   { id: 'default', label: 'Ink', color: '#1a1208' },
@@ -32,6 +33,7 @@ const SECTIONS = [
 export default function Settings() {
   const navigate = useNavigate()
   const { preferences, updatePreferences } = useTheme()
+  const { profileData: profile } = useProfile()
   const [saved, setSaved] = useState(false)
   const [layout, setLayout] = useState(preferences.dashboardLayout)
   const [hidden, setHidden] = useState(preferences.hiddenSections)
@@ -194,19 +196,82 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Edit Finances */}
+        {/* Update Financials */}
         <div>
-          <p className="label" style={{ marginBottom: '4px' }}>Edit Finances</p>
-          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '12px' }}>Update any section of your financial profile</p>
-          <div className="card">
-            <button onClick={() => navigate('/onboarding?from=settings')}
-              style={{ background: 'none', border: 'none', padding: '0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%' }}>
-              <div>
-                <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>Financial Profile</p>
-                <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Income, assets, debts, goals & context</p>
-              </div>
-              <span style={{ color: 'var(--sand-400)', flexShrink: 0 }}>→</span>
-            </button>
+          <p className="label" style={{ marginBottom: '4px' }}>Update Financials</p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '12px' }}>Keep your data accurate for better insights</p>
+          <div className="card" style={{ padding: '4px 0' }}>
+            {[
+              {
+                label: 'Income & Cash Flow',
+                sub: profile?.monthly_income ? `$${(profile.monthly_income).toLocaleString()}/mo income` : 'Not set',
+                step: 1,
+                done: !!(profile?.monthly_income || profile?.gross_income),
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+                  </svg>
+                ),
+              },
+              {
+                label: 'Assets',
+                sub: profile?.assets?.length ? `${profile.assets.length} asset${profile.assets.length !== 1 ? 's' : ''} tracked` : 'Nothing added yet',
+                step: 2,
+                done: profile?.assets?.some((a: any) => a.name && a.value),
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/>
+                  </svg>
+                ),
+              },
+              {
+                label: 'Debts',
+                sub: profile?.debts?.length ? `${profile.debts.length} debt${profile.debts.length !== 1 ? 's' : ''} tracked` : 'None added',
+                step: 3,
+                done: profile?.debts?.length > 0,
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                ),
+              },
+              {
+                label: 'Goals',
+                sub: profile?.goals?.length ? `${profile.goals.length} goal${profile.goals.length !== 1 ? 's' : ''}` : 'None set yet',
+                step: 4,
+                done: profile?.goals?.some((g: any) => g.name && g.target_amount),
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+                  </svg>
+                ),
+              },
+            ].map((item, i, arr) => (
+              <button
+                key={item.step}
+                onClick={() => navigate(`/onboarding?step=${item.step}&from=settings`)}
+                style={{
+                  background: 'none', border: 'none',
+                  borderBottom: i < arr.length - 1 ? '0.5px solid var(--sand-200)' : 'none',
+                  padding: '13px 18px', width: '100%', cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: '14px', textAlign: 'left',
+                }}>
+                <div style={{
+                  width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
+                  background: item.done ? 'var(--accent-light)' : 'var(--sand-200)',
+                  border: item.done ? '0.5px solid var(--accent-border)' : '0.5px solid var(--sand-300)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: item.done ? 'var(--accent)' : 'var(--sand-500)',
+                }}>
+                  {item.icon}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>{item.label}</p>
+                  <p style={{ fontSize: '11px', color: item.done ? 'var(--sand-500)' : 'var(--sand-400)', margin: 0 }}>{item.sub}</p>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--sand-400)', flexShrink: 0 }}>→</span>
+              </button>
+            ))}
           </div>
         </div>
 

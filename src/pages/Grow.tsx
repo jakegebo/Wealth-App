@@ -192,7 +192,7 @@ function GrowthSection({
   const portfolioFetched = useRef(false)
 
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const fmtDelta = (n: number) => {
     const abs = Math.abs(n)
     const prefix = n >= 0 ? '+' : '-'
@@ -1235,9 +1235,9 @@ function StockDetail({
               {quote.name && <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{quote.name}</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '4px' }}>
-              <span style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>${quote.price?.toFixed(2)}</span>
+              <span style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>${(quote.price ?? 0).toFixed(2)}</span>
               <span style={{ fontSize: '14px', fontWeight: '500', color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
-                {isPositive ? '+' : ''}{quote.change?.toFixed(2)} ({parseFloat(quote.changePercent)?.toFixed(2)}%)
+                {isPositive ? '+' : ''}{(quote.change ?? 0).toFixed(2)} ({(parseFloat(quote.changePercent) || 0).toFixed(2)}%)
               </span>
             </div>
           </div>
@@ -1271,9 +1271,9 @@ function StockDetail({
           {/* Stats grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
             {[
-              { label: 'High', value: `$${quote.high?.toFixed(2)}` },
-              { label: 'Low', value: `$${quote.low?.toFixed(2)}` },
-              { label: 'Volume', value: quote.volume > 1000000 ? `${(quote.volume / 1000000).toFixed(1)}M` : `${(quote.volume / 1000).toFixed(0)}K` }
+              { label: 'High', value: quote.high != null ? `$${quote.high.toFixed(2)}` : '—' },
+              { label: 'Low', value: quote.low != null ? `$${quote.low.toFixed(2)}` : '—' },
+              { label: 'Volume', value: quote.volume > 1000000 ? `${(quote.volume / 1000000).toFixed(1)}M` : quote.volume > 0 ? `${(quote.volume / 1000).toFixed(0)}K` : '—' }
             ].map((item, i) => (
               <div key={i} className="card-muted" style={{ textAlign: 'center', padding: '10px' }}>
                 <p className="label" style={{ marginBottom: '3px', fontSize: '9px' }}>{item.label}</p>
@@ -1302,8 +1302,8 @@ function StockDetail({
                 }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>${quote.fiftyTwoWeekLow?.toFixed(2)}</span>
-                <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>${quote.fiftyTwoWeekHigh?.toFixed(2)}</span>
+                <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{quote.fiftyTwoWeekLow != null ? `$${quote.fiftyTwoWeekLow.toFixed(2)}` : '—'}</span>
+                <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{quote.fiftyTwoWeekHigh != null ? `$${quote.fiftyTwoWeekHigh.toFixed(2)}` : '—'}</span>
               </div>
             </div>
           )}
@@ -1315,7 +1315,7 @@ function StockDetail({
               <input
                 value={alertInput}
                 onChange={e => setAlertInput(e.target.value)}
-                placeholder={`Target price (e.g. ${(quote.price * 1.1).toFixed(0)})`}
+                placeholder={`Target price (e.g. ${quote.price ? (quote.price * 1.1).toFixed(0) : ''})`}
                 type="number"
                 style={{ flex: 1, fontSize: '13px' }}
               />
@@ -1850,7 +1850,7 @@ Please give me a thorough breakdown:
           <div style={{ margin: '0 -16px', marginBottom: '20px', overflow: 'hidden', borderTop: '0.5px solid var(--sand-200)', borderBottom: '0.5px solid var(--sand-200)', background: 'var(--sand-100)' }}>
             <div style={{ display: 'flex', alignItems: 'stretch' }}>
               <div style={{ flexShrink: 0, padding: '7px 12px', borderRight: '0.5px solid var(--sand-200)', background: 'var(--sand-200)', display: 'flex', alignItems: 'center' }}>
-                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>MOVERS</p>
+                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>TOP MOVERS</p>
               </div>
               <div style={{ overflow: 'hidden', flex: 1 }}>
                 <div style={{ display: 'flex', animation: `tickerScroll ${duration}s linear infinite`, width: 'max-content' }}>
@@ -1863,13 +1863,16 @@ Please give me a thorough breakdown:
                         style={{ flexShrink: 0, padding: '7px 16px', background: 'none', border: 'none', borderRight: '0.5px solid var(--sand-200)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '7px', whiteSpace: 'nowrap' }}>
                         <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-800)', letterSpacing: '0.02em' }}>{stock.symbol}</span>
                         <span style={{ fontSize: '11px', fontWeight: '600', color: isPos ? 'var(--success)' : 'var(--danger)' }}>
-                          {isPos ? '▲' : '▼'} {isPos ? '+' : ''}{parseFloat(stock.changePercent).toFixed(2)}%
+                          {isPos ? '▲' : '▼'} {isPos ? '+' : ''}{(parseFloat(stock.changePercent) || 0).toFixed(2)}%
                         </span>
-                        <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>${stock.price?.toFixed(2)}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>${(stock.price ?? 0).toFixed(2)}</span>
                       </button>
                     )
                   })}
                 </div>
+              </div>
+              <div style={{ flexShrink: 0, padding: '7px 12px', borderLeft: '0.5px solid var(--sand-200)', background: 'var(--sand-200)', display: 'flex', alignItems: 'center' }}>
+                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>TOP MOVERS</p>
               </div>
             </div>
           </div>

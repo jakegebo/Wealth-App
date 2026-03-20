@@ -47,7 +47,7 @@ function UpdateModal({ goal, onClose, onSave }: {
   onSave: (newAmount: number) => void
 }) {
   const [value, setValue] = useState(goal.currentAmount.toString())
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
@@ -145,7 +145,7 @@ function CashFlowCard({ income, expenses, availableToSave, savingsRate }: {
   availableToSave: number
   savingsRate: number
 }) {
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const expPct = income > 0 ? Math.min(100, (expenses / income) * 100) : 0
   const savePct = income > 0 ? Math.min(100, (Math.max(0, availableToSave) / income) * 100) : 0
 
@@ -215,7 +215,7 @@ function CashFlowCard({ income, expenses, availableToSave, savingsRate }: {
 function DebtOptimizerCard({ debts, analysis }: { debts: Debt[]; analysis: Analysis }) {
   const [strategy, setStrategy] = useState<'minimum' | 'avalanche' | 'snowball'>('avalanche')
   const [extraPayment, setExtraPayment] = useState(0)
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (!debts.length) return null
 
@@ -423,7 +423,7 @@ export default function Plan() {
     if (loadingAdvice === goal.name) return
     setLoadingAdvice(goal.name)
 
-    const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+    const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
     const pct = Math.round(goal.percentage)
     const remaining = goal.targetAmount - goal.currentAmount
     const monthsLeft = goal.monthlyNeeded > 0 ? Math.ceil(remaining / goal.monthlyNeeded) : null
@@ -502,7 +502,7 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
   }
 
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

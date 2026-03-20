@@ -44,66 +44,51 @@ export default async function handler(req: any, res: any) {
     const totalDebtPayments = profile.debts?.reduce((sum: number, d: any) => sum + (d.minimum_payment || 0), 0) ?? 0
     const availableToSave = (profile.monthly_income || 0) - (profile.monthly_expenses || 0) - totalDebtPayments
     const savingsRate = profile.monthly_income > 0 ? (availableToSave / profile.monthly_income) * 100 : 0
-    const existingAssets = profile.assets?.map((a: any) => `${a.name} (${a.category}${a.holdings ? `, holds: ${a.holdings}` : ''})`).join(', ') || 'none'
     const contributionSummary = buildContributionSummary(profile.assets, profile.age)
 
-    const systemPrompt = `You are a personal financial coach. Analyze this person's finances and return ONLY a valid JSON object with no markdown, no code blocks, no extra text.
+    const systemPrompt = `Return ONLY valid JSON, no markdown. Fields: netWorth, totalAssets, totalLiabilities, monthlyIncome, monthlyExpenses, availableToSave, savingsRate, budgetHealth("healthy"|"tight"|"over_budget"), overallSummary(2-3 sentences), nextActions[{priority,title,description,impact,timeframe}], goals[{name,targetAmount,currentAmount,percentage,monthlyNeeded,feasibility}], debts[{name,balance,interestRate,recommendedPayment,monthsToPayoff,strategy}], incomeIdeas[5 strings].
+Use exactly: netWorth=${netWorth} totalAssets=${totalAssets} totalLiabilities=${totalLiabilities} monthlyIncome=${profile.monthly_income || 0} monthlyExpenses=${profile.monthly_expenses || 0} availableToSave=${availableToSave} savingsRate=${savingsRate.toFixed(1)}
+5-7 next actions. Income ideas specific to their skills. Do not suggest accounts they already have.${contributionSummary !== 'none recorded' ? `\nRetirement (${new Date().getFullYear()}): ${contributionSummary}. Never suggest more contributions to a MAXED ✓ account; redirect elsewhere.` : ''}`
 
-Return exactly this structure:
-{
-  "netWorth": number,
-  "totalAssets": number,
-  "totalLiabilities": number,
-  "monthlyIncome": number,
-  "monthlyExpenses": number,
-  "availableToSave": number,
-  "savingsRate": number,
-  "budgetHealth": "healthy" | "tight" | "over_budget",
-  "overallSummary": "2-3 warm personal sentences",
-  "nextActions": [{"priority": 1, "title": "string", "description": "string", "impact": "high", "timeframe": "string"}],
-  "goals": [{"name": "string", "targetAmount": 0, "currentAmount": 0, "percentage": 0, "monthlyNeeded": 0, "feasibility": "achievable"}],
-  "debts": [{"name": "string", "balance": 0, "interestRate": 0, "recommendedPayment": 0, "monthsToPayoff": 0, "strategy": "string"}],
-  "incomeIdeas": ["idea1", "idea2", "idea3", "idea4", "idea5"]
-}
-
-Use these exact numbers:
-totalAssets: ${totalAssets}
-totalLiabilities: ${totalLiabilities}
-netWorth: ${netWorth}
-monthlyIncome: ${profile.monthly_income}
-monthlyExpenses: ${profile.monthly_expenses}
-availableToSave: ${availableToSave}
-savingsRate: ${savingsRate.toFixed(1)}
-
-User already has these assets: ${existingAssets}
-NEVER suggest opening accounts they already have.
-Reference their actual account names and holdings when giving advice.
-Give 5-7 prioritized next actions.
-Income ideas must be specific to their situation and skills.
-
-CRITICAL — Retirement account contribution status for ${new Date().getFullYear()}:
-${contributionSummary}
-If an account shows MAXED ✓, do NOT suggest contributing more to it — redirect that money elsewhere.
-If ALL tracked retirement accounts are maxed, explicitly celebrate this in overallSummary and focus next actions on taxable investing, paying down debt, or other goals instead.`
-
-    const userMsg = `Monthly Income: $${profile.monthly_income}
-Monthly Expenses: $${profile.monthly_expenses}
-Assets: ${profile.assets?.map((a: any) => `${a.name} (${a.category}): $${a.value}${a.holdings ? ` — holds ${a.holdings}` : ''}`).join(', ') || 'none'}
-Debts: ${profile.debts?.map((d: any) => `${d.name}: $${d.balance} at ${d.interest_rate}%`).join(', ') || 'none'}
-Goals: ${profile.goals?.map((g: any) => `${g.name}: target $${g.target_amount}, saved $${g.current_amount}`).join(', ') || 'none'}
-Retirement contributions (${new Date().getFullYear()}): ${contributionSummary}
+    const userMsg = `Income: $${profile.monthly_income || 0}/mo | Expenses: $${profile.monthly_expenses || 0}/mo
+Assets: ${profile.assets?.map((a: any) => `${a.name}(${a.category}):$${a.value}${a.holdings ? ` ${a.holdings}` : ''}`).join(', ') || 'none'}
+Debts: ${profile.debts?.map((d: any) => `${d.name}:$${d.balance}@${d.interest_rate}%`).join(', ') || 'none'}
+Goals: ${profile.goals?.map((g: any) => `${g.name}:target $${g.target_amount} saved $${g.current_amount}`).join(', ') || 'none'}
 Context: ${profile.additional_context || 'none'}`
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 1500,
       temperature: 0.2,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMsg }]
     })
 
     const raw = response.content[0]?.type === 'text' ? response.content[0].text : '{}'
-    const analysis = JSON.parse(raw)
+    // Strip markdown code fences the model sometimes wraps around JSON
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const analysis = JSON.parse(cleaned)
+    // Ensure all numeric fields are actually numbers, not strings or undefined
+    const safeNum = (v: any, fallback = 0) => (typeof v === 'number' && isFinite(v) ? v : parseFloat(v) || fallback)
+    analysis.netWorth = safeNum(analysis.netWorth, netWorth)
+    analysis.totalAssets = safeNum(analysis.totalAssets, totalAssets)
+    analysis.totalLiabilities = safeNum(analysis.totalLiabilities, totalLiabilities)
+    analysis.monthlyIncome = safeNum(analysis.monthlyIncome, profile.monthly_income || 0)
+    analysis.monthlyExpenses = safeNum(analysis.monthlyExpenses, profile.monthly_expenses || 0)
+    analysis.availableToSave = safeNum(analysis.availableToSave, availableToSave)
+    analysis.savingsRate = safeNum(analysis.savingsRate, parseFloat(savingsRate.toFixed(1)))
+    ;(analysis.goals || []).forEach((g: any) => {
+      g.targetAmount = safeNum(g.targetAmount)
+      g.currentAmount = safeNum(g.currentAmount)
+      g.percentage = safeNum(g.percentage)
+      g.monthlyNeeded = safeNum(g.monthlyNeeded)
+    })
+    ;(analysis.debts || []).forEach((d: any) => {
+      d.balance = safeNum(d.balance)
+      d.interestRate = safeNum(d.interestRate)
+      d.recommendedPayment = safeNum(d.recommendedPayment)
+      d.monthsToPayoff = safeNum(d.monthsToPayoff)
+    })
     res.json(analysis)
 
   } catch (err) {

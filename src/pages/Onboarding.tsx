@@ -417,7 +417,7 @@ export default function Onboarding() {
     } else {
       await supabase.from('profiles').insert({ user_id: userId, profile_data: profileData })
     }
-    await updateProfile({ profile_data: profileData })
+    await updateProfile({ profile_data: profileData, analysis: null })
     // Snapshot if: finishing onboarding (forceSnapshot=true), OR editing an already-complete profile
     // Never snapshot on intermediate section saves during initial setup — that creates fake "all time" deltas
     if (forceSnapshot || hasExistingProfile) await saveSnapshot(profileData)

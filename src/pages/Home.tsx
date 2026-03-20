@@ -38,14 +38,14 @@ function computeHealthScore(analysis: Analysis, profile: any) {
   const savingsScore = sr >= 20 ? 30 : sr >= 15 ? 24 : sr >= 10 ? 18 : sr >= 5 ? 10 : 3
 
   const totalDebtPmt = profile?.debts?.reduce((s: number, d: any) => s + (d.minimum_payment || 0), 0) || 0
-  const income = profile?.monthly_income || 1
-  const debtRatio = totalDebtPmt / income
+  const income = profile?.monthly_income || 0
+  const debtRatio = income > 0 ? totalDebtPmt / income : 0
   const hasDebts = (profile?.debts?.length || 0) > 0
   const debtScore = !hasDebts ? 25 : debtRatio < 0.10 ? 22 : debtRatio < 0.20 ? 15 : debtRatio < 0.30 ? 8 : 2
 
   const liquid = profile?.assets?.filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
-  const monthlyExp = profile?.monthly_expenses || 1
-  const emoMonths = liquid / monthlyExp
+  const monthlyExp = profile?.monthly_expenses || 0
+  const emoMonths = monthlyExp > 0 ? liquid / monthlyExp : 0
   const emergencyScore = emoMonths >= 6 ? 25 : emoMonths >= 3 ? 18 : emoMonths >= 1 ? 10 : 2
 
   const cats = new Set(profile?.assets?.map((a: any) => a.category) || [])
@@ -80,7 +80,7 @@ interface Insight {
 
 function generateInsights(analysis: Analysis, profile: any): Insight[] {
   const insights: Insight[] = []
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   const sr = Math.round(analysis.savingsRate || 0)
   const income = profile?.monthly_income || 0
@@ -165,8 +165,8 @@ function generateInsights(analysis: Analysis, profile: any): Insight[] {
   }
 
   const liquid = profile?.assets?.filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0) || 0
-  const monthlyExp = profile?.monthly_expenses || 1
-  const emoMonths = liquid / monthlyExp
+  const monthlyExp = profile?.monthly_expenses || 0
+  const emoMonths = monthlyExp > 0 ? liquid / monthlyExp : 0
   const target3mo = fmt(monthlyExp * 3)
   const target6mo = fmt(monthlyExp * 6)
   if (emoMonths < 1) {
@@ -233,7 +233,7 @@ function generateInsights(analysis: Analysis, profile: any): Insight[] {
           'Set up automatic monthly contributions specifically for this goal.',
           'Consider whether a higher-return investment makes sense for this goal\'s timeline.'
         ],
-        chatSeed: `My closest goal "${closest.name}" is ${Math.round(closest.percentage || 0)}% funded with ${remaining} left to go. The monthly needed is ${fmt(closest.monthlyNeeded)}. Help me figure out the most efficient way to fully fund this goal.`
+        chatSeed: `My closest goal "${closest.name}" is ${Math.round(closest.percentage || 0)}% funded with ${remaining} left to go. The monthly needed is ${fmt(closest.monthlyNeeded || 0)}. Help me figure out the most efficient way to fully fund this goal.`
       })
     }
   }
@@ -523,7 +523,7 @@ function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; 
 }
 
 function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => void }) {
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   useEffect(() => {
     const t = setTimeout(onClose, 5000)
     return () => clearTimeout(t)
@@ -604,11 +604,11 @@ function MarketRecap() {
     try {
       // Fetch news + period-specific historical prices for key symbols in parallel
       const [newsRes, ...histResponses] = await Promise.all([
-        fetch(`/api/news?category=markets&from=${fromStr}&to=${toStr}`),
-        ...KEY_SYMBOLS.map(sym => fetch(`/api/stocks?symbol=${sym}&period=${apiPeriod}`)),
+        fetch(`/api/news?category=markets&from=${fromStr}&to=${toStr}`).catch(() => null),
+        ...KEY_SYMBOLS.map(sym => fetch(`/api/stocks?symbol=${sym}&period=${apiPeriod}`).catch(() => null)),
       ])
-      const newsData = await newsRes.json()
-      const histData = await Promise.all(histResponses.map(r => r.json()))
+      const newsData = newsRes ? await newsRes.json().catch(() => ({})) : {}
+      const histData = await Promise.all(histResponses.map(r => r ? r.json().catch(() => ({})) : Promise.resolve({})))
 
       // Build period snapshot: start price → end price → % change over the actual period
       const periodSnapshot = KEY_SYMBOLS.map((sym, i) => {
@@ -877,8 +877,321 @@ function MarketRecap() {
   )
 }
 
+function parsTimelineMonths(timeline: string): number {
+  if (!timeline) return 60
+  const yearsMatch = timeline.match(/(\d+)\s*year/i)
+  const monthsMatch = timeline.match(/(\d+)\s*month/i)
+  if (yearsMatch) return parseInt(yearsMatch[1]) * 12
+  if (monthsMatch) return parseInt(monthsMatch[1])
+  const yearNumMatch = timeline.match(/20(\d{2})/)
+  if (yearNumMatch) {
+    const targetYear = 2000 + parseInt(yearNumMatch[1])
+    const monthsLeft = Math.max(1, (targetYear - new Date().getFullYear()) * 12)
+    return monthsLeft
+  }
+  return 60
+}
+
+function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
+  financials: Analysis
+  aiAnalysis: string
+  loading: boolean
+  onClose: () => void
+  profile: any
+}) {
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chips, setChips] = useState<string[]>([])
+  const chatBottomRef = useRef<HTMLDivElement>(null)
+
+  const income = financials.monthlyIncome || 0
+  const expenses = financials.monthlyExpenses || 0
+  const savings = financials.availableToSave || 0
+  const savingsRate = financials.savingsRate || 0
+  const expenseRatio = income > 0 ? expenses / income : 0
+
+  // Score components (0-100 total)
+  const savingsScore = Math.min(40, Math.max(0, (savingsRate / 20) * 40))
+  const expenseScore = Math.max(0, 30 * (1 - Math.min(1, Math.max(0, expenseRatio - 0.4) / 0.6)))
+  const surplusScore = savings > 0 ? Math.min(20, (savings / (income * 0.2)) * 20) : 0
+
+  const goals = profile?.goals || []
+  const goalAnalysis = goals.map((g: any) => {
+    const remaining = Math.max(0, (g.target_amount || 0) - (g.current_amount || 0))
+    const months = parsTimelineMonths(g.timeline || '')
+    const monthlyNeeded = remaining > 0 && months > 0 ? remaining / months : 0
+    const canAfford = savings > 0 && monthlyNeeded > 0 && monthlyNeeded <= savings
+    const pctOfSurplus = savings > 0 && monthlyNeeded > 0 ? Math.min(200, (monthlyNeeded / savings) * 100) : monthlyNeeded > 0 ? 200 : 0
+    return { ...g, remaining, months, monthlyNeeded, canAfford, pctOfSurplus }
+  })
+  const feasibleCount = goalAnalysis.filter((g: any) => g.canAfford).length
+  const goalScore = goals.length > 0 ? (feasibleCount / goals.length) * 10 : 5
+
+  const score = Math.round(savingsScore + expenseScore + surplusScore + goalScore)
+  const scoreLabel = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : score >= 20 ? 'Needs Work' : 'Critical'
+  const scoreColor = score >= 80 ? 'var(--success)' : score >= 60 ? '#5a8fc4' : score >= 40 ? '#c4955a' : 'var(--danger)'
+
+  const totalMonthlyNeeded = goalAnalysis.reduce((s: number, g: any) => s + g.monthlyNeeded, 0)
+
+  const parseFollowUps = (text: string): string[] => {
+    const m = text.match(/<followups>([\s\S]*?)<\/followups>/)
+    if (!m) return []
+    try { return JSON.parse(m[1]) } catch { return [] }
+  }
+  const stripMeta = (text: string) =>
+    text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
+
+  useEffect(() => {
+    if (!loading && aiAnalysis) {
+      const parsed = parseFollowUps(aiAnalysis)
+      setChips(parsed.length ? parsed : [
+        'How can I improve my cash flow score?',
+        savings > 0 ? `How should I allocate my ${fmt(savings)}/mo surplus?` : 'How do I cut my expenses?',
+        goals.length > 0 ? 'Which goal should I fund first?' : 'What goals should I set?',
+      ])
+    }
+  }, [aiAnalysis, loading])
+
+  useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages, chatLoading])
+
+  const sendChat = async (question: string) => {
+    if (!question.trim() || chatLoading || loading) return
+    const userMsg = { role: 'user' as const, content: question }
+    const newMessages = [...chatMessages, userMsg]
+    setChatMessages(newMessages)
+    setChatInput('')
+    setChatLoading(true)
+    setChips([])
+    const apiMessages = chatMessages.length === 0 && aiAnalysis
+      ? [{ role: 'assistant' as const, content: stripMeta(aiAnalysis) }, userMsg]
+      : newMessages
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, profile, topic: 'cashflow' })
+      })
+      const d = await r.json()
+      const raw = d.message || ''
+      setChips(parseFollowUps(raw))
+      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+    } catch {}
+    setChatLoading(false)
+  }
+
+  const formatText = (text: string) => stripMeta(text).split('\n').map((line, i) => {
+    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
+    if (line.startsWith('- ')) return <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
+    if (line === '') return <div key={i} style={{ height: '6px' }} />
+    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '12px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Cash Flow Details</h2>
+          <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: 'auto', padding: '20px 24px 8px', flex: 1 }}>
+
+          {/* Cash Flow Score */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px', padding: '18px', background: 'var(--sand-100)', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--sand-200)' }}>
+            <div style={{ position: 'relative', width: '80px', height: '80px', flexShrink: 0 }}>
+              <svg viewBox="0 0 80 80" style={{ width: '80px', height: '80px', transform: 'rotate(-90deg)' }}>
+                <circle cx="40" cy="40" r="34" fill="none" stroke="var(--sand-200)" strokeWidth="8" />
+                <circle cx="40" cy="40" r="34" fill="none" stroke={scoreColor} strokeWidth="8"
+                  strokeDasharray={`${(score / 100) * 213.6} 213.6`}
+                  strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.6s ease' }} />
+              </svg>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: '22px', fontWeight: '700', color: scoreColor, lineHeight: 1 }}>{score}</span>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: '20px', fontWeight: '600', color: scoreColor, margin: '0 0 1px' }}>{scoreLabel}</p>
+              <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '0 0 12px' }}>Cash Flow Health Score</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
+                {[
+                  { label: 'Savings rate', pts: Math.round(savingsScore), max: 40 },
+                  { label: 'Expense control', pts: Math.round(expenseScore), max: 30 },
+                  { label: 'Monthly surplus', pts: Math.round(surplusScore), max: 20 },
+                  { label: 'Goal coverage', pts: Math.round(goalScore), max: 10 },
+                ].map(c => (
+                  <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: c.pts / c.max >= 0.8 ? 'var(--success)' : c.pts / c.max >= 0.4 ? '#c4955a' : 'var(--danger)' }} />
+                    <span style={{ fontSize: '10px', color: 'var(--sand-600)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-700)' }}>{c.pts}<span style={{ fontWeight: '400', color: 'var(--sand-400)' }}>/{c.max}</span></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly Breakdown */}
+          <div style={{ marginBottom: '20px' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>Monthly Breakdown</p>
+            {[
+              { label: 'Income', value: income, color: 'var(--success)', pct: 100, sub: '' },
+              { label: 'Expenses', value: expenses, color: 'var(--danger)', pct: Math.min(100, expenseRatio * 100), sub: `${(expenseRatio * 100).toFixed(0)}% of income` },
+              { label: 'Surplus', value: savings, color: savings >= 0 ? 'var(--accent)' : 'var(--danger)', pct: Math.max(0, (savings / income) * 100), sub: `${Math.round(savingsRate)}% savings rate` },
+            ].map((row, i) => (
+              <div key={row.label} style={{ marginBottom: i < 2 ? '12px' : 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--sand-700)', fontWeight: '500' }}>{row.label}</span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--sand-900)' }}>{fmt(row.value)}</span>
+                    {row.sub && <span style={{ fontSize: '11px', color: 'var(--sand-400)', marginLeft: '6px' }}>{row.sub}</span>}
+                  </div>
+                </div>
+                <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '3px', transition: 'width 0.4s ease' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Goal Feasibility */}
+          {goalAnalysis.length > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>Goal Feasibility</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {goalAnalysis.map((g: any, i: number) => {
+                  const status = g.monthlyNeeded === 0 ? 'complete' : g.canAfford ? 'on-track' : savings <= 0 ? 'at-risk' : 'needs-more'
+                  const statusColor = status === 'on-track' || status === 'complete' ? 'var(--success)' : status === 'at-risk' ? 'var(--danger)' : '#c4955a'
+                  const statusBg = status === 'on-track' || status === 'complete' ? 'rgba(122,158,110,0.07)' : status === 'at-risk' ? 'rgba(192,57,43,0.06)' : 'rgba(196,149,90,0.08)'
+                  const statusBorder = status === 'on-track' || status === 'complete' ? 'rgba(122,158,110,0.2)' : status === 'at-risk' ? 'rgba(192,57,43,0.15)' : 'rgba(196,149,90,0.2)'
+                  const statusLabel = status === 'complete' ? 'Complete' : status === 'on-track' ? 'On Track' : status === 'at-risk' ? 'At Risk' : 'Needs More'
+                  return (
+                    <div key={i} style={{ padding: '12px 14px', background: statusBg, borderRadius: 'var(--radius-sm)', border: `0.5px solid ${statusBorder}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{g.name}</p>
+                          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>
+                            {g.timeline && `${g.timeline} · `}{fmt(g.remaining)} remaining
+                          </p>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: statusColor, padding: '2px 8px', background: statusBg, border: `0.5px solid ${statusBorder}`, borderRadius: '10px', flexShrink: 0, marginLeft: '8px' }}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      {g.monthlyNeeded > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ flex: 1, height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${Math.min(100, g.pctOfSurplus)}%`, background: g.canAfford ? 'var(--success)' : '#c4955a', borderRadius: '2px' }} />
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--sand-500)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            {fmt(g.monthlyNeeded)}/mo{savings > 0 ? ` · ${g.pctOfSurplus.toFixed(0)}% of surplus` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {savings > 0 && totalMonthlyNeeded > 0 && (
+                <div style={{ marginTop: '10px', padding: '10px 14px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0 }}>
+                    <strong>{fmt(totalMonthlyNeeded)}/mo</strong> total needed across all goals
+                    <span style={{ color: totalMonthlyNeeded <= savings ? 'var(--success)' : 'var(--danger)' }}>
+                      {totalMonthlyNeeded <= savings
+                        ? ` · fully covered by your ${fmt(savings)}/mo surplus`
+                        : ` · ${fmt(totalMonthlyNeeded - savings)} short of your ${fmt(savings)}/mo surplus`}
+                    </span>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI Analysis */}
+          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+              </div>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>AI Analysis</p>
+            </div>
+            {loading ? (
+              <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
+                {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              </div>
+            ) : (
+              <div>{formatText(aiAnalysis)}</div>
+            )}
+          </div>
+
+          {/* Chat thread */}
+          {chatMessages.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '8px' }}>
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '85%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-100)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
+                    {msg.role === 'assistant'
+                      ? <div style={{ fontSize: '13px', color: 'var(--sand-800)', lineHeight: '1.55' }}>{formatText(msg.content)}</div>
+                      : <p style={{ fontSize: '13px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.55' }}>{msg.content}</p>
+                    }
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ width: '26px', height: '26px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
+                  </div>
+                  <div style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '16px 16px 16px 4px', padding: '12px 14px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Fixed bottom: chips + input */}
+        <div style={{ borderTop: '0.5px solid var(--sand-200)', padding: '10px 20px 28px', flexShrink: 0, background: 'var(--sand-50)' }}>
+          {chips.length > 0 && !chatLoading && (
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '10px', paddingBottom: '2px', WebkitOverflowScrolling: 'touch' as any }}>
+              {chips.map((q, i) => (
+                <button key={i} onClick={() => sendChat(q)} disabled={loading} style={{ flexShrink: 0, background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '20px', padding: '6px 12px', fontSize: '12px', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat(chatInput)} placeholder={loading ? 'Generating analysis…' : 'Ask a follow-up question…'} disabled={loading || chatLoading} style={{ flex: 1, borderRadius: '20px', fontSize: '14px', padding: '10px 16px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-900)', fontFamily: 'inherit', outline: 'none' }} />
+            <button onClick={() => sendChat(chatInput)} disabled={!chatInput.trim() || loading || chatLoading} style={{ width: '40px', height: '40px', borderRadius: '50%', background: chatInput.trim() && !loading && !chatLoading ? 'var(--accent)' : 'var(--sand-300)', border: 'none', cursor: chatInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={chatInput.trim() && !loading ? 'var(--sand-50)' : 'var(--sand-500)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function getSuggestedQuestions(type: 'assets' | 'debts' | 'savings', profile: any): string[] {
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const assets = profile?.assets || []
   const debts = profile?.debts || []
 
@@ -924,7 +1237,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   totalLiabilities: number
   availableToSave: number
 }) {
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const titles = { assets: 'Asset Breakdown', debts: 'Debt Overview', savings: 'Savings Power' }
   const colors = { assets: 'var(--sand-900)', debts: 'var(--danger)', savings: 'var(--success)' }
 
@@ -1023,10 +1336,10 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
                   <div key={cat} style={{ marginBottom: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                       <span style={{ fontSize: '12px', fontWeight: '500', color: 'var(--sand-700)', textTransform: 'capitalize' }}>{cat.replace('_', ' ')}</span>
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(val)} · {((val / totalAssets) * 100).toFixed(0)}%</span>
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(val)} · {totalAssets > 0 ? ((val / totalAssets) * 100).toFixed(0) : '0'}%</span>
                     </div>
                     <div className="progress-bar">
-                      <div className="progress-fill" style={{ width: `${(val / totalAssets) * 100}%`, background: categoryColors[cat] || 'var(--sand-400)' }} />
+                      <div className="progress-fill" style={{ width: `${totalAssets > 0 ? (val / totalAssets) * 100 : 0}%`, background: categoryColors[cat] || 'var(--sand-400)' }} />
                     </div>
                   </div>
                 ))
@@ -1040,7 +1353,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{fmt(asset.value)}</p>
-                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{((asset.value / totalAssets) * 100).toFixed(1)}%</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{totalAssets > 0 ? ((asset.value / totalAssets) * 100).toFixed(1) : '0'}%</p>
                     </div>
                   </div>
                 ))}
@@ -1391,6 +1704,7 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false)
   const [insightsRefreshing, setInsightsRefreshing] = useState(false)
   const [miniDash, setMiniDash] = useState<MiniDashboard | null>(null)
+  const [cashFlowSheet, setCashFlowSheet] = useState<{ analysis: string; loading: boolean } | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [analysisError, setAnalysisError] = useState(false)
   const [milestone, setMilestone] = useState<number | null>(null)
@@ -1405,14 +1719,18 @@ export default function Home() {
   useEffect(() => {
     if (profileLoading) return
     if (!hasProfile) { navigate('/onboarding'); return }
-    if (analysis) {
+    const fp = profile ? financialFingerprint(profile) : ''
+    const storedFp = userId ? localStorage.getItem(`lastAnalyzedFp_${userId}`) : null
+    const profileChangedSinceAnalysis = fp && storedFp && fp !== storedFp
+    if (analysis && !profileChangedSinceAnalysis) {
       saveNetWorthHistory(userId!, analysis, profile)
       checkMilestone(analysis.netWorth)
     } else if (profile) {
+      // Either no analysis yet, or profile changed since last analysis ran
       runAnalysis(profile)
     }
     // Seed fingerprint on load so we only react to future changes
-    if (profile) prevFingerprintRef.current = financialFingerprint(profile)
+    if (fp) prevFingerprintRef.current = fp
     // Load last analyzed timestamp
     const stored = localStorage.getItem(`lastAnalyzed_${userId}`)
     if (stored) setLastAnalyzedAt(stored)
@@ -1420,11 +1738,11 @@ export default function Home() {
 
   // Auto-refresh insights when financial data changes
   useEffect(() => {
-    if (!profile || !analysis || analysisInProgressRef.current) return
+    if (!profile || analysisInProgressRef.current) return
     const fp = financialFingerprint(profile)
     if (prevFingerprintRef.current && fp !== prevFingerprintRef.current) {
       prevFingerprintRef.current = fp
-      runAnalysis(profile, true)
+      runAnalysis(profile, !analysis) // full refresh if no analysis, silent if updating existing
     } else if (!prevFingerprintRef.current) {
       prevFingerprintRef.current = fp
     }
@@ -1477,12 +1795,16 @@ export default function Home() {
         body: JSON.stringify(profileData)
       })
       const result = await res.json()
+      if (!result || result.error || typeof result.netWorth !== 'number') {
+        throw new Error(result?.error || 'Invalid analysis response')
+      }
       await updateProfile({ analysis: result })
       if (userId) {
         saveNetWorthHistory(userId, result, profileData)
         checkMilestone(result.netWorth)
         const now = new Date().toISOString()
         localStorage.setItem(`lastAnalyzed_${userId}`, now)
+        localStorage.setItem(`lastAnalyzedFp_${userId}`, financialFingerprint(profileData))
         setLastAnalyzedAt(now)
       }
     } catch (err) {
@@ -1499,9 +1821,9 @@ export default function Home() {
     const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
     const totalAssets = analysis?.totalAssets ?? profile?.assets?.reduce((s: number, a: any) => s + (a.value || 0), 0) ?? 0
     const prompts = {
-      assets: `Analyze my asset allocation and give specific advice. Assets: ${JSON.stringify(profile?.assets || [])}. Total: $${totalAssets.toLocaleString()}. What's my diversification score and the top 2-3 things I should do to optimize it?`,
-      debts: `Analyze my debts and build me an optimal payoff strategy. Debts: ${JSON.stringify(profile?.debts || [])}. Monthly income: $${profile?.monthly_income || 0}. Give me priority order and exact monthly amounts.`,
-      savings: `I have $${availableToSave.toLocaleString()}/month to allocate. Income: $${profile?.monthly_income || 0}, Expenses: $${profile?.monthly_expenses || 0}. Assets: ${JSON.stringify(profile?.assets || [])}. Give me an exact dollar allocation across investing, emergency fund, and any debt.`
+      assets: `Diversification score and top 2-3 optimizations for my assets: ${profile?.assets?.map((a: any) => `${a.name}(${a.category}):$${(a.value||0).toLocaleString()}`).join(', ') || 'none'}. Total $${totalAssets.toLocaleString()}.`,
+      debts: `Optimal payoff strategy for: ${profile?.debts?.map((d: any) => `${d.name}:$${(d.balance||0).toLocaleString()}@${d.interest_rate}%`).join(', ') || 'none'}. Income $${(profile?.monthly_income||0).toLocaleString()}/mo. Priority order and exact monthly amounts.`,
+      savings: `Exact dollar allocation for $${availableToSave.toLocaleString()}/mo surplus (income $${(profile?.monthly_income||0).toLocaleString()}, expenses $${(profile?.monthly_expenses||0).toLocaleString()}). Assets: ${profile?.assets?.map((a: any) => `${a.name}:$${(a.value||0).toLocaleString()}`).join(', ') || 'none'}.`
     }
     try {
       const res = await fetch('/api/chat', {
@@ -1516,24 +1838,32 @@ export default function Home() {
     }
   }
 
+  const openCashFlowSheet = async () => {
+    setCashFlowSheet({ analysis: '', loading: true })
+    const avail = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+    const savingsRate = profile?.monthly_income > 0 ? Math.round((avail / profile.monthly_income) * 100) : 0
+    const goalsStr = profile?.goals?.map((g: any) => `${g.name}: need $${(g.target_amount || 0).toLocaleString()}, have $${(g.current_amount || 0).toLocaleString()}, timeline: ${g.timeline || 'unset'}`).join('; ') || 'none set'
+    const debtsStr = profile?.debts?.map((d: any) => `${d.name}: $${d.balance} @ ${d.interest_rate}%`).join(', ') || 'none'
+    const prompt = `Cash flow: income $${profile?.monthly_income||0}/mo, expenses $${profile?.monthly_expenses||0}/mo, surplus $${avail} (${savingsRate}%). Goals: ${goalsStr}. Debts: ${debtsStr}. Give: top 2 cash flow drivers using my numbers, highest-leverage action this month with exact dollar amount, which goals are on/off track, realistic surplus target and how to reach it.`
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'cashflow' })
+      })
+      const data = await res.json()
+      setCashFlowSheet({ analysis: data.message || 'No response received.', loading: false })
+    } catch {
+      setCashFlowSheet({ analysis: 'Unable to load analysis. Check your connection and try again.', loading: false })
+    }
+  }
+
   const openFocusPlan = async (action: { title: string; description: string; impact: string; timeframe: string }) => {
     setFocusPlan({ analysis: '', loading: true })
     const goals = profile?.goals?.map((g: any) => `${g.name}: $${(g.current_amount || 0).toLocaleString()} / $${(g.target_amount || 0).toLocaleString()} (${g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0}%)`).join(', ') || 'none set'
     const debts = profile?.debts?.sort((a: any, b: any) => b.interest_rate - a.interest_rate).map((d: any) => `${d.name}: $${(d.balance || 0).toLocaleString()} @ ${d.interest_rate}%`).join(', ') || 'none'
     const avail = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
-    const prompt = `My #1 financial priority this week is: "${action.title}". ${action.description}
-
-Here is my full financial context:
-- Monthly surplus available: $${avail.toLocaleString()}
-- Goals: ${goals}
-- Debts (highest rate first): ${debts}
-- This action has ${action.impact} impact and a ${action.timeframe} timeframe
-
-Please give me:
-1. WHY this is my best move right now — explain using my actual numbers, not generic advice
-2. A concrete step-by-step execution plan for THIS WEEK — first action, second action, etc. with exact amounts and where to do it
-3. How completing this specifically advances my goals
-4. What progress will look like at 30, 60, and 90 days with real numbers`
+    const prompt = `Priority: "${action.title}" (${action.impact} impact, ${action.timeframe}). ${action.description} Surplus $${avail.toLocaleString()}/mo. Goals: ${goals}. Debts: ${debts}. Give: why this is my best move now using my actual numbers, step-by-step execution plan this week with exact amounts, how it advances my goals, progress at 30/60/90 days with real numbers.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -1575,7 +1905,7 @@ Please give me:
   }
 
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (profileLoading || analyzing) {
     return (
@@ -1735,7 +2065,7 @@ Please give me:
         <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <p className="label">Monthly Cash Flow</p>
-            <button className="btn-ghost" onClick={() => navigate('/plan')} style={{ fontSize: '11px', padding: '3px 8px' }}>Details →</button>
+            <button className="btn-ghost" onClick={openCashFlowSheet} style={{ fontSize: '11px', padding: '3px 8px' }}>Details →</button>
           </div>
           <div className="card" style={{ padding: '18px' }}>
             {[
@@ -1835,6 +2165,16 @@ Please give me:
           totalAssets={analysis.totalAssets}
           totalLiabilities={analysis.totalLiabilities}
           availableToSave={analysis.availableToSave}
+        />
+      )}
+
+      {cashFlowSheet && (
+        <CashFlowSheet
+          financials={analysis}
+          aiAnalysis={cashFlowSheet.analysis}
+          loading={cashFlowSheet.loading}
+          onClose={() => setCashFlowSheet(null)}
+          profile={profile}
         />
       )}
 
