@@ -15,19 +15,46 @@ const ACCENT_COLORS = [
   { id: 'orange', label: 'Rust', color: '#c2410c' },
 ]
 
-const SECTIONS = [
-  { id: 'health', label: 'Financial Health Score', required: false },
-  { id: 'insights', label: 'Key Insights', required: false },
-  { id: 'focus', label: "Today's Focus", required: false },
-  { id: 'stats', label: 'Quick Stats', required: false },
-  { id: 'cashflow', label: 'Cash Flow', required: false },
-  { id: 'watchlist', label: 'Watchlist', required: false },
-  { id: 'news', label: 'News Preview', required: false },
-  { id: 'goals', label: 'Goals', required: false },
-  { id: 'retirement', label: 'Retirement', required: false },
-  { id: 'actions', label: 'Action Plan', required: false },
-  { id: 'debt', label: 'Debt Payoff', required: false },
-  { id: 'income', label: 'Income Ideas', required: false },
+const ALL_SECTIONS: Record<string, string> = {
+  health: 'Financial Health Score',
+  insights: 'Key Insights',
+  focus: "Today's Focus",
+  stats: 'Quick Stats',
+  cashflow: 'Cash Flow',
+  goals: 'Goals',
+  actions: 'Action Plan',
+  debt: 'Debt Payoff',
+  watchlist: 'Watchlist',
+  income: 'Income Ideas',
+  news: 'News Preview',
+  retirement: 'Retirement Preview',
+}
+
+const SECTION_GROUPS = [
+  {
+    key: 'home',
+    tab: 'Home',
+    emoji: '🏠',
+    ids: ['health', 'insights', 'focus', 'stats', 'cashflow'],
+  },
+  {
+    key: 'plan',
+    tab: 'Plan',
+    emoji: '📋',
+    ids: ['goals', 'actions', 'debt'],
+  },
+  {
+    key: 'grow',
+    tab: 'Grow',
+    emoji: '📈',
+    ids: ['watchlist', 'income'],
+  },
+  {
+    key: 'other',
+    tab: 'Previews',
+    emoji: '👀',
+    ids: ['news', 'retirement'],
+  },
 ]
 
 export default function Settings() {
@@ -39,6 +66,7 @@ export default function Settings() {
   const [hidden, setHidden] = useState(preferences.hiddenSections)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
+  const [draggingGroup, setDraggingGroup] = useState<string | null>(null)
 
   const handleSave = async () => {
     await updatePreferences({ dashboardLayout: layout, hiddenSections: hidden })
@@ -46,28 +74,46 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleDragStart = (id: string) => setDragging(id)
-  const handleDragOver = (e: React.DragEvent, id: string) => { e.preventDefault(); setDragOver(id) }
-  const handleDrop = (targetId: string) => {
-    if (!dragging || dragging === targetId) return
+  // Get the ordered IDs for a group based on current layout
+  const getGroupOrder = (groupIds: string[]) => {
+    const inLayout = layout.filter(id => groupIds.includes(id))
+    const notInLayout = groupIds.filter(id => !layout.includes(id))
+    return [...inLayout, ...notInLayout]
+  }
+
+  const handleDragStart = (id: string, groupKey: string) => {
+    setDragging(id)
+    setDraggingGroup(groupKey)
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    setDragOver(id)
+  }
+
+  const handleDrop = (targetId: string, groupKey: string) => {
+    if (!dragging || dragging === targetId || draggingGroup !== groupKey) return
     const newLayout = [...layout]
     const fromIdx = newLayout.indexOf(dragging)
     const toIdx = newLayout.indexOf(targetId)
+    if (fromIdx === -1 || toIdx === -1) return
     newLayout.splice(fromIdx, 1)
     newLayout.splice(toIdx, 0, dragging)
     setLayout(newLayout)
     setDragging(null)
     setDragOver(null)
+    setDraggingGroup(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragging(null)
+    setDragOver(null)
+    setDraggingGroup(null)
   }
 
   const toggleHidden = (id: string) => {
     setHidden(prev => prev.includes(id) ? prev.filter(h => h !== id) : [...prev, id])
   }
-
-  const orderedSections = [
-    ...layout.map(id => SECTIONS.find(s => s.id === id)).filter(Boolean),
-    ...SECTIONS.filter(s => !layout.includes(s.id))
-  ] as typeof SECTIONS
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--sand-100)', paddingBottom: '40px' }}>
@@ -146,132 +192,84 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Dashboard Layout */}
+        {/* Dashboard Layout — grouped by tab */}
         <div>
           <p className="label" style={{ marginBottom: '4px' }}>Dashboard Layout</p>
-          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '12px' }}>Drag to reorder · tap to show/hide</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {orderedSections.map(section => (
-              <div
-                key={section.id}
-                draggable
-                onDragStart={() => handleDragStart(section.id)}
-                onDragOver={e => handleDragOver(e, section.id)}
-                onDrop={() => handleDrop(section.id)}
-                onDragEnd={() => { setDragging(null); setDragOver(null) }}
-                style={{
-                  background: dragOver === section.id ? 'var(--accent-light)' : 'var(--sand-50)',
-                  border: dragOver === section.id ? `1px solid var(--accent)` : '0.5px solid var(--sand-300)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '14px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'grab',
-                  opacity: dragging === section.id ? 0.4 : 1,
-                  transition: 'all 0.15s'
-                }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ color: 'var(--sand-400)', fontSize: '16px', lineHeight: 1 }}>⠿</span>
-                  <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)' }}>{section.label}</span>
-                </div>
-                <button
-                  onClick={() => toggleHidden(section.id)}
-                  style={{
-                    background: hidden.includes(section.id) ? 'var(--sand-200)' : 'var(--accent-light)',
-                    border: hidden.includes(section.id) ? '0.5px solid var(--sand-300)' : '0.5px solid var(--accent-border)',
-                    borderRadius: '20px',
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    fontWeight: '600',
-                    color: hidden.includes(section.id) ? 'var(--sand-500)' : 'var(--accent)',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    transition: 'all 0.15s'
-                  }}>
-                  {hidden.includes(section.id) ? 'Hidden' : 'Visible'}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '16px' }}>Drag within each tab to reorder · tap to show/hide</p>
 
-        {/* Update Financials */}
-        <div>
-          <p className="label" style={{ marginBottom: '4px' }}>Update Financials</p>
-          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '12px' }}>Keep your data accurate for better insights</p>
-          <div className="card" style={{ padding: '4px 0' }}>
-            {[
-              {
-                label: 'Income & Cash Flow',
-                sub: profile?.monthly_income ? `$${(profile.monthly_income).toLocaleString()}/mo income` : 'Not set',
-                step: 1,
-                done: !!(profile?.monthly_income || profile?.gross_income),
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-                  </svg>
-                ),
-              },
-              {
-                label: 'Assets',
-                sub: profile?.assets?.length ? `${profile.assets.length} asset${profile.assets.length !== 1 ? 's' : ''} tracked` : 'Nothing added yet',
-                step: 2,
-                done: profile?.assets?.some((a: any) => a.name && a.value),
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/>
-                  </svg>
-                ),
-              },
-              {
-                label: 'Debts',
-                sub: profile?.debts?.length ? `${profile.debts.length} debt${profile.debts.length !== 1 ? 's' : ''} tracked` : 'None added',
-                step: 3,
-                done: profile?.debts?.length > 0,
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                  </svg>
-                ),
-              },
-              {
-                label: 'Goals',
-                sub: profile?.goals?.length ? `${profile.goals.length} goal${profile.goals.length !== 1 ? 's' : ''}` : 'None set yet',
-                step: 4,
-                done: profile?.goals?.some((g: any) => g.name && g.target_amount),
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
-                  </svg>
-                ),
-              },
-            ].map((item, i, arr) => (
-              <button
-                key={item.step}
-                onClick={() => navigate(`/onboarding?step=${item.step}&from=settings`)}
-                style={{
-                  background: 'none', border: 'none',
-                  borderBottom: i < arr.length - 1 ? '0.5px solid var(--sand-200)' : 'none',
-                  padding: '13px 18px', width: '100%', cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', gap: '14px', textAlign: 'left',
-                }}>
-                <div style={{
-                  width: '34px', height: '34px', borderRadius: '10px', flexShrink: 0,
-                  background: item.done ? 'var(--accent-light)' : 'var(--sand-200)',
-                  border: item.done ? '0.5px solid var(--accent-border)' : '0.5px solid var(--sand-300)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: item.done ? 'var(--accent)' : 'var(--sand-500)',
-                }}>
-                  {item.icon}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {SECTION_GROUPS.map(group => {
+              const orderedIds = getGroupOrder(group.ids)
+              return (
+                <div key={group.key}>
+                  {/* Group header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '13px' }}>{group.emoji}</span>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', margin: 0, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{group.tab}</p>
+                    <div style={{ flex: 1, height: '0.5px', background: 'var(--sand-300)' }} />
+                  </div>
+
+                  {/* Sections in this group */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {orderedIds.map(id => {
+                      const label = ALL_SECTIONS[id]
+                      const isHidden = hidden.includes(id)
+                      const isDraggingThis = dragging === id
+                      const isDropTarget = dragOver === id && draggingGroup === group.key
+                      return (
+                        <div
+                          key={id}
+                          draggable
+                          onDragStart={() => handleDragStart(id, group.key)}
+                          onDragOver={e => handleDragOver(e, id)}
+                          onDrop={() => handleDrop(id, group.key)}
+                          onDragEnd={handleDragEnd}
+                          style={{
+                            background: isDropTarget ? 'var(--accent-light)' : 'var(--sand-50)',
+                            border: isDropTarget ? '1px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'grab',
+                            opacity: isDraggingThis ? 0.35 : 1,
+                            transition: 'all 0.12s',
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ color: 'var(--sand-400)', fontSize: '15px', lineHeight: 1, userSelect: 'none' }}>⠿</span>
+                            <span style={{
+                              fontSize: '13px',
+                              fontWeight: '500',
+                              color: isHidden ? 'var(--sand-400)' : 'var(--sand-900)',
+                              textDecoration: isHidden ? 'line-through' : 'none',
+                              transition: 'color 0.15s'
+                            }}>{label}</span>
+                          </div>
+                          <button
+                            onClick={() => toggleHidden(id)}
+                            style={{
+                              background: isHidden ? 'var(--sand-200)' : 'var(--accent-light)',
+                              border: isHidden ? '0.5px solid var(--sand-300)' : '0.5px solid var(--accent-border)',
+                              borderRadius: '20px',
+                              padding: '3px 10px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              color: isHidden ? 'var(--sand-500)' : 'var(--accent)',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              transition: 'all 0.15s',
+                              flexShrink: 0,
+                            }}>
+                            {isHidden ? 'Hidden' : 'Visible'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>{item.label}</p>
-                  <p style={{ fontSize: '11px', color: item.done ? 'var(--sand-500)' : 'var(--sand-400)', margin: 0 }}>{item.sub}</p>
-                </div>
-                <span style={{ fontSize: '12px', color: 'var(--sand-400)', flexShrink: 0 }}>→</span>
-              </button>
-            ))}
+              )
+            })}
           </div>
         </div>
 

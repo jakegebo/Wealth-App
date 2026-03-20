@@ -36,28 +36,310 @@ interface RetirementPlan {
   shortfall: number
 }
 
-function formatMessage(content: string) {
-  return content.split('\n').map((line, i) => {
-    if (line.match(/^\d+\./)) {
-      const num = line.split('.')[0]
-      const text = line.split('.').slice(1).join('.').trim()
-      return (
-        <div key={i} style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-          <span style={{ color: 'var(--accent)', fontWeight: '700', minWidth: '16px', fontSize: '13px' }}>{num}.</span>
-          <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{text}</span>
+function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) {
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
+
+  const surplus = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
+  const { currentAge, targetAge, yearsToRetirement: yearsLeft } = plan
+
+  // Phase boundaries
+  const p1End = currentAge + Math.round(yearsLeft * 0.35)
+  const p2End = currentAge + Math.round(yearsLeft * 0.70)
+  const currentPhase = currentAge <= p1End ? 0 : currentAge <= p2End ? 1 : 2
+
+  const phases = [
+    {
+      name: 'Foundation',
+      ageRange: `${currentAge}–${p1End}`,
+      focus: ['Build 3–6 month emergency fund', 'Capture full employer 401k match', 'Open and fund Roth IRA ($583/mo)', 'Eliminate high-interest debt (>7%)'],
+    },
+    {
+      name: 'Acceleration',
+      ageRange: `${p1End}–${p2End}`,
+      focus: ['Max all tax-advantaged accounts', 'Increase contribution % with every raise', 'Keep 90%+ equity allocation — time is on your side', 'Open taxable brokerage once accounts are maxed'],
+    },
+    {
+      name: 'Final push',
+      ageRange: `${p2End}–${targetAge}`,
+      focus: ['Use catch-up contributions if age 50+', 'Gradually shift toward bonds (reduce sequence risk)', 'Plan withdrawal order: taxable → traditional → Roth', 'Arrange healthcare bridge before Medicare at 65'],
+    },
+  ]
+
+  // Account status checks
+  const liquidSavings = (profile?.assets || []).filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0)
+  const monthlyExp = profile?.monthly_expenses || 0
+  const emergencyMonths = monthlyExp > 0 ? liquidSavings / monthlyExp : 0
+  const emergencyDone = emergencyMonths >= 3
+
+  const k401Asset = (profile?.assets || []).find((a: any) => a.category === 'retirement' && /401|403|457/i.test(a.name))
+  const has401k = !!k401Asset
+  const matchCap = k401Asset?.employer_match_cap
+  const contribPct = k401Asset?.contribution_pct || 0
+  const matchCaptured = matchCap ? contribPct >= matchCap : has401k
+
+  const hasHighDebt = (profile?.debts || []).some((d: any) => (d.interest_rate || 0) > 7)
+  const debtFree = (profile?.debts || []).length === 0
+  const debtOk = debtFree || !hasHighDebt
+
+  const contribStatuses = getContributionStatus(profile?.assets || [], profile?.age)
+  const iraMaxed = contribStatuses.some(s => /ira/i.test(s.account) && s.maxed)
+  const k401Maxed = contribStatuses.some(s => /401|403|457/i.test(s.account) && s.maxed)
+  const hasIRA = (profile?.assets || []).some((a: any) => a.category === 'retirement' && /ira/i.test(a.name))
+  const hasHSA = (profile?.assets || []).some((a: any) => /hsa/i.test(a.name))
+  const hsaStatus = contribStatuses.find(s => /hsa/i.test(s.account))
+  const hsaMaxed = hsaStatus?.maxed || false
+
+  const priorities = [
+    {
+      label: 'Emergency fund (3–6 months)',
+      detail: emergencyDone
+        ? `${emergencyMonths.toFixed(1)} months covered ✓`
+        : `${emergencyMonths.toFixed(1)} months — need ${fmt(Math.max(0, monthlyExp * 3 - liquidSavings))} more`,
+      done: emergencyDone,
+      tag: null,
+    },
+    {
+      label: 'Capture full 401k employer match',
+      detail: has401k
+        ? matchCap
+          ? matchCaptured
+            ? `Contributing ${contribPct}% — full match captured ✓`
+            : `Increase to ${matchCap}% — you're leaving free money on the table`
+          : 'Have 401k — verify you\'re capturing full match'
+        : 'No 401k found — ask HR if one is available',
+      done: has401k && matchCaptured,
+      tag: 'Free return',
+    },
+    {
+      label: 'Pay off high-interest debt (>7%)',
+      detail: debtFree ? 'Debt-free ✓' : hasHighDebt ? 'High-rate debt found — paying this beats most investments' : 'Only low-rate debt — minimums are fine',
+      done: debtOk,
+      tag: null,
+    },
+    {
+      label: 'Max Roth IRA ($7,000/yr · $583/mo)',
+      detail: hasIRA
+        ? iraMaxed ? 'Maxed ✓' : 'Contributing — push to $583/mo to hit annual limit'
+        : 'Open at Fidelity/Vanguard — invest in VTI or a target-date fund',
+      done: iraMaxed,
+      tag: 'Tax-free growth',
+    },
+    {
+      label: 'Max HSA — triple tax advantage',
+      detail: hasHSA
+        ? hsaMaxed ? 'Maxed ✓' : 'Have HSA — max is $4,300/yr individual ($358/mo)'
+        : 'Requires HDHP — invest like a retirement account, pay medical costs out of pocket',
+      done: hsaMaxed,
+      tag: 'If eligible',
+    },
+    {
+      label: 'Max 401k ($23,500/yr · $1,958/mo)',
+      detail: has401k
+        ? k401Maxed ? 'Maxed ✓' : 'Increase contributions — pre-tax dollars reduce your tax bill now'
+        : 'After IRA, if employer offers 401k, max it before taxable investing',
+      done: k401Maxed,
+      tag: 'Tax-deferred',
+    },
+    {
+      label: 'Taxable brokerage — invest the rest',
+      detail: 'VTI + VXUS in a simple two-fund portfolio. No annual limits, fully flexible.',
+      done: false,
+      tag: 'No limit',
+    },
+  ]
+
+  // Monthly allocation — waterfall from surplus
+  const iraMonthly = 583
+  const allocations: { label: string; amount: number; colorIdx: number }[] = []
+  let remaining = surplus
+
+  if (!emergencyDone && remaining > 0) {
+    const needed = Math.max(0, monthlyExp * 6 - liquidSavings)
+    const amt = Math.min(remaining, Math.ceil(needed / 12))
+    if (amt > 0) { allocations.push({ label: 'Emergency fund', amount: amt, colorIdx: 0 }); remaining -= amt }
+  }
+  if (!iraMaxed && remaining > 0) {
+    const amt = Math.min(remaining, iraMonthly)
+    if (amt > 0) { allocations.push({ label: 'Roth IRA', amount: amt, colorIdx: 1 }); remaining -= amt }
+  }
+  if (!k401Maxed && has401k && remaining > 0) {
+    const current = k401Asset?.annual_contribution ? k401Asset.annual_contribution / 12 : 0
+    const toMax = Math.max(0, 1958 - current)
+    const amt = Math.min(remaining, toMax)
+    if (amt > 0) { allocations.push({ label: '401k boost', amount: amt, colorIdx: 1 }); remaining -= amt }
+  }
+  if (remaining > 50) { allocations.push({ label: 'Brokerage', amount: remaining, colorIdx: 2 }); remaining = 0 }
+
+  const allocationTotal = allocations.reduce((s, a) => s + a.amount, 0)
+  const ALLOC_COLORS = ['var(--warning)', 'var(--accent)', '#6a8aae']
+
+  // Asset allocation recommendation
+  const stockPct = Math.min(95, Math.max(50, 110 - currentAge))
+  const bondPct = 100 - stockPct
+  const intlPct = Math.round(stockPct * 0.25)
+  const usPct = stockPct - intlPct
+
+  const TIMELINE_DOTS = [
+    { age: currentAge, label: 'Now', pct: 0 },
+    { age: p1End, label: 'Accel.', pct: 33 },
+    { age: p2End, label: 'Push', pct: 67 },
+    { age: targetAge, label: '🏖️ Retire', pct: 100 },
+  ]
+
+  return (
+    <div className="animate-fade">
+
+      {/* Phase Timeline */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <p className="label" style={{ marginBottom: '18px' }}>Your retirement roadmap</p>
+
+        {/* Track */}
+        <div style={{ position: 'relative', height: '18px', marginBottom: '6px' }}>
+          <div style={{ position: 'absolute', top: '8px', left: '9px', right: '9px', height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
+            <div style={{ height: '100%', width: `${currentPhase === 0 ? 4 : currentPhase === 1 ? 37 : 70}%`, background: 'var(--accent)', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+          </div>
+          {TIMELINE_DOTS.map((dot, i) => (
+            <div key={i} style={{ position: 'absolute', top: '0', left: dot.pct === 0 ? '0' : dot.pct === 100 ? 'auto' : `calc(${dot.pct}% - 9px)`, right: dot.pct === 100 ? '0' : 'auto' }}>
+              <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: i < currentPhase ? 'var(--accent)' : i === currentPhase ? 'var(--sand-50)' : 'var(--sand-200)', border: `2px solid ${i <= currentPhase ? 'var(--accent)' : 'var(--sand-300)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {i < currentPhase && <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>✓</span>}
+                {i === currentPhase && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--accent)' }} />}
+              </div>
+            </div>
+          ))}
         </div>
-      )
-    }
-    if (line.startsWith('- ')) return (
-      <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-        <span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span>
-        <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span>
+
+        {/* Labels */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '18px' }}>
+          {TIMELINE_DOTS.map((dot, i) => (
+            <div key={i} style={{ textAlign: i === 0 ? 'left' : i === TIMELINE_DOTS.length - 1 ? 'right' : 'center', flex: i === 0 || i === TIMELINE_DOTS.length - 1 ? '0 0 auto' : 1 }}>
+              <p style={{ fontSize: '12px', fontWeight: '700', color: i <= currentPhase ? 'var(--accent)' : 'var(--sand-700)', margin: 0 }}>{dot.age}</p>
+              <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{dot.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Phase cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {phases.map((phase, i) => {
+            const isCurrent = i === currentPhase
+            const isDone = i < currentPhase
+            return (
+              <div key={i} style={{ padding: '12px 14px', borderRadius: '12px', background: isCurrent ? 'var(--accent-light)' : isDone ? 'var(--sand-100)' : 'var(--sand-50)', border: `0.5px solid ${isCurrent ? 'var(--accent-border)' : 'var(--sand-200)'}`, opacity: isDone ? 0.6 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: isDone ? 'var(--accent)' : isCurrent ? 'var(--accent)' : 'var(--sand-300)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>{isDone ? '✓' : i + 1}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-900)', margin: 0 }}>{phase.name}</p>
+                    <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>Ages {phase.ageRange}</p>
+                  </div>
+                  {isCurrent && <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--accent)', background: 'rgba(122,158,110,0.18)', padding: '2px 8px', borderRadius: '20px', flexShrink: 0 }}>YOU ARE HERE</span>}
+                </div>
+                <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {phase.focus.map((item, j) => (
+                    <div key={j} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                      <span style={{ color: isCurrent ? 'var(--accent)' : 'var(--sand-400)', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>→</span>
+                      <p style={{ fontSize: '12px', color: isCurrent ? 'var(--sand-800)' : 'var(--sand-600)', margin: 0, lineHeight: '1.4' }}>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
-    )
-    if (line.startsWith('**') && line.endsWith('**')) return <p key={i} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '10px 0 4px', fontSize: '14px' }}>{line.slice(2, -2)}</p>
-    if (line === '') return <div key={i} style={{ height: '6px' }} />
-    return <p key={i} style={{ fontSize: '14px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
-  })
+
+      {/* Account Priority Stack */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <p className="label" style={{ marginBottom: '4px' }}>Account priority order</p>
+        <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 14px', lineHeight: '1.4' }}>Fund in this order. Each step maximizes return before the next.</p>
+        {priorities.map((p, i) => (
+          <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '11px 0', borderBottom: i < priorities.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+            <div style={{ width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0, marginTop: '1px', background: p.done ? 'var(--accent)' : 'var(--sand-200)', border: `1.5px solid ${p.done ? 'var(--accent)' : 'var(--sand-300)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {p.done
+                ? <span style={{ color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700' }}>✓</span>
+                : <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-500)' }}>{i + 1}</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                <p style={{ fontSize: '13px', fontWeight: '600', margin: 0, color: p.done ? 'var(--sand-500)' : 'var(--sand-900)', textDecoration: p.done ? 'line-through' : 'none' }}>{p.label}</p>
+                {p.tag && <span style={{ fontSize: '9px', color: 'var(--accent)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700' }}>{p.tag}</span>}
+              </div>
+              <p style={{ fontSize: '11px', color: p.done ? 'var(--success)' : 'var(--sand-500)', margin: 0, lineHeight: '1.45' }}>{p.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Monthly Allocation */}
+      {surplus > 0 && allocations.length > 0 && (
+        <div className="card" style={{ marginBottom: '16px' }}>
+          <p className="label" style={{ marginBottom: '2px' }}>Monthly allocation plan</p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 14px' }}>Where your {fmt(surplus)}/mo surplus should go right now</p>
+
+          {/* Stacked bar */}
+          <div style={{ display: 'flex', height: '10px', borderRadius: '6px', overflow: 'hidden', marginBottom: '14px' }}>
+            {allocations.map((a, i) => (
+              <div key={i} style={{ flex: a.amount, background: ALLOC_COLORS[a.colorIdx], transition: 'flex 0.4s ease' }} />
+            ))}
+          </div>
+
+          {allocations.map((a, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < allocations.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: ALLOC_COLORS[a.colorIdx], flexShrink: 0 }} />
+                <p style={{ fontSize: '13px', color: 'var(--sand-800)', margin: 0 }}>{a.label}</p>
+              </div>
+              <div>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--sand-900)' }}>{fmt(a.amount)}/mo</span>
+                <span style={{ fontSize: '11px', color: 'var(--sand-400)', marginLeft: '6px' }}>{allocationTotal > 0 ? Math.round((a.amount / allocationTotal) * 100) : 0}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Portfolio Blueprint */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+          <div>
+            <p className="label" style={{ margin: 0 }}>Portfolio blueprint</p>
+            <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '2px 0 0' }}>Recommended mix for age {currentAge} · {yearsLeft}yr runway</p>
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent)', background: 'var(--accent-light)', padding: '4px 10px', borderRadius: '20px', border: '0.5px solid var(--accent-border)', flexShrink: 0 }}>
+            {stockPct}% stocks · {bondPct}% bonds
+          </span>
+        </div>
+
+        {[
+          { label: 'US Stocks', ticker: 'VTI or FXAIX', pct: usPct, color: 'var(--accent)', note: 'Core holding — total US market, low-cost index' },
+          { label: 'International', ticker: 'VXUS', pct: intlPct, color: '#6a8aae', note: 'Global diversification, reduces home-country bias' },
+          { label: 'Bonds', ticker: 'BND', pct: bondPct, color: 'var(--sand-400)', note: 'Stability cushion — increase by ~1%/yr as you age' },
+        ].map((item, i) => (
+          <div key={i} style={{ marginBottom: i < 2 ? '14px' : 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+              <div>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{item.label}</span>
+                <span style={{ fontSize: '11px', color: 'var(--sand-400)', marginLeft: '8px', fontFamily: 'monospace' }}>{item.ticker}</span>
+              </div>
+              <span style={{ fontSize: '16px', fontWeight: '700', color: item.color }}>{item.pct}%</span>
+            </div>
+            <div style={{ height: '6px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden', marginBottom: '4px' }}>
+              <div style={{ height: '100%', width: `${item.pct}%`, background: item.color, borderRadius: '3px', transition: 'width 0.5s ease' }} />
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{item.note}</p>
+          </div>
+        ))}
+
+        <div style={{ marginTop: '14px', padding: '10px 12px', background: 'var(--sand-100)', borderRadius: '10px', border: '0.5px solid var(--sand-200)' }}>
+          <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>
+            <strong>Glide path:</strong> Shift ~1% from stocks → bonds each year. At retirement (age {targetAge}), target roughly {Math.max(40, stockPct - yearsLeft)}% stocks / {Math.min(60, bondPct + yearsLeft)}% bonds to reduce sequence-of-returns risk.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  )
 }
 
 export default function Retirement() {
@@ -71,8 +353,10 @@ export default function Retirement() {
   const [chatMessages, setChatMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
-  const [showChat, setShowChat] = useState(false)
+
   const [activeTab, setActiveTab] = useState<'overview' | 'projections' | 'strategy' | 'chat'>('overview')
+  const [editingAge, setEditingAge] = useState(false)
+  const [draftAge, setDraftAge] = useState(profile?.retirement_plan?.targetAge || 52)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -122,33 +406,28 @@ export default function Retirement() {
     const updatedProfile = { ...(profile || {}), retirement_plan: newPlan }
     await updateProfile({ profile_data: updatedProfile })
 
-    // Get AI strategy
-    const initialMsg: Message = {
-      role: 'user',
-      content: `Build me a comprehensive retirement plan. I'm ${currentAge} years old, want to retire at ${targetAge}.
-I have $${retirementAssets.toLocaleString()} saved for retirement already.
-Monthly income: $${profile?.monthly_income || 0}, expenses: $${profile?.monthly_expenses || 0}, available to save: $${availableToSave}/month.
-Assets: ${profile?.assets?.map((a: any) => `${a.name}: $${a.value}`).join(', ') || 'none listed'}.
-Projected nest egg at retirement: $${Math.round(projectedNestEgg).toLocaleString()}.
-Give me a clear, specific retirement strategy with exact numbers and steps.`
-    }
-
-    setChatMessages([initialMsg])
-    setChatLoading(true)
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [initialMsg], profile: profile || {}, topic: 'retirement' })
-      })
-      const data = await res.json()
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
-    } catch { }
-
-    setChatLoading(false)
     setBuilding(false)
     setActiveTab('overview')
+  }
+
+  const updateTargetAge = async (newTargetAge: number) => {
+    if (!plan) return
+    const yearsToRetirement = newTargetAge - plan.currentAge
+    const projectedNestEgg = plan.currentSavings * Math.pow(1.07, yearsToRetirement) +
+      plan.monthlyContribution * 12 * ((Math.pow(1.07, yearsToRetirement) - 1) / 0.07)
+    const updatedPlan: RetirementPlan = {
+      ...plan,
+      targetAge: newTargetAge,
+      yearsToRetirement,
+      projectedNestEgg,
+      onTrack: projectedNestEgg >= plan.targetNestEgg,
+      shortfall: Math.max(0, plan.targetNestEgg - projectedNestEgg),
+    }
+    setPlan(updatedPlan)
+    setTargetAge(newTargetAge)
+    setEditingAge(false)
+    const updatedProfile = { ...(profile || {}), retirement_plan: updatedPlan }
+    await updateProfile({ profile_data: updatedProfile })
   }
 
   const sendChat = async () => {
@@ -371,9 +650,42 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
             {/* Hero numbers */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
               <div className="card" style={{ gridColumn: '1 / -1', padding: '20px' }}>
-                <p className="label" style={{ marginBottom: '4px' }}>Projected at retirement ({plan.targetAge})</p>
-                <p style={{ fontSize: '40px', fontWeight: '300', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: '0 0 4px', letterSpacing: '-1.5px' }}>{fmt(plan.projectedNestEgg ?? 0)}</p>
-                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>at 7% avg annual return · {plan.yearsToRetirement} years away</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <p className="label" style={{ margin: 0 }}>Projected at retirement (age {plan.targetAge})</p>
+                  <button
+                    onClick={() => { setDraftAge(plan.targetAge); setEditingAge(e => !e) }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                    {editingAge ? 'Cancel' : 'Change age'}
+                  </button>
+                </div>
+                {editingAge ? (
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '13px', color: 'var(--sand-600)' }}>Retire at age</span>
+                      <span style={{ fontSize: '28px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>{draftAge}</span>
+                    </div>
+                    <input
+                      type="range" min={plan.currentAge + 1} max="85" value={draftAge}
+                      onChange={e => setDraftAge(parseInt(e.target.value))}
+                      style={{ width: '100%', accentColor: 'var(--accent)', marginBottom: '12px' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--sand-400)', marginBottom: '14px' }}>
+                      <span>Age {plan.currentAge + 1}</span>
+                      <span>Age 85</span>
+                    </div>
+                    <button
+                      onClick={() => updateTargetAge(draftAge)}
+                      className="btn-primary"
+                      style={{ width: '100%', padding: '12px', fontSize: '14px' }}>
+                      Update plan →
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '40px', fontWeight: '300', color: plan.onTrack ? 'var(--success)' : 'var(--warning)', margin: '0 0 4px', letterSpacing: '-1.5px' }}>{fmt(plan.projectedNestEgg ?? 0)}</p>
+                    <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>at 7% avg annual return · {plan.yearsToRetirement} years away</p>
+                  </>
+                )}
               </div>
               <div className="card" style={{ padding: '16px' }}>
                 <p className="label" style={{ marginBottom: '4px' }}>Target</p>
@@ -566,20 +878,8 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
         )}
 
         {/* Strategy Tab */}
-        {built && activeTab === 'strategy' && (
-          <div className="animate-fade">
-            {chatMessages.length > 1 ? (
-              <div className="card">
-                <p className="label" style={{ marginBottom: '12px' }}>Your retirement strategy</p>
-                <div>{formatMessage(chatMessages[1].content)}</div>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                <div style={{ width: '32px', height: '32px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
-                <p style={{ color: 'var(--sand-500)', marginTop: '16px', fontSize: '14px' }}>Building your strategy...</p>
-              </div>
-            )}
-          </div>
+        {built && plan && activeTab === 'strategy' && (
+          <StrategyTab profile={profile} plan={plan} />
         )}
 
         {/* Chat Tab */}
@@ -596,7 +896,13 @@ Give me a clear, specific retirement strategy with exact numbers and steps.`
                   <div style={{ maxWidth: '80%', background: msg.role === 'user' ? 'var(--accent)' : 'var(--sand-50)', border: msg.role === 'user' ? 'none' : '0.5px solid var(--sand-300)', borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '12px 16px' }}>
                     {msg.role === 'user'
                       ? <p style={{ fontSize: '14px', margin: 0, color: 'var(--sand-50)', lineHeight: '1.5' }}>{msg.content}</p>
-                      : <div>{formatMessage(msg.content)}</div>
+                      : <div>{msg.content.split('\n').map((line, li) => {
+                          if (!line.trim()) return <div key={li} style={{ height: '5px' }} />
+                          if (line.startsWith('**') && line.endsWith('**')) return <p key={li} style={{ fontWeight: '700', color: 'var(--sand-900)', margin: '8px 0 2px', fontSize: '13px' }}>{line.slice(2, -2)}</p>
+                          if (line.startsWith('- ')) return <div key={li} style={{ display: 'flex', gap: '7px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700' }}>·</span><span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.slice(2)}</span></div>
+                          if (/^\d+\./.test(line)) return <div key={li} style={{ display: 'flex', gap: '7px', marginTop: '3px' }}><span style={{ color: 'var(--accent)', fontWeight: '700', fontSize: '12px', flexShrink: 0 }}>{line.match(/^\d+/)![0]}.</span><span style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)' }}>{line.replace(/^\d+\.\s*/, '')}</span></div>
+                          return <p key={li} style={{ fontSize: '13px', lineHeight: '1.6', margin: '2px 0', color: 'var(--sand-800)' }}>{line}</p>
+                        })}</div>
                     }
                   </div>
                 </div>

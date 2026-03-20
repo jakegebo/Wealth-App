@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
@@ -178,18 +178,21 @@ function GrowthSection({
   nwHistory,
   ideaProgress,
   navigate,
+  liveQuotes,
+  liveQuotesLoading,
+  refreshLiveQuotes,
 }: {
   profile: any
   analysis: any
   nwHistory: Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[]; monthly_income: number; monthly_expenses: number } }>
   ideaProgress: Record<string, string>
   navigate: (path: string) => void
+  liveQuotes: Record<string, { price: number; change: number; changePercent: string }>
+  liveQuotesLoading: boolean
+  refreshLiveQuotes: () => Promise<void>
 }) {
-  const [tab, setTab] = useState<'wealth' | 'goals' | 'income' | 'portfolio'>('wealth')
+  const [tab, setTab] = useState<'wealth' | 'income' | 'portfolio'>('wealth')
   const [debtCollapsed, setDebtCollapsed] = useState(false)
-  const [portfolioQuotes, setPortfolioQuotes] = useState<Record<string, any>>({})
-  const [portfolioLoading, setPortfolioLoading] = useState(false)
-  const portfolioFetched = useRef(false)
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
@@ -228,26 +231,8 @@ function GrowthSection({
     }
   }
   const uniqueSymbols = [...new Set(allPositions.map(p => p.symbol))]
-
-  const fetchPortfolioPrices = useCallback(async () => {
-    if (!uniqueSymbols.length) return
-    setPortfolioLoading(true)
-    try {
-      const res = await fetch(`/api/stocks?symbols=${uniqueSymbols.join(',')}`)
-      const data = await res.json()
-      const map: Record<string, any> = {}
-      for (const q of data.quotes || []) map[q.symbol] = q
-      setPortfolioQuotes(map)
-    } catch { }
-    setPortfolioLoading(false)
-  }, [uniqueSymbols.join(',')])
-
-  useEffect(() => {
-    if (tab === 'portfolio' && !portfolioFetched.current) {
-      portfolioFetched.current = true
-      fetchPortfolioPrices()
-    }
-  }, [tab, fetchPortfolioPrices])
+  const portfolioQuotes = liveQuotes
+  const portfolioLoading = liveQuotesLoading
 
   // Net worth history — only treat as meaningful if history spans at least 24 hours
   // (prevents fake "all time" deltas from multiple saves during onboarding)
@@ -347,7 +332,6 @@ function GrowthSection({
         {([
           { key: 'wealth', label: 'Wealth' },
           { key: 'portfolio', label: 'Portfolio' },
-          { key: 'goals', label: 'Goals' },
           { key: 'income', label: 'Income' },
         ] as const).map(({ key, label }) => (
           <button
@@ -741,7 +725,7 @@ function GrowthSection({
           const q = portfolioQuotes[pos.symbol]
           if (q) totalLiveValue += pos.shares * q.price
           if (pos.costBasis != null) {
-            totalCostBasis += pos.shares * pos.costBasis
+            totalCostBasis += pos.costBasis
             hasCostBasis = true
           }
         }
@@ -773,7 +757,7 @@ function GrowthSection({
                   )}
                 </div>
                 <button
-                  onClick={() => { portfolioFetched.current = false; fetchPortfolioPrices() }}
+                  onClick={() => refreshLiveQuotes()}
                   style={{ background: 'none', border: '0.5px solid var(--sand-300)', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', color: 'var(--sand-500)', cursor: 'pointer', fontFamily: 'inherit' }}>
                   Refresh
                 </button>
@@ -804,7 +788,7 @@ function GrowthSection({
               for (const pos of positions) {
                 const q = portfolioQuotes[pos.symbol]
                 if (q) acctLiveValue += pos.shares * q.price
-                if (pos.costBasis != null) { acctCostBasis += pos.shares * pos.costBasis; acctHasCostBasis = true }
+                if (pos.costBasis != null) { acctCostBasis += pos.costBasis; acctHasCostBasis = true }
               }
               const acctGain = acctHasCostBasis ? acctLiveValue - acctCostBasis : null
 
@@ -842,7 +826,7 @@ function GrowthSection({
                     {positions.map((pos, pi) => {
                       const q = portfolioQuotes[pos.symbol]
                       const liveValue = q ? pos.shares * q.price : null
-                      const costTotal = pos.costBasis != null ? pos.shares * pos.costBasis : null
+                      const costTotal = pos.costBasis != null ? pos.costBasis : null
                       const gain = liveValue != null && costTotal != null ? liveValue - costTotal : null
                       const gainPct = gain != null && costTotal != null && costTotal > 0 ? (gain / costTotal) * 100 : null
                       const todayChange = q ? pos.shares * q.change : null
@@ -898,132 +882,67 @@ function GrowthSection({
         )
       })()}
 
-      {/* ── GOALS TAB ── */}
-      {tab === 'goals' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {/* Summary banner */}
-          <div style={{
-            padding: '14px 16px',
-            background: goals.length > 0 && goalsOnTrack === goals.length ? 'rgba(122,158,110,0.09)' : 'var(--sand-100)',
-            border: `0.5px solid ${goals.length > 0 && goalsOnTrack === goals.length ? 'rgba(122,158,110,0.3)' : 'var(--sand-300)'}`,
-            borderRadius: 'var(--radius-md)',
-            display: 'flex', alignItems: 'center', gap: '14px'
-          }}>
-            <div style={{
-              width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0,
-              background: goals.length === 0 ? 'var(--sand-300)' : goalsOnTrack === goals.length ? 'var(--success)' : goalsOnTrack > 0 ? 'var(--warning)' : 'var(--danger)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>
-              <span style={{ color: '#fff', fontSize: goals.length > 0 && goalsOnTrack < goals.length ? '13px' : '18px', fontWeight: '700' }}>
-                {goals.length === 0 ? '—' : goalsOnTrack === goals.length ? '✓' : `${goalsOnTrack}/${goals.length}`}
-              </span>
-            </div>
-            <div>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>
-                {goals.length === 0 ? 'No goals set' : goalsOnTrack === goals.length ? 'All goals on track' : `${goalsOnTrack} of ${goals.length} on track`}
-              </p>
-              <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '2px 0 0' }}>
-                {goals.length === 0
-                  ? 'Add goals in your profile to track progress'
-                  : availableToSave > 0
-                  ? `${fmt(availableToSave)}/mo available to allocate`
-                  : 'Review budget to free up savings capacity'}
-              </p>
-            </div>
-          </div>
-
-          {goals.map((goal: any, i: number) => {
-            const pct = Math.min(100, Math.round(goal.percentage || 0))
-            const isAchieved = (goal.currentAmount || 0) >= (goal.targetAmount || 0)
-            const onTrack = isAchieved || goal.feasibility === 'achievable' || (goal.monthlyNeeded > 0 && goal.monthlyNeeded <= availableToSave)
-            const statusColor = isAchieved ? 'var(--success)' : onTrack ? 'var(--success)' : goal.feasibility === 'stretch' ? 'var(--warning)' : 'var(--danger)'
-            const remaining = Math.max(0, (goal.targetAmount || 0) - (goal.currentAmount || 0))
-
-            return (
-              <div key={i} className="card" style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                  <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
-                    <p style={{ fontSize: '15px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 2px' }}>{goal.name}</p>
-                    <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>
-                      {fmt(goal.currentAmount || 0)} of {fmt(goal.targetAmount || 0)}
-                    </p>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <p style={{ fontSize: '24px', fontWeight: '300', color: isAchieved ? 'var(--success)' : 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px' }}>
-                      {isAchieved ? '✓' : `${pct}%`}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div style={{ height: '7px', background: 'var(--sand-200)', borderRadius: '4px', marginBottom: '10px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: statusColor, borderRadius: '4px', transition: 'width 0.5s ease' }} />
-                </div>
-
-                {/* Goal sparkline (history of current_amount) */}
-                {(() => {
-                  const hist = goalHistoryMap.get(goal.name)
-                  if (!hist || hist.length < 2) return null
-                  const sparkPath = buildSparkPath(hist, 280, 32)
-                  if (!sparkPath) return null
-                  const delta = hist[hist.length - 1] - hist[0]
-                  return (
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progress history</p>
-                        <p style={{ fontSize: '10px', margin: 0, fontWeight: '600', color: delta >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                          {delta >= 0 ? '+' : ''}{fmtDelta(delta)} total
-                        </p>
-                      </div>
-                      <svg width="100%" height="32" viewBox="0 0 280 32" preserveAspectRatio="none" style={{ display: 'block' }}>
-                        <path d={sparkPath} fill="none" stroke={statusColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-                      </svg>
-                    </div>
-                  )
-                })()}
-
-                {/* Status */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: statusColor }} />
-                    <p style={{ fontSize: '12px', color: statusColor, fontWeight: '600', margin: 0 }}>
-                      {isAchieved ? 'Achieved!' : onTrack ? 'On track' : goal.feasibility === 'stretch' ? 'Stretch goal' : 'Needs attention'}
-                    </p>
-                  </div>
-                  {!isAchieved && goal.monthlyNeeded > 0 && (
-                    <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{fmt(goal.monthlyNeeded)}/mo needed</p>
-                  )}
-                </div>
-
-                {/* Insight box */}
-                <div style={{ padding: '9px 12px', background: 'var(--sand-100)', borderRadius: 'var(--radius-sm)', borderLeft: `3px solid ${statusColor}` }}>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
-                    {isAchieved
-                      ? `🎉 Goal complete! Consider putting the ${fmt((goal.currentAmount || 0) - (goal.targetAmount || 0))} surplus into investments.`
-                      : onTrack
-                      ? `${fmt(remaining)} to go. At ${fmt(goal.monthlyNeeded || 0)}/mo you're on pace — stay consistent and avoid withdrawing.`
-                      : goal.feasibility === 'stretch'
-                      ? `This is a stretch. You need ${fmt(goal.monthlyNeeded || 0)}/mo but have ${fmt(Math.max(0, availableToSave))}/mo free. Find an extra ${fmt(Math.max(0, (goal.monthlyNeeded || 0) - availableToSave))}/mo.`
-                      : `You need ${fmt(goal.monthlyNeeded || 0)}/mo but only have ${fmt(Math.max(0, availableToSave))}/mo free. Reduce expenses or add an income stream to close the gap.`
-                    }
-                  </p>
-                </div>
-              </div>
-            )
-          })}
-
-          {goals.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '28px 16px' }}>
-              <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 14px' }}>No goals set yet</p>
-              <button className="btn-primary" onClick={() => navigate('/onboarding')} style={{ fontSize: '13px', padding: '8px 20px' }}>Add a goal</button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ── INCOME TAB ── */}
       {tab === 'income' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+          {/* Primary income sources from profile */}
+          {(() => {
+            const sources: { type: string; description: string; amount: number; frequency: string }[] = profile?.income_sources || []
+            const monthly = profile?.monthly_income || 0
+            const typeLabel: Record<string, string> = {
+              salary: 'Salary', freelance: 'Freelance', business: 'Business', investment: 'Investment', rental: 'Rental', other: 'Other'
+            }
+            const typeIcon: Record<string, string> = {
+              salary: '💼', freelance: '🖥️', business: '🏢', investment: '📈', rental: '🏠', other: '💰'
+            }
+            if (monthly === 0 && sources.length === 0) return null
+            return (
+              <div className="card" style={{ padding: '14px' }}>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Your Income</p>
+                {sources.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {sources.map((src, i) => {
+                      const monthly = src.frequency === 'annual' ? src.amount / 12 : src.amount
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: i < sources.length - 1 ? '10px' : 0, borderBottom: i < sources.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                          <span style={{ fontSize: '22px', flexShrink: 0 }}>{typeIcon[src.type] || '💰'}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>
+                              {src.description || typeLabel[src.type] || src.type}
+                            </p>
+                            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{typeLabel[src.type] || src.type}</p>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(monthly)}/mo</p>
+                            {src.frequency === 'annual' && (
+                              <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{fmt(src.amount)}/yr</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {sources.length > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '0.5px solid var(--sand-200)' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-700)' }}>Total monthly</span>
+                        <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--success)' }}>{fmt(monthly)}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '22px' }}>💼</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>Primary Income</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>From your profile</p>
+                    </div>
+                    <p style={{ fontSize: '15px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(monthly)}/mo</p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Stats row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
             {[
@@ -1141,6 +1060,7 @@ function StockDetail({
   const [loadingAnalysis, setLoadingAnalysis] = useState(true)
   const [alertInput, setAlertInput] = useState(alertPrice ? String(alertPrice) : '')
   const [sharesInput, setSharesInput] = useState(sharesOwned > 0 ? String(sharesOwned) : '')
+  const [minimizedAI, setMinimizedAI] = useState(false)
 
   useEffect(() => { fetchChart() }, [period])
   useEffect(() => { fetchAnalysis() }, [])
@@ -1370,19 +1290,26 @@ function StockDetail({
           </div>
 
           {/* AI Analysis */}
-          <div className="card-muted">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <div style={{ width: '22px', height: '22px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card-muted" style={{ padding: 0, overflow: 'hidden' }}>
+            <button
+              onClick={() => setMinimizedAI(m => !m)}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'inherit' }}>
+              <div style={{ width: '22px', height: '22px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
               </div>
-              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Analysis</p>
-            </div>
-            {loadingAnalysis ? (
-              <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
-                {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0, flex: 1, textAlign: 'left' }}>Analysis</p>
+              <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAI ? 'rotate(180deg)' : 'none' }}>▾</span>
+            </button>
+            {!minimizedAI && (
+              <div style={{ padding: '0 14px 12px' }}>
+                {loadingAnalysis ? (
+                  <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                ) : <div>{formatAnalysis(analysis)}</div>}
+                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0' }}>Not financial advice.</p>
               </div>
-            ) : <div>{formatAnalysis(analysis)}</div>}
-            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0' }}>Not financial advice.</p>
+            )}
           </div>
         </div>
       </div>
@@ -1393,7 +1320,7 @@ function StockDetail({
 export default function Grow() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const { userId, profileData: profile, analysis, chatRefs, watchlist, savedIdeas, incomeIdeas, loading: profileLoading, updateProfile } = useProfile()
+  const { userId, profileData: profile, analysis, chatRefs, watchlist, savedIdeas, incomeIdeas, loading: profileLoading, liveQuotes, liveQuotesLoading, refreshLiveQuotes, updateProfile } = useProfile()
 
   const [ideas, setIdeas] = useState<any[]>([])
   const [loadingIdeas, setLoadingIdeas] = useState(false)
@@ -1886,6 +1813,9 @@ Please give me a thorough breakdown:
         nwHistory={nwHistory}
         ideaProgress={ideaProgress}
         navigate={navigate}
+        liveQuotes={liveQuotes}
+        liveQuotesLoading={liveQuotesLoading}
+        refreshLiveQuotes={refreshLiveQuotes}
       />
 
       {/* Watchlist */}

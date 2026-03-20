@@ -127,15 +127,56 @@ function ChartBlock({ raw }: { raw: string }) {
 }
 
 function InlineText({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  // Match **bold**, *italic*, `code` — bold first to avoid partial matches
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`)/)
   return (
     <>
-      {parts.map((part, i) =>
-        part.startsWith('**') && part.endsWith('**')
-          ? <strong key={i} style={{ fontWeight: '700', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
-          : <span key={i}>{part}</span>
-      )}
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**') && part.length > 4)
+          return <strong key={i} style={{ fontWeight: '700', color: 'var(--sand-900)' }}>{part.slice(2, -2)}</strong>
+        if (part.startsWith('*') && part.endsWith('*') && part.length > 2)
+          return <em key={i} style={{ fontStyle: 'italic', color: 'var(--sand-700)' }}>{part.slice(1, -1)}</em>
+        if (part.startsWith('`') && part.endsWith('`') && part.length > 2)
+          return <code key={i} style={{ fontFamily: 'monospace', background: 'var(--sand-200)', padding: '1px 5px', borderRadius: '4px', fontSize: '12px', color: 'var(--sand-800)' }}>{part.slice(1, -1)}</code>
+        return <span key={i}>{part}</span>
+      })}
     </>
+  )
+}
+
+function renderSectionHeader(key: number, text: string) {
+  return (
+    <p key={key} style={{
+      fontSize: '11px', fontWeight: '700', color: 'var(--accent)',
+      margin: '20px 0 8px', letterSpacing: '0.07em', textTransform: 'uppercase',
+      borderLeft: '3px solid var(--accent)', paddingLeft: '10px', lineHeight: '1.4'
+    }}>
+      <InlineText text={text} />
+    </p>
+  )
+}
+
+function renderCTA(key: number, label: string, body?: string) {
+  return (
+    <div key={key} style={{ margin: '20px 0 10px' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '10px',
+        background: 'var(--accent)', borderRadius: '12px 12px 0 0',
+        padding: '10px 16px'
+      }}>
+        <span style={{ fontSize: '16px', flexShrink: 0 }}>⚡</span>
+        <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-50)', margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          {label}
+        </p>
+      </div>
+      {body && (
+        <div style={{ background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px 16px' }}>
+          <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-900)', fontWeight: '500' }}>
+            <InlineText text={body} />
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -146,46 +187,42 @@ function TextBlock({ content }: { content: string }) {
 
   while (i < lines.length) {
     const line = lines[i]
+    const trimmed = line.trim()
 
-    if (line.trim() === '') {
-      elements.push(<div key={i} style={{ height: '8px' }} />)
+    // Empty line
+    if (trimmed === '' || trimmed === '---') {
+      elements.push(<div key={i} style={{ height: trimmed === '---' ? 0 : '6px', borderTop: trimmed === '---' ? '0.5px solid var(--sand-200)' : 'none', margin: trimmed === '---' ? '12px 0' : 0 }} />)
       i++; continue
     }
 
-    if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-      const headerText = line.trim().slice(2, -2)
-      const isCTA = headerText.toLowerCase().replace(/[^a-z\s]/g, '').includes('your move today')
-
-      if (isCTA) {
-        elements.push(
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            background: 'var(--accent)', borderRadius: '12px',
-            padding: '12px 16px', margin: '18px 0 10px'
-          }}>
-            <span style={{ fontSize: '18px', flexShrink: 0 }}>⚡</span>
-            <p style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-50)', margin: 0, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-              {headerText}
-            </p>
-          </div>
-        )
-      } else {
-        elements.push(
-          <p key={i} style={{
-            fontSize: '13px', fontWeight: '700', color: 'var(--accent)',
-            margin: '18px 0 8px', letterSpacing: '0.03em', textTransform: 'uppercase',
-            borderLeft: '3px solid var(--accent)', paddingLeft: '10px', lineHeight: '1.4'
-          }}>
-            {headerText}
-          </p>
-        )
-      }
+    // CTA: any line that begins with **Your move (case-insensitive)
+    if (/^\*\*your move/i.test(trimmed)) {
+      // collect body: if content after the closing ** on same line, use it; else peek next line
+      const inlineBody = trimmed.replace(/^\*\*[^*]+\*\*:?\s*/i, '').trim()
+      const label = (trimmed.match(/^\*\*([^*]+)\*\*/)?.[1] || 'Your move today').replace(/:$/, '')
+      let body = inlineBody
+      if (!body && lines[i + 1]?.trim()) { body = lines[i + 1].trim(); i++ }
+      elements.push(renderCTA(i, label, body || undefined))
       i++; continue
     }
 
-    if (line.match(/^\d+\.\s/)) {
-      const num = line.match(/^(\d+)\./)?.[1]
-      const text = line.replace(/^\d+\.\s/, '')
+    // ### or ## markdown headers
+    if (/^#{2,3}\s/.test(trimmed)) {
+      const text = trimmed.replace(/^#{2,3}\s+/, '')
+      elements.push(renderSectionHeader(i, text))
+      i++; continue
+    }
+
+    // **Header** — standalone bold line (entire line is bold)
+    if (trimmed.startsWith('**') && trimmed.endsWith('**') && trimmed.length > 4 && !trimmed.slice(2, -2).includes('**')) {
+      elements.push(renderSectionHeader(i, trimmed.slice(2, -2)))
+      i++; continue
+    }
+
+    // Numbered list item
+    if (/^\d+\.\s/.test(trimmed)) {
+      const num = trimmed.match(/^(\d+)\./)?.[1]
+      const text = trimmed.replace(/^\d+\.\s+/, '')
       elements.push(
         <div key={i} style={{
           display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start',
@@ -203,21 +240,23 @@ function TextBlock({ content }: { content: string }) {
       i++; continue
     }
 
-    if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
+    // Bullet point (- or • or *)
+    if (/^[-•]\s/.test(trimmed)) {
       elements.push(
-        <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '9px', opacity: 0.6 }} />
+        <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '6px', alignItems: 'flex-start' }}>
+          <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, marginTop: '10px', opacity: 0.7 }} />
           <p style={{ fontSize: '14px', lineHeight: '1.65', margin: 0, color: 'var(--sand-800)', flex: 1 }}>
-            <InlineText text={line.trim().slice(2)} />
+            <InlineText text={trimmed.slice(2)} />
           </p>
         </div>
       )
       i++; continue
     }
 
+    // Plain paragraph
     elements.push(
       <p key={i} style={{ fontSize: '14px', lineHeight: '1.75', margin: '0 0 8px', color: 'var(--sand-800)' }}>
-        <InlineText text={line} />
+        <InlineText text={trimmed} />
       </p>
     )
     i++

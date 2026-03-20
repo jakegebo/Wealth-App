@@ -67,6 +67,7 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
   const [analysis, setAnalysis] = useState('')
   const [loadingChart, setLoadingChart] = useState(true)
   const [loadingAnalysis, setLoadingAnalysis] = useState(true)
+  const [minimizedAI, setMinimizedAI] = useState(false)
 
   useEffect(() => { fetchChart() }, [period])
   useEffect(() => { fetchAnalysis() }, [])
@@ -204,19 +205,26 @@ function StockDetail({ quote, onClose }: { quote: StockQuote; onClose: () => voi
           </div>
 
           {/* AI Analysis */}
-          <div className="card-muted">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <div style={{ width: '22px', height: '22px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card-muted" style={{ padding: 0, overflow: 'hidden' }}>
+            <button
+              onClick={() => setMinimizedAI(m => !m)}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'inherit' }}>
+              <div style={{ width: '22px', height: '22px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
               </div>
-              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Analysis</p>
-            </div>
-            {loadingAnalysis ? (
-              <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
-                {[0,150,300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0, flex: 1, textAlign: 'left' }}>Analysis</p>
+              <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAI ? 'rotate(180deg)' : 'none' }}>▾</span>
+            </button>
+            {!minimizedAI && (
+              <div style={{ padding: '0 14px 12px' }}>
+                {loadingAnalysis ? (
+                  <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
+                    {[0,150,300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                ) : <div>{formatAnalysis(analysis)}</div>}
+                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0' }}>Not financial advice.</p>
               </div>
-            ) : <div>{formatAnalysis(analysis)}</div>}
-            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0' }}>Not financial advice.</p>
+            )}
           </div>
         </div>
       </div>

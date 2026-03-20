@@ -186,7 +186,7 @@ function HoldingsManager({
             />
           </div>
           <div>
-            <p style={{ fontSize: '9px', color: 'var(--sand-500)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Cost/share (opt)</p>
+            <p style={{ fontSize: '9px', color: 'var(--sand-500)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: '600' }}>Total invested (opt)</p>
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: 'var(--sand-400)' }}>$</span>
               <input
@@ -204,7 +204,7 @@ function HoldingsManager({
         </div>
       ))}
       <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: '4px 0 0', lineHeight: '1.4' }}>
-        Enter shares owned. Cost/share is optional — used for gain/loss tracking.
+        Enter shares owned. Total invested is optional — used for gain/loss tracking.
       </p>
     </div>
   )

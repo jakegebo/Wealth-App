@@ -904,6 +904,7 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chips, setChips] = useState<string[]>([])
+  const [minimizedAI, setMinimizedAI] = useState(false)
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
   const income = financials.monthlyIncome || 0
@@ -1116,19 +1117,26 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
           )}
 
           {/* AI Analysis */}
-          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', marginBottom: '16px', overflow: 'hidden' }}>
+            <button
+              onClick={() => setMinimizedAI(m => !m)}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'inherit' }}>
+              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
               </div>
-              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>AI Analysis</p>
-            </div>
-            {loading ? (
-              <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
-                {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0, flex: 1, textAlign: 'left' }}>AI Analysis</p>
+              <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAI ? 'rotate(180deg)' : 'none' }}>▾</span>
+            </button>
+            {!minimizedAI && (
+              <div style={{ padding: '0 16px 14px' }}>
+                {loading ? (
+                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                ) : (
+                  <div>{formatText(aiAnalysis)}</div>
+                )}
               </div>
-            ) : (
-              <div>{formatText(aiAnalysis)}</div>
             )}
           </div>
 
@@ -1226,7 +1234,7 @@ function getSuggestedQuestions(type: 'assets' | 'debts' | 'savings', profile: an
   return []
 }
 
-function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWorth, totalAssets, totalLiabilities, availableToSave }: {
+function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWorth, totalAssets, totalLiabilities, availableToSave, liveQuotes }: {
   type: 'assets' | 'debts' | 'savings'
   analysis: string
   loading: boolean
@@ -1236,6 +1244,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   totalAssets: number
   totalLiabilities: number
   availableToSave: number
+  liveQuotes: Record<string, { price: number; change: number; changePercent: string }>
 }) {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const titles = { assets: 'Asset Breakdown', debts: 'Debt Overview', savings: 'Savings Power' }
@@ -1245,6 +1254,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chips, setChips] = useState<string[]>([])
+  const [minimizedAI, setMinimizedAI] = useState(false)
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
   const parseFollowUps = (text: string): string[] => {
@@ -1345,18 +1355,76 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
                 ))
               })()}
               <div style={{ marginTop: '16px', borderTop: '0.5px solid var(--sand-200)', paddingTop: '12px' }}>
-                {profile?.assets?.map((asset: any, i: number) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid var(--sand-200)' }}>
-                    <div>
-                      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 2px', color: 'var(--sand-900)' }}>{asset.name}</p>
-                      {asset.holdings && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{asset.holdings}</p>}
+                {profile?.assets?.map((asset: any, i: number) => {
+                  // Compute live value from positions if available
+                  const positions = asset.positions || []
+                  let liveValue: number | null = null
+                  let todayChange: number | null = null
+                  let hasAllQuotes = positions.length > 0
+                  for (const pos of positions) {
+                    const q = liveQuotes[pos.symbol]
+                    if (q && pos.shares > 0) {
+                      liveValue = (liveValue || 0) + pos.shares * q.price
+                      todayChange = (todayChange || 0) + pos.shares * q.change
+                    } else if (pos.shares > 0) {
+                      hasAllQuotes = false
+                    }
+                  }
+                  const displayValue = liveValue !== null ? liveValue : (asset.value || 0)
+                  const isLive = liveValue !== null && hasAllQuotes
+
+                  return (
+                    <div key={i} style={{ padding: '10px 0', borderBottom: '0.5px solid var(--sand-200)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1, minWidth: 0, paddingRight: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <p style={{ fontSize: '14px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>{asset.name}</p>
+                            {isLive && (
+                              <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.12)', border: '0.5px solid var(--success)', borderRadius: '6px', padding: '1px 5px', letterSpacing: '0.04em' }}>LIVE</span>
+                            )}
+                          </div>
+                          {asset.holdings && !positions.length && (
+                            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '1px 0 0' }}>{asset.holdings}</p>
+                          )}
+                          {isLive && positions.length > 0 && (
+                            <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>
+                              {positions.map((p: any) => p.symbol).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{fmt(displayValue)}</p>
+                          {isLive && todayChange !== null ? (
+                            <p style={{ fontSize: '11px', fontWeight: '600', margin: '1px 0 0', color: todayChange >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                              {todayChange >= 0 ? '+' : ''}{fmt(todayChange)} today
+                            </p>
+                          ) : (
+                            <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '1px 0 0' }}>{totalAssets > 0 ? ((displayValue / totalAssets) * 100).toFixed(1) : '0'}%</p>
+                          )}
+                        </div>
+                      </div>
+                      {/* Per-position breakdown when live */}
+                      {isLive && positions.length > 1 && (
+                        <div style={{ marginTop: '6px', paddingLeft: '0', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          {positions.map((pos: any, pi: number) => {
+                            const q = liveQuotes[pos.symbol]
+                            if (!q || !pos.shares) return null
+                            const posValue = pos.shares * q.price
+                            const posChange = pos.shares * q.change
+                            return (
+                              <div key={pi} style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '8px', borderLeft: '2px solid var(--sand-200)' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{pos.symbol} · {pos.shares} {asset.category === 'crypto' ? 'units' : 'sh'} @ ${q.price.toFixed(2)}</span>
+                                <span style={{ fontSize: '11px', fontWeight: '500', color: posChange >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                  {posChange >= 0 ? '+' : ''}{fmt(posChange)}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{fmt(asset.value)}</p>
-                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{totalAssets > 0 ? ((asset.value / totalAssets) * 100).toFixed(1) : '0'}%</p>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1398,19 +1466,26 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
           )}
 
           {/* AI Analysis */}
-          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--sand-200)', borderRadius: 'var(--radius-md)', marginBottom: '16px', overflow: 'hidden' }}>
+            <button
+              onClick={() => setMinimizedAI(m => !m)}
+              style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'inherit' }}>
+              <div style={{ width: '24px', height: '24px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <span style={{ color: 'var(--sand-50)', fontSize: '8px', fontWeight: '700' }}>AI</span>
               </div>
-              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>AI Analysis</p>
-            </div>
-            {loading ? (
-              <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
-                {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0, flex: 1, textAlign: 'left' }}>AI Analysis</p>
+              <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAI ? 'rotate(180deg)' : 'none' }}>▾</span>
+            </button>
+            {!minimizedAI && (
+              <div style={{ padding: '0 16px 14px' }}>
+                {loading ? (
+                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center', padding: '4px 0' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                ) : (
+                  <div>{formatText(analysis)}</div>
+                )}
               </div>
-            ) : (
-              <div>{formatText(analysis)}</div>
             )}
           </div>
 
@@ -1699,7 +1774,7 @@ function financialFingerprint(p: any): string {
 export default function Home() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
-  const { userId, userEmail, profileData: profile, analysis, chatRefs, hasProfile, loading: profileLoading, updateProfile } = useProfile()
+  const { userId, userEmail, profileData: profile, analysis, chatRefs, hasProfile, loading: profileLoading, liveQuotes, refreshLiveQuotes, updateProfile } = useProfile()
   const firstName = userEmail.split('@')[0] || 'there'
   const [analyzing, setAnalyzing] = useState(false)
   const [insightsRefreshing, setInsightsRefreshing] = useState(false)
@@ -1950,6 +2025,13 @@ export default function Home() {
           )}
         </div>
         <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={() => navigate('/onboarding')}
+            style={{ background: 'var(--sand-200)', border: 'none', width: '34px', height: '34px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-600)' }}
+            title="Update financials">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
           <button onClick={() => navigate('/settings')}
             style={{ background: 'var(--sand-200)', border: 'none', width: '34px', height: '34px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-600)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -2041,7 +2123,7 @@ export default function Home() {
       {/* Quick Stats */}
       {isVisible('stats') && (
         <div className="animate-fade stagger-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-          <div className="card" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => navigate('/plan')}>
+          <div className="card" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => navigate('/retirement')}>
             <p className="label" style={{ marginBottom: '4px' }}>Retire at</p>
             <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>
               {profile?.retirement_plan?.targetAge || '—'}
@@ -2095,7 +2177,7 @@ export default function Home() {
         <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <p className="label">Goals</p>
-            <button className="btn-ghost" onClick={() => navigate('/onboarding?step=3&from=settings')} style={{ fontSize: '11px', padding: '3px 8px' }}>Edit →</button>
+            <button className="btn-ghost" onClick={() => navigate('/onboarding?step=4')} style={{ fontSize: '11px', padding: '3px 8px' }}>Edit</button>
           </div>
           <div className="card" style={{ padding: '4px 0' }}>
             {profile.goals.map((goal: any, i: number) => {
@@ -2165,6 +2247,7 @@ export default function Home() {
           totalAssets={analysis.totalAssets}
           totalLiabilities={analysis.totalLiabilities}
           availableToSave={analysis.availableToSave}
+          liveQuotes={liveQuotes}
         />
       )}
 

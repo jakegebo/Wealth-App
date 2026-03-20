@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+interface LiveQuote {
+  price: number
+  change: number
+  changePercent: string
+}
+
 interface ProfileContextType {
   userId: string | null
   userEmail: string
@@ -13,6 +19,9 @@ interface ProfileContextType {
   goalAdvice: Record<string, string>
   hasProfile: boolean
   loading: boolean
+  liveQuotes: Record<string, LiveQuote>
+  liveQuotesLoading: boolean
+  refreshLiveQuotes: () => Promise<void>
   updateProfile: (updates: Record<string, any>) => Promise<void>
 }
 
@@ -28,6 +37,9 @@ const ProfileContext = createContext<ProfileContextType>({
   goalAdvice: {},
   hasProfile: false,
   loading: true,
+  liveQuotes: {},
+  liveQuotesLoading: false,
+  refreshLiveQuotes: async () => {},
   updateProfile: async () => {}
 })
 
@@ -43,6 +55,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [goalAdvice, setGoalAdvice] = useState<Record<string, string>>({})
   const [hasProfile, setHasProfile] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({})
+  const [liveQuotesLoading, setLiveQuotesLoading] = useState(false)
 
   useEffect(() => {
     load()
@@ -56,6 +70,29 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     })
     return () => subscription.unsubscribe()
   }, [])
+
+  const fetchLiveQuotes = async (profileDataArg: any) => {
+    const symbols: string[] = []
+    for (const asset of profileDataArg?.assets || []) {
+      for (const pos of asset.positions || []) {
+        if (pos.symbol && pos.shares > 0 && !symbols.includes(pos.symbol)) {
+          symbols.push(pos.symbol)
+        }
+      }
+    }
+    if (!symbols.length) return
+    setLiveQuotesLoading(true)
+    try {
+      const res = await fetch(`/api/stocks?symbols=${symbols.join(',')}`)
+      const data = await res.json()
+      const map: Record<string, LiveQuote> = {}
+      for (const q of data.quotes || []) {
+        map[q.symbol] = { price: q.price, change: q.change, changePercent: q.changePercent }
+      }
+      setLiveQuotes(map)
+    } catch { }
+    setLiveQuotesLoading(false)
+  }
 
   const load = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -72,9 +109,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setSavedIdeas(data.saved_income_ideas || [])
       setIncomeIdeas(data.income_ideas || [])
       setGoalAdvice(data.goal_advice || {})
+      fetchLiveQuotes(data.profile_data || null)
     }
     setLoading(false)
   }
+
+  const refreshLiveQuotes = async () => fetchLiveQuotes(profileData)
 
   const updateProfile = async (updates: Record<string, any>) => {
     // Optimistic local updates
@@ -91,7 +131,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ProfileContext.Provider value={{ userId, userEmail, profileData, analysis, chatRefs, watchlist, savedIdeas, incomeIdeas, goalAdvice, hasProfile, loading, updateProfile }}>
+    <ProfileContext.Provider value={{ userId, userEmail, profileData, analysis, chatRefs, watchlist, savedIdeas, incomeIdeas, goalAdvice, hasProfile, loading, liveQuotes, liveQuotesLoading, refreshLiveQuotes, updateProfile }}>
       {children}
     </ProfileContext.Provider>
   )
