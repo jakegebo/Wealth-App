@@ -720,48 +720,31 @@ function GrowthSection({
           )}
 
           {/* What to do next */}
-          <div className="card-muted" style={{ padding: '14px' }}>
-            <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Next Steps</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {earningCount === 0 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>1</div>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>Browse income ideas below and pick one to start this week. Mark it "In progress" to start tracking.</p>
-                </div>
-              )}
-              {earningCount > 0 && earningCount < 3 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--success)', color: '#fff', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>→</div>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
-                    You have {earningCount} income stream{earningCount > 1 ? 's' : ''}. Aim for 3+ diversified sources — this creates real financial resilience.
-                  </p>
-                </div>
-              )}
-              {earningCount >= 3 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--success)', color: '#fff', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</div>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
-                    {earningCount} income streams — strong diversification. Focus on scaling your highest-earning stream.
-                  </p>
-                </div>
-              )}
-              {availableToSave > 500 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--accent)', color: 'var(--sand-50)', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>→</div>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
-                    You have {fmt(availableToSave)}/mo surplus. Redirect it toward goals or investments to compound your growth.
-                  </p>
-                </div>
-              )}
-              {availableToSave <= 0 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--danger)', color: '#fff', fontSize: '11px', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</div>
-                  <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
-                    Expenses exceed income. Adding even one income stream will immediately improve your financial position.
-                  </p>
-                </div>
-              )}
-            </div>
+          <div style={{ padding: '12px 14px', background: 'var(--sand-100)', borderRadius: 'var(--radius-sm)', borderLeft: '2px solid var(--sand-300)' }}>
+            <p style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-500)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Next step</p>
+            {earningCount === 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>Browse income ideas below and pick one to start this week. Mark it "In progress" to start tracking.</p>
+            )}
+            {earningCount > 0 && earningCount < 3 && (
+              <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.55' }}>
+                {earningCount} stream{earningCount > 1 ? 's' : ''} active. Aim for 3+ diversified sources for real financial resilience.
+              </p>
+            )}
+            {earningCount >= 3 && (
+              <p style={{ fontSize: '12px', color: 'var(--success)', margin: 0, lineHeight: '1.55' }}>
+                {earningCount} streams — strong diversification. Focus on scaling your highest-earning one.
+              </p>
+            )}
+            {availableToSave > 500 && (
+              <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: '6px 0 0', lineHeight: '1.55' }}>
+                {fmt(availableToSave)}/mo surplus — redirect it toward goals or investments to compound growth.
+              </p>
+            )}
+            {availableToSave <= 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--danger)', margin: '6px 0 0', lineHeight: '1.55' }}>
+                Expenses exceed income — one new stream would immediately improve your position.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1494,9 +1477,6 @@ Please give me a thorough breakdown:
                   })}
                 </div>
               </div>
-              <div style={{ flexShrink: 0, padding: '7px 12px', borderLeft: '0.5px solid var(--sand-200)', background: 'var(--sand-200)', display: 'flex', alignItems: 'center' }}>
-                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>TOP MOVERS</p>
-              </div>
             </div>
           </div>
         )
@@ -1681,48 +1661,54 @@ Please give me a thorough breakdown:
       {/* Goal-linked Investment Suggestions */}
       {goalSuggestions.length > 0 && isVisible('watchlist') && (
         <div className="animate-fade stagger-1" style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <p className="label">Goal-Aligned Investments</p>
-            <button className="btn-ghost" onClick={() => setShowGoals(!showGoals)} style={{ fontSize: '11px', padding: '3px 8px' }}>
-              {showGoals ? 'Hide' : 'Show'}
+          {!showGoals ? (
+            <button
+              onClick={() => setShowGoals(true)}
+              style={{ background: 'none', border: 'none', padding: '2px 0 8px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--sand-500)', fontSize: '12px' }}>
+              <span style={{ fontSize: '10px' }}>▸</span> Goal-aligned investment ideas
             </button>
-          </div>
-          {showGoals && (
-            <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {goalSuggestions.map((gs, i) => (
-                <div key={i} className="card" style={{ padding: '14px', cursor: 'pointer' }} onClick={() => setExpandedGoal(expandedGoal === gs.goal ? null : gs.goal)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{gs.goal}</p>
-                      {gs.target && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Target: ${gs.target.toLocaleString()}</p>}
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <p className="label">Goal-Aligned Investments</p>
+                <button className="btn-ghost" onClick={() => setShowGoals(false)} style={{ fontSize: '11px', padding: '3px 8px' }}>Hide</button>
+              </div>
+              <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {goalSuggestions.map((gs, i) => (
+                  <div key={i} className="card" style={{ padding: '14px', cursor: 'pointer' }} onClick={() => setExpandedGoal(expandedGoal === gs.goal ? null : gs.goal)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{gs.goal}</p>
+                        {gs.target && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Target: ${gs.target.toLocaleString()}</p>}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {gs.suggestions.map(s => (
+                          <span key={s.ticker} style={{ fontSize: '10px', fontWeight: '700', background: 'var(--accent-light)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', padding: '2px 7px', borderRadius: '20px' }}>{s.ticker}</span>
+                        ))}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {gs.suggestions.map(s => (
-                        <span key={s.ticker} style={{ fontSize: '10px', fontWeight: '700', background: 'var(--accent-light)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', padding: '2px 7px', borderRadius: '20px' }}>{s.ticker}</span>
-                      ))}
-                    </div>
-                  </div>
-                  {expandedGoal === gs.goal && (
-                    <div className="animate-fade" style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {gs.suggestions.map(s => (
-                        <div key={s.ticker} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)' }}>{s.ticker}</span>
-                            <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{s.reason}</span>
+                    {expandedGoal === gs.goal && (
+                      <div className="animate-fade" style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {gs.suggestions.map(s => (
+                          <div key={s.ticker} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)' }}>{s.ticker}</span>
+                              <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{s.reason}</span>
+                            </div>
+                            <button
+                              onClick={e => { e.stopPropagation(); addToWatchlist(s.ticker) }}
+                              style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600' }}>
+                              + Watch
+                            </button>
                           </div>
-                          <button
-                            onClick={e => { e.stopPropagation(); addToWatchlist(s.ticker) }}
-                            style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600' }}>
-                            + Watch
-                          </button>
-                        </div>
-                      ))}
-                      <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0' }}>Not financial advice.</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                        ))}
+                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0' }}>Not financial advice.</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -1846,10 +1832,6 @@ Please give me a thorough breakdown:
 
       {/* News */}
       <div className="animate-fade stagger-3" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <p className="label">News</p>
-        </div>
-
         {/* Section tabs */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '10px' }}>
           {NEWS_SECTIONS.map(s => (

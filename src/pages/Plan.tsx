@@ -1063,10 +1063,10 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
                             <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
                           </div>
                           <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-600)', margin: 0, flex: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>AI Analysis</p>
-                          <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAdvice[goal.name] ? 'none' : 'rotate(180deg)' }}>▾</span>
+                          <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAdvice[goal.name] ? 'rotate(180deg)' : 'none' }}>▾</span>
                         </div>
                         {/* Collapsible body */}
-                        {!minimizedAdvice[goal.name] && (
+                        {minimizedAdvice[goal.name] && (
                           <div style={{ padding: '0 12px 10px' }}>
                             <div>{formatAdvice(advice)}</div>
                             <button
@@ -1198,25 +1198,23 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             {pendingActions.slice(0, 5).map((action: any, i: number) => (
-              <div key={i} className="card" style={{ padding: '14px' }}>
+              <div key={i} style={{ borderBottom: i < Math.min(pendingActions.length, 5) - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
                 <button
                   onClick={() => setExpandedAction(expandedAction === i ? null : i)}
-                  style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>{i + 1}</span>
-                    </div>
+                  style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-400)', minWidth: '16px' }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 2px', color: 'var(--sand-900)' }}>{action.title}</p>
-                      <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>{action.timeframe}</p>
+                      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 1px', color: 'var(--sand-900)' }}>{action.title}</p>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>{action.timeframe}</p>
                     </div>
-                    <span style={{ fontSize: '12px', color: 'var(--sand-400)' }}>{expandedAction === i ? '▲' : '▼'}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>{expandedAction === i ? '▲' : '▼'}</span>
                   </div>
                 </button>
                 {expandedAction === i && (
-                  <div className="animate-fade" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '0.5px solid var(--sand-200)' }}>
+                  <div className="animate-fade" style={{ padding: '0 16px 14px', paddingLeft: '40px' }}>
                     <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: '0 0 12px', lineHeight: '1.5' }}>{action.description}</p>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
@@ -1263,7 +1261,6 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
       {/* Debt */}
       {isVisible('debt') && (profile?.debts?.length > 0) && (
         <div className="animate-fade stagger-4" style={{ marginBottom: '24px' }}>
-          <p className="label" style={{ marginBottom: '10px' }}>Debt Payoff</p>
           <DebtOptimizerCard
             profileDebts={profile.debts}
             availableToSave={analysis.availableToSave}
