@@ -5,6 +5,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { ProfileProvider } from './contexts/ProfileContext'
 import BottomNav from './components/BottomNav'
 import FAB from './components/FAB'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import Plan from './pages/Plan'
@@ -61,6 +62,7 @@ export default function App() {
       <BrowserRouter>
         <Layout user={user}>
           <Routes>
+            <Route path="/" element={!user ? <Landing /> : <Navigate to="/dashboard" />} />
             <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
             <Route path="/onboarding" element={user ? <Onboarding /> : <Navigate to="/login" />} />
             <Route path="/dashboard" element={user ? <Home /> : <Navigate to="/login" />} />
@@ -72,7 +74,7 @@ export default function App() {
             <Route path="/news" element={user ? <News /> : <Navigate to="/login" />} />
             <Route path="/money" element={user ? <Money /> : <Navigate to="/login" />} />
             <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login" />} />
-            <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
+            <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} />} />
           </Routes>
         </Layout>
       </BrowserRouter>

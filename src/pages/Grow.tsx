@@ -280,13 +280,16 @@ function GrowthSection({
 
   return (
     <div className="animate-fade" style={{ marginBottom: '24px' }}>
-      <p className="label" style={{ marginBottom: '12px' }}>Your Growth</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '12px' }}>
+        <p className="label" style={{ margin: 0 }}>Investments</p>
+        <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>live prices</span>
+      </div>
 
       {/* Tab pills */}
       <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
         {([
-          { key: 'portfolio', label: 'Portfolio' },
-          { key: 'income', label: 'Income' },
+          { key: 'portfolio', label: 'Holdings' },
+          { key: 'income', label: 'Income streams' },
         ] as const).map(({ key, label }) => (
           <button
             key={key}
@@ -309,9 +312,9 @@ function GrowthSection({
         if (allPositions.length === 0) {
           return (
             <div style={{ textAlign: 'center', padding: '32px 16px', background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)' }}>
-              <p style={{ fontSize: '15px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>No holdings entered yet</p>
+              <p style={{ fontSize: '15px', color: 'var(--sand-700)', margin: '0 0 6px', fontWeight: '500' }}>No positions tracked yet</p>
               <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: '0 0 16px', lineHeight: '1.5' }}>
-                Go to your profile → Assets and add your exact shares for retirement, brokerage, or crypto accounts to see live market tracking here.
+                Add individual shares to your assets (e.g. 14 shares of AAPL) to see live prices, daily moves, and gain/loss here — separate from your net worth snapshot on the dashboard.
               </p>
               <button className="btn-primary" onClick={() => navigate('/onboarding?step=2')} style={{ fontSize: '13px', padding: '9px 22px' }}>
                 Add Holdings
@@ -1443,7 +1446,7 @@ Please give me a thorough breakdown:
       {/* Header */}
       <div style={{ padding: '52px 0 12px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-0.5px' }}>Grow</h1>
-        <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Income ideas, markets & news</p>
+        <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Live holdings, income ideas & markets</p>
       </div>
 
       {/* Global Search Bar */}
