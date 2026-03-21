@@ -307,6 +307,7 @@ const HEALTH_ITEM_META: Record<string, { icon: string; target: string; tip: stri
 
 function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
   const { score, label, color, breakdown } = computeHealthScore(analysis, profile)
+  const [detailsOpen, setDetailsOpen] = useState(true)
 
   // Find weakest item (lowest pct of max)
   const weakest = [...breakdown].sort((a, b) => (a.score / a.max) - (b.score / b.max))[0]
@@ -318,7 +319,7 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
   return (
     <div className="card animate-fade" style={{ marginBottom: '12px' }}>
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: detailsOpen ? '20px' : '0' }}>
         {/* Score ring */}
         <div style={{ flexShrink: 0, position: 'relative' }}>
           <svg width="80" height="80" viewBox="0 0 80 80">
@@ -340,16 +341,32 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
         <div style={{ flex: 1 }}>
           <p className="label" style={{ marginBottom: '4px' }}>Financial Health</p>
           <p style={{ fontSize: '22px', fontWeight: '700', color, margin: '0 0 6px', letterSpacing: '-0.5px' }}>{label}</p>
-          <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>
-            {score >= 80 ? 'You\'re in great shape — keep the momentum.' :
-             score >= 65 ? 'Solid foundation with a few areas to sharpen.' :
-             score >= 45 ? 'Making progress, but a couple areas need attention.' :
-             'Let\'s work on the basics first — you\'ve got this.'}
-          </p>
+          {detailsOpen && (
+            <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>
+              {score >= 80 ? 'You\'re in great shape — keep the momentum.' :
+               score >= 65 ? 'Solid foundation with a few areas to sharpen.' :
+               score >= 45 ? 'Making progress, but a couple areas need attention.' :
+               'Let\'s work on the basics first — you\'ve got this.'}
+            </p>
+          )}
         </div>
+        <button
+          onClick={() => setDetailsOpen(o => !o)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--sand-400)', padding: '4px', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          aria-label={detailsOpen ? 'Minimize details' : 'Expand details'}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transition: 'transform 0.2s', transform: detailsOpen ? 'rotate(0deg)' : 'rotate(180deg)' }}>
+            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
 
       {/* Breakdown grid */}
+      {detailsOpen && (<>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
         {breakdown.map((item, i) => {
           const pct = item.score / item.max
@@ -394,6 +411,7 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
           </p>
         </div>
       </div>
+      </>)}
     </div>
   )
 }
@@ -1788,6 +1806,104 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   )
 }
 
+const ASSET_CATEGORIES = [
+  { value: 'retirement', label: 'Retirement account' },
+  { value: 'brokerage', label: 'Brokerage / taxable investment' },
+  { value: 'savings', label: 'Savings / cash' },
+  { value: 'real_estate', label: 'Real estate' },
+  { value: 'crypto', label: 'Crypto' },
+  { value: 'business', label: 'Business equity' },
+  { value: 'other', label: 'Other' },
+]
+
+function AddAssetSheet({ onClose, onSave }: {
+  onClose: () => void
+  onSave: (asset: { name: string; category: string; value: number }) => Promise<void>
+}) {
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('savings')
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    const numVal = parseFloat(value.replace(/,/g, ''))
+    if (!name.trim() || isNaN(numVal) || numVal < 0) return
+    setSaving(true)
+    await onSave({ name: name.trim(), category, value: numVal })
+    setSaving(false)
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', fontSize: '15px',
+    border: '1px solid var(--sand-300)', borderRadius: 'var(--radius-sm)',
+    background: 'var(--sand-50)', color: 'var(--sand-900)', fontFamily: 'inherit',
+    outline: 'none', boxSizing: 'border-box',
+  }
+
+  return (
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '12px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Add Asset</h2>
+          <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
+        </div>
+
+        {/* Form */}
+        <div style={{ padding: '20px 20px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', display: 'block', marginBottom: '6px' }}>Name</label>
+            <input
+              style={inputStyle}
+              placeholder="e.g. Vanguard 401(k), Home equity"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', display: 'block', marginBottom: '6px' }}>Type</label>
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={category} onChange={e => setCategory(e.target.value)}>
+              {ASSET_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-600)', display: 'block', marginBottom: '6px' }}>Current value</label>
+            <input
+              style={inputStyle}
+              placeholder="0"
+              inputMode="decimal"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+            />
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || !value}
+            style={{
+              background: saving || !name.trim() || !value ? 'var(--sand-300)' : 'var(--accent)',
+              color: 'var(--sand-50)', border: 'none', borderRadius: 'var(--radius-sm)',
+              padding: '12px', fontSize: '15px', fontWeight: '600', cursor: saving || !name.trim() || !value ? 'default' : 'pointer',
+              fontFamily: 'inherit', marginTop: '4px',
+            }}
+          >
+            {saving ? 'Saving…' : 'Add Asset'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
   action: { priority: number; title: string; description: string; impact: string; timeframe: string }
   analysis: string
@@ -2003,6 +2119,8 @@ export default function Home() {
   const [editingGoalIdx, setEditingGoalIdx] = useState<number | null>(null)
   const [goalInputVal, setGoalInputVal] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
+  const [showAddAsset, setShowAddAsset] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'portfolio' | 'cashflow' | 'insights'>('overview')
   const [focusPlan, setFocusPlan] = useState<{ analysis: string; loading: boolean } | null>(null)
   const [nwHistory, setNwHistory] = useState<Array<{ net_worth: number; total_assets: number; total_liabilities: number; recorded_at: string; snapshot?: { assets: any[]; debts: any[]; goals: any[] } }>>([])
   const prevFingerprintRef = useRef<string>('')
@@ -2228,6 +2346,14 @@ export default function Home() {
     setEditingGoalIdx(null)
   }
 
+  const saveNewAsset = async (asset: { name: string; category: string; value: number }) => {
+    if (!profile) return
+    const updatedProfile = { ...profile, assets: [...(profile.assets || []), asset] }
+    await updateProfile({ profile_data: updatedProfile })
+    setShowAddAsset(false)
+    runAnalysis(updatedProfile, true)
+  }
+
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
@@ -2261,19 +2387,28 @@ export default function Home() {
 
   const topAction = analysis.nextActions?.[0]
 
+  const HOME_TABS = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'portfolio' as const, label: 'Portfolio' },
+    { id: 'cashflow' as const, label: 'Cash Flow' },
+    { id: 'insights' as const, label: 'Insights' },
+  ]
+
   return (
-    <div style={{ maxWidth: '680px', margin: '0 auto', padding: '0 16px 100px' }}>
+    <div style={{ maxWidth: '680px', margin: '0 auto', padding: '0 0 100px' }}>
 
       {/* Header */}
-      <div style={{ padding: '52px 0 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ padding: '52px 16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 2px' }}>{greeting()}, {firstName}</p>
-          <h1 style={{ fontSize: '20px', fontWeight: '500', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.3px' }}>Here's your overview</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: '500', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.3px' }}>
+            {activeTab === 'overview' ? 'Overview' : activeTab === 'portfolio' ? 'Portfolio' : activeTab === 'cashflow' ? 'Cash Flow' : 'Insights'}
+          </h1>
           {lastAnalyzedAt && (
             <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '2px 0 0' }}>Updated {timeAgo(lastAnalyzedAt)}</p>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '6px', paddingTop: '4px' }}>
           <button onClick={() => navigate('/onboarding')}
             style={{ background: 'var(--sand-200)', border: 'none', width: '34px', height: '34px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-600)' }}
             title="Update financials">
@@ -2296,6 +2431,36 @@ export default function Home() {
           </button>
         </div>
       </div>
+
+      {/* Tab bar */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--sand-100)', paddingTop: '16px', paddingBottom: '2px' }}>
+        <div style={{ display: 'flex', gap: '0', padding: '0 16px', borderBottom: '0.5px solid var(--sand-200)' }}>
+          {HOME_TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: '13px', fontWeight: activeTab === tab.id ? '600' : '400',
+                color: activeTab === tab.id ? 'var(--sand-900)' : 'var(--sand-400)',
+                padding: '8px 14px 10px',
+                borderBottom: activeTab === tab.id ? '2px solid var(--sand-900)' : '2px solid transparent',
+                marginBottom: '-0.5px',
+                transition: 'color 0.15s, border-color 0.15s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ padding: '16px 16px 0' }}>
+
+      {/* ── OVERVIEW TAB ── */}
+      {activeTab === 'overview' && (<>
 
       {/* Net Worth Hero */}
       <div className="card animate-fade" style={{ marginBottom: '12px', padding: '24px' }}>
@@ -2343,6 +2508,58 @@ export default function Home() {
       {isVisible('health') && (
         <HealthScoreCard analysis={analysis} profile={profile} />
       )}
+
+      {/* Today's Focus */}
+      {isVisible('focus') && topAction && (
+        <div className="animate-fade stagger-2" style={{ marginBottom: '12px', background: 'var(--accent)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
+          <p style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', textTransform: 'uppercase' }}>
+            This week's focus
+          </p>
+          <p style={{ fontSize: '16px', color: 'rgba(255,255,255,0.95)', lineHeight: '1.5', margin: '0 0 6px', fontWeight: '500' }}>
+            {topAction.title}
+          </p>
+          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.5', margin: '0 0 16px' }}>
+            {topAction.description}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.timeframe}</span>
+            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.impact} impact</span>
+          </div>
+          <button
+            onClick={() => openFocusPlan(topAction)}
+            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
+            Attack this →
+          </button>
+        </div>
+      )}
+
+      </>)}
+
+      {/* ── PORTFOLIO TAB ── */}
+      {activeTab === 'portfolio' && (<>
+
+      {/* Net Worth summary */}
+      <div className="card animate-fade" style={{ marginBottom: '12px', padding: '16px 18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <p className="label" style={{ marginBottom: '2px' }}>Net Worth</p>
+            <p style={{ fontSize: '28px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-1px', lineHeight: 1 }}>
+              <CountUp value={analysis.netWorth} />
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 1px' }}>Assets</p>
+              <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{fmt(analysis.totalAssets)}</p>
+            </div>
+            <div style={{ width: '0.5px', background: 'var(--sand-200)' }} />
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 1px' }}>Debts</p>
+              <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--danger)', margin: 0 }}>{fmt(analysis.totalLiabilities)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Assets breakdown */}
       {(() => {
@@ -2427,7 +2644,18 @@ export default function Home() {
 
         return (
           <div className="card animate-fade" style={{ marginBottom: '12px', padding: '14px' }}>
-            <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-600)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Assets</p>
+              <button
+                onClick={() => setShowAddAsset(true)}
+                style={{ background: 'var(--sand-200)', border: 'none', borderRadius: '50%', width: '26px', height: '26px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sand-600)', flexShrink: 0 }}
+                title="Add asset"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                  <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
               {grouped.map((group, gi) => (
                 <div key={gi}>
@@ -2582,34 +2810,10 @@ export default function Home() {
         )
       })()}
 
-      {/* Today's Focus */}
-      {isVisible('focus') && topAction && (
-        <div className="animate-fade stagger-2" style={{ marginBottom: '12px', background: 'var(--accent)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
-          <p style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', textTransform: 'uppercase' }}>
-            This week's focus
-          </p>
-          <p style={{ fontSize: '16px', color: 'rgba(255,255,255,0.95)', lineHeight: '1.5', margin: '0 0 6px', fontWeight: '500' }}>
-            {topAction.title}
-          </p>
-          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', lineHeight: '1.5', margin: '0 0 16px' }}>
-            {topAction.description}
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.timeframe}</span>
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.impact} impact</span>
-          </div>
-          <button
-            onClick={() => openFocusPlan(topAction)}
-            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
-            Attack this →
-          </button>
-        </div>
-      )}
+      </>)}
 
-      {/* Key Insights */}
-      {isVisible('insights') && (
-        <InsightsStrip analysis={analysis} profile={profile} refreshing={insightsRefreshing} />
-      )}
+      {/* ── CASH FLOW TAB ── */}
+      {activeTab === 'cashflow' && (<>
 
       {/* Quick Stats */}
       {isVisible('stats') && (
@@ -2659,9 +2863,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* Market Recap */}
-      <MarketRecap />
 
       {/* Goals */}
       {isVisible('goals') && (profile?.goals?.length || 0) > 0 && (
@@ -2727,9 +2928,33 @@ export default function Home() {
         </div>
       )}
 
+      </>)}
+
+      {/* ── INSIGHTS TAB ── */}
+      {activeTab === 'insights' && (<>
+
+      {/* Key Insights */}
+      {isVisible('insights') && (
+        <InsightsStrip analysis={analysis} profile={profile} refreshing={insightsRefreshing} />
+      )}
+
+      {/* Market Recap */}
+      <MarketRecap />
+
       {/* Achievements / Trophy collection */}
       {userId && (
         <TrophySection userId={userId} goals={profile?.goals || []} />
+      )}
+
+      </>)}
+
+      </div>{/* end tab content */}
+
+      {showAddAsset && (
+        <AddAssetSheet
+          onClose={() => setShowAddAsset(false)}
+          onSave={saveNewAsset}
+        />
       )}
 
       {miniDash && (
