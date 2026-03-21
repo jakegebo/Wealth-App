@@ -1029,6 +1029,7 @@ export default function Grow() {
 
   const [ideas, setIdeas] = useState<any[]>([])
   const [loadingIdeas, setLoadingIdeas] = useState(false)
+  const [activeGrowTab, setActiveGrowTab] = useState<'holdings' | 'ideas' | 'markets'>('holdings')
   const [articles, setArticles] = useState<Article[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
   const [activeSection, setActiveSection] = useState('portfolio')
@@ -1408,8 +1409,7 @@ Please give me a thorough breakdown:
 
       {/* Header */}
       <div style={{ padding: '52px 0 12px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-0.5px' }}>Grow</h1>
-        <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Live holdings, income ideas & markets</p>
+        <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0', letterSpacing: '-0.5px' }}>Grow</h1>
       </div>
 
       {/* Global Search Bar */}
@@ -1484,6 +1484,33 @@ Please give me a thorough breakdown:
           </div>
         )
       })()}
+
+      {/* Tab bar */}
+      <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '12px', padding: '3px', marginBottom: '20px' }}>
+        {([
+          { id: 'holdings' as const, label: 'Holdings' },
+          { id: 'ideas' as const, label: 'Ideas' },
+          { id: 'markets' as const, label: 'Markets' },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveGrowTab(t.id)}
+            style={{
+              flex: 1, padding: '9px 6px', border: 'none', borderRadius: '9px',
+              background: activeGrowTab === t.id ? 'var(--sand-50)' : 'transparent',
+              color: activeGrowTab === t.id ? 'var(--sand-900)' : 'var(--sand-600)',
+              fontSize: '13px', fontWeight: activeGrowTab === t.id ? '600' : '400',
+              cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+              boxShadow: activeGrowTab === t.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── HOLDINGS TAB ── */}
+      {activeGrowTab === 'holdings' && (
+      <div className="animate-fade">
 
       {/* Growth Section */}
       <GrowthSection
@@ -1716,6 +1743,13 @@ Please give me a thorough breakdown:
         </div>
       )}
 
+      </div>
+      )} {/* end holdings tab */}
+
+      {/* ── IDEAS TAB ── */}
+      {activeGrowTab === 'ideas' && (
+      <div className="animate-fade">
+
       {/* Income Ideas */}
       {isVisible('income') && (
         <div className="animate-fade stagger-2" style={{ marginBottom: '24px' }}>
@@ -1833,8 +1867,15 @@ Please give me a thorough breakdown:
         </div>
       )}
 
+      </div>
+      )} {/* end ideas tab */}
+
+      {/* ── MARKETS TAB ── */}
+      {activeGrowTab === 'markets' && (
+      <div className="animate-fade">
+
       {/* News */}
-      <div className="animate-fade stagger-3" style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: '24px' }}>
         {/* Section tabs */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '10px' }}>
           {NEWS_SECTIONS.map(s => (
@@ -1907,6 +1948,9 @@ Please give me a thorough breakdown:
           </div>
         ) : null}
       </div>
+
+      </div>
+      )} {/* end markets tab */}
 
       {/* Stock detail sheet */}
       {selectedStock && (
