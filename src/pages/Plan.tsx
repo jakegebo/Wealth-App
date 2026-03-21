@@ -160,7 +160,7 @@ function UpdateModal({ goal, onClose, onSave }: {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.3)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div className="animate-scale" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', padding: '24px', width: '100%', maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
         <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px', margin: '0 auto 20px' }} />
         <h3 style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 4px', color: 'var(--sand-900)' }}>Update progress</h3>
@@ -296,7 +296,7 @@ function CashFlowCard({ income, expenses, availableToSave, savingsRate }: {
             <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>{fmt(expenses)}</span>
           </div>
           <div style={{ height: '8px', background: 'var(--sand-200)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${expPct}%`, background: 'var(--danger)', borderRadius: '4px', transition: 'width 0.8s ease' }} />
+            <div style={{ height: '100%', width: `${expPct}%`, background: 'var(--danger)', borderRadius: '4px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
           </div>
         </div>
 
@@ -310,7 +310,7 @@ function CashFlowCard({ income, expenses, availableToSave, savingsRate }: {
             <span style={{ fontSize: '13px', fontWeight: '700', color: availableToSave >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmt(availableToSave)}</span>
           </div>
           <div style={{ height: '8px', background: 'var(--sand-200)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${savePct}%`, background: availableToSave >= 0 ? 'var(--accent)' : 'var(--danger)', borderRadius: '4px', transition: 'width 0.8s ease' }} />
+            <div style={{ height: '100%', width: `${savePct}%`, background: availableToSave >= 0 ? 'var(--accent)' : 'var(--danger)', borderRadius: '4px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
           </div>
         </div>
       </div>
@@ -333,11 +333,15 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
 }) {
   const [strategy, setStrategy] = useState<'minimum' | 'avalanche' | 'snowball'>('avalanche')
   const [extraPayment, setExtraPayment] = useState(100)
+  const [activePlan, setActivePlan] = useState<'avalanche' | 'snowball' | 'minimum' | null>(() => {
+    return (localStorage.getItem('debt_active_plan') as any) || null
+  })
+  const [changingPlan, setChangingPlan] = useState(false)
+
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (!profileDebts.length) return null
 
-  // Normalize to internal format — use actual minimum_payment, fallback to 2% of balance
   const debts = profileDebts.map(d => ({
     name: d.name,
     balance: d.balance || 0,
@@ -348,44 +352,49 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0)
   const totalMinimums = debts.reduce((s, d) => s + d.minPayment, 0)
   const totalMonthlyInterest = debts.reduce((s, d) => s + d.balance * (d.interestRate / 100 / 12), 0)
-
-  // Slider max = surplus after minimums are already accounted for, or raw surplus
   const maxExtra = Math.max(200, Math.round(availableToSave))
 
-  // Sort order per strategy
-  const sortedDebts = strategy === 'avalanche'
+  const avaResult  = simulatePayoff(debts, extraPayment, 'avalanche')
+  const snowResult = simulatePayoff(debts, extraPayment, 'snowball')
+  const minResult  = simulatePayoff(debts, 0, 'minimum')
+
+  // Recommendation logic
+  const highestRateDebt = [...debts].sort((a, b) => b.interestRate - a.interestRate)[0]
+  const smallDebtCount = debts.filter(d => d.balance < 3500).length
+  const interestGap = snowResult.totalInterest - avaResult.totalInterest // positive = avalanche cheaper
+  const recommended: 'avalanche' | 'snowball' = (() => {
+    if (debts.length === 1) return 'avalanche'
+    if (interestGap < 300 && smallDebtCount >= 2) return 'snowball'
+    return 'avalanche'
+  })()
+
+  const recommendReason = recommended === 'avalanche'
+    ? `Your ${highestRateDebt.name} at ${highestRateDebt.interestRate}% APR costs ${fmt(highestRateDebt.balance * highestRateDebt.interestRate / 100 / 12)}/mo in interest alone. Hit it hardest first — Avalanche saves you ${fmt(interestGap)} more than Snowball.`
+    : `You have ${smallDebtCount} debts under $3,500. Snowball knocks them out fast, giving you real wins early — and costs only ${fmt(-interestGap)} more in interest than Avalanche. Worth it.`
+
+  const displayStrategy = activePlan && !changingPlan ? activePlan : strategy
+
+  const sortedDebts = displayStrategy === 'avalanche'
     ? [...debts].sort((a, b) => b.interestRate - a.interestRate)
-    : strategy === 'snowball'
+    : displayStrategy === 'snowball'
     ? [...debts].sort((a, b) => a.balance - b.balance)
     : [...debts]
 
-  // Run simulations (input debts in original order — simulation sorts internally by strategy)
-  const avaResult   = simulatePayoff(debts, extraPayment, 'avalanche')
-  const snowResult  = simulatePayoff(debts, extraPayment, 'snowball')
-  const minResult   = simulatePayoff(debts, 0, 'minimum')
-  const curResult   = strategy === 'avalanche' ? avaResult : strategy === 'snowball' ? snowResult : minResult
-
+  const curResult = displayStrategy === 'avalanche' ? avaResult : displayStrategy === 'snowball' ? snowResult : minResult
   const interestSaved = minResult.totalInterest - curResult.totalInterest
-  const monthsSaved   = minResult.months - curResult.months
+  const monthsSaved = minResult.months - curResult.months
 
-  // Build sorted payoff-month lookup — payoffMonth[i] is indexed to original debts[]
-  // Map sorted index → original debt → its payoffMonth
   const payoffByName = Object.fromEntries(debts.map((d, i) => [d.name, curResult.payoffMonth[i] || 0]))
   const interestByName = Object.fromEntries(debts.map((d, i) => [d.name, curResult.firstMonthInterest[i] || 0]))
 
-  // This-month payment breakdown per debt
-  const thisMonth = (() => {
-    // Priority debt (index 0 in sortedDebts) gets min + extra; others get their minimum
-    const focusDebt = sortedDebts[0]
-    return sortedDebts.map((d, i) => {
-      const monthlyInterest = interestByName[d.name] || 0
-      const payment = i === 0 && strategy !== 'minimum'
-        ? Math.min(d.balance + monthlyInterest, d.minPayment + extraPayment)
-        : d.minPayment
-      const principal = Math.max(0, payment - monthlyInterest)
-      return { payment, monthlyInterest, principal }
-    })
-  })()
+  const thisMonth = sortedDebts.map((d, i) => {
+    const monthlyInterest = interestByName[d.name] || 0
+    const payment = i === 0 && displayStrategy !== 'minimum'
+      ? Math.min(d.balance + monthlyInterest, d.minPayment + extraPayment)
+      : d.minPayment
+    const principal = Math.max(0, payment - monthlyInterest)
+    return { payment, monthlyInterest, principal }
+  })
 
   const formatMonths = (m: number) => {
     if (m >= 600) return '50+ yrs'
@@ -398,228 +407,356 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
 
   const STRATEGY_INFO = {
     avalanche: {
-      label: 'Avalanche',
-      tagline: 'Saves the most money',
-      detail: 'Target highest interest rate first. Every extra dollar eliminates the most expensive debt. When paid off, roll that payment into the next highest rate.',
-      color: 'var(--accent)',
-      accent: 'rgba(122,158,110,0.1)',
-      border: 'rgba(122,158,110,0.25)',
+      label: 'Avalanche', tagline: 'Saves the most money', emoji: '🧊',
+      detail: 'Target highest interest rate first. Every extra dollar eliminates the most expensive debt. Roll each freed payment into the next.',
+      color: 'var(--accent)', accent: 'rgba(122,158,110,0.1)', border: 'rgba(122,158,110,0.25)',
+      focusLabel: 'ATTACK FIRST', focusColor: 'var(--accent)',
     },
     snowball: {
-      label: 'Snowball',
-      tagline: 'Builds fastest momentum',
-      detail: 'Target smallest balance first. Pay off individual debts quicker for psychological wins. Roll each cleared payment into the next smallest.',
-      color: '#6a8aae',
-      accent: 'rgba(106,138,174,0.1)',
-      border: 'rgba(106,138,174,0.25)',
+      label: 'Snowball', tagline: 'Builds fastest momentum', emoji: '⛄',
+      detail: 'Target smallest balance first. Clear debts quickly for psychological wins. Roll each freed payment into the next smallest.',
+      color: '#6a8aae', accent: 'rgba(106,138,174,0.1)', border: 'rgba(106,138,174,0.25)',
+      focusLabel: 'FIRST WIN', focusColor: '#6a8aae',
     },
     minimum: {
-      label: 'Minimum only',
-      tagline: 'Costs the most',
+      label: 'Minimum only', tagline: 'Costs the most', emoji: '⚠️',
       detail: 'Pay only required minimums. Longest payoff timeline, maximum interest paid to lenders.',
-      color: 'var(--danger)',
-      accent: 'rgba(192,57,43,0.06)',
-      border: 'rgba(192,57,43,0.18)',
+      color: 'var(--danger)', accent: 'rgba(192,57,43,0.06)', border: 'rgba(192,57,43,0.18)',
+      focusLabel: '', focusColor: 'var(--danger)',
     },
   }
 
-  const info = STRATEGY_INFO[strategy]
+  const selectPlan = (plan: 'avalanche' | 'snowball' | 'minimum') => {
+    setActivePlan(plan)
+    setStrategy(plan)
+    setChangingPlan(false)
+    localStorage.setItem('debt_active_plan', plan)
+  }
+
+  const isSelectionMode = !activePlan || changingPlan
+  const planInfo = STRATEGY_INFO[displayStrategy]
+  const isRecommendedActive = activePlan === recommended
 
   return (
-    <div className="card" style={{ marginBottom: '24px' }}>
+    <div className="card animate-fade" style={{ marginBottom: '24px' }}>
 
-      {/* Header summary */}
-      <div style={{ marginBottom: '16px' }}>
-        <p className="label" style={{ marginBottom: '10px' }}>Debt Payoff Optimizer</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-          {[
-            { label: 'Total debt', value: fmt(totalDebt), sub: `${debts.length} debt${debts.length !== 1 ? 's' : ''}` },
-            { label: 'Monthly interest', value: fmt(totalMonthlyInterest), sub: `${fmt(totalMonthlyInterest * 12)}/yr lost` },
-            { label: 'Min payments', value: fmt(totalMinimums), sub: 'required/mo' },
-          ].map((s, i) => (
-            <div key={i} style={{ background: 'var(--sand-100)', borderRadius: '10px', padding: '10px', border: '0.5px solid var(--sand-200)' }}>
-              <p style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>{s.label}</p>
-              <p style={{ fontSize: '14px', fontWeight: '600', color: i === 1 ? 'var(--danger)' : 'var(--sand-900)', margin: '0 0 1px' }}>{s.value}</p>
-              <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{s.sub}</p>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+        <div>
+          <p className="label" style={{ marginBottom: '4px' }}>Debt Payoff Optimizer</p>
+          {activePlan && !changingPlan ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--sand-900)' }}>
+                {planInfo.emoji} {planInfo.label} Plan
+              </span>
+              {isRecommendedActive && (
+                <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.12)', padding: '2px 7px', borderRadius: '20px' }}>
+                  ✓ Recommended
+                </span>
+              )}
             </div>
-          ))}
+          ) : (
+            <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: 0 }}>
+              {isSelectionMode && activePlan ? 'Choose a new plan' : 'Choose a payoff plan'}
+            </p>
+          )}
         </div>
+        {activePlan && !changingPlan && (
+          <button
+            onClick={() => setChangingPlan(true)}
+            style={{ background: 'none', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: '11px', color: 'var(--sand-600)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '500' }}
+          >
+            Change plan
+          </button>
+        )}
       </div>
 
-      {/* Strategy selector */}
-      <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '10px', padding: '3px', marginBottom: '12px' }}>
-        {(['avalanche', 'snowball', 'minimum'] as const).map(s => (
-          <button key={s} onClick={() => setStrategy(s)} style={{
-            flex: 1, padding: '8px 4px', borderRadius: '7px', border: 'none',
-            cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-            background: strategy === s ? 'var(--sand-50)' : 'transparent',
-          }}>
-            <p style={{ fontSize: '12px', fontWeight: '600', color: strategy === s ? 'var(--sand-900)' : 'var(--sand-500)', margin: 0 }}>
-              {STRATEGY_INFO[s].label}
-            </p>
-          </button>
+      {/* ── Debt summary strip ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '16px' }}>
+        {[
+          { label: 'Total debt', value: fmt(totalDebt), sub: `${debts.length} debt${debts.length !== 1 ? 's' : ''}`, danger: false },
+          { label: 'Monthly interest', value: fmt(totalMonthlyInterest), sub: `${fmt(totalMonthlyInterest * 12)}/yr lost`, danger: true },
+          { label: 'Min payments', value: fmt(totalMinimums), sub: 'required/mo', danger: false },
+        ].map((s, i) => (
+          <div key={i} style={{ background: 'var(--sand-100)', borderRadius: '10px', padding: '10px', border: '0.5px solid var(--sand-200)' }}>
+            <p style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>{s.label}</p>
+            <p style={{ fontSize: '14px', fontWeight: '600', color: s.danger ? 'var(--danger)' : 'var(--sand-900)', margin: '0 0 1px' }}>{s.value}</p>
+            <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{s.sub}</p>
+          </div>
         ))}
       </div>
 
-      {/* Strategy info */}
-      <div style={{ padding: '10px 12px', background: info.accent, border: `0.5px solid ${info.border}`, borderRadius: 'var(--radius-sm)', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '3px' }}>
-            <p style={{ fontSize: '12px', fontWeight: '700', color: info.color, margin: 0 }}>{info.label}</p>
-            <span style={{ fontSize: '10px', color: info.color, background: info.border, padding: '1px 6px', borderRadius: '20px', fontWeight: '600' }}>{info.tagline}</span>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5' }}>{info.detail}</p>
+      {/* ── Recommendation banner — always visible ── */}
+      <div style={{
+        padding: '12px 14px', marginBottom: '16px',
+        background: recommended === 'avalanche' ? 'rgba(122,158,110,0.08)' : 'rgba(106,138,174,0.08)',
+        border: `0.5px solid ${recommended === 'avalanche' ? 'rgba(122,158,110,0.25)' : 'rgba(106,138,174,0.25)'}`,
+        borderRadius: 'var(--radius-md)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '5px' }}>
+          <span style={{ fontSize: '13px' }}>{STRATEGY_INFO[recommended].emoji}</span>
+          <span style={{ fontSize: '11px', fontWeight: '700', color: STRATEGY_INFO[recommended].color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Recommended: {STRATEGY_INFO[recommended].label}
+          </span>
+          {activePlan && activePlan !== recommended && (
+            <span style={{ fontSize: '10px', color: 'var(--sand-400)', marginLeft: 'auto' }}>
+              (your plan differs)
+            </span>
+          )}
         </div>
+        <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>
+          {recommendReason}
+        </p>
+        {activePlan && activePlan !== recommended && (
+          <button
+            onClick={() => selectPlan(recommended)}
+            style={{ marginTop: '9px', background: 'none', border: `0.5px solid ${STRATEGY_INFO[recommended].border}`, borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: '11px', fontWeight: '600', color: STRATEGY_INFO[recommended].color, cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Switch to {STRATEGY_INFO[recommended].label} →
+          </button>
+        )}
       </div>
 
-      {/* Extra payment slider — only for non-minimum */}
-      {strategy !== 'minimum' && (
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <label style={{ fontSize: '12px', color: 'var(--sand-600)', fontWeight: '500' }}>Extra payment / month</label>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: extraPayment > 0 ? 'var(--accent)' : 'var(--sand-500)' }}>
-              {extraPayment > 0 ? `+${fmt(extraPayment)}` : '$0'}
-            </span>
+      {/* ── SELECTION MODE: strategy picker ── */}
+      {isSelectionMode && (
+        <div className="animate-fade">
+          {/* Strategy tabs */}
+          <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '10px', padding: '3px', marginBottom: '12px' }}>
+            {(['avalanche', 'snowball', 'minimum'] as const).map(s => {
+              const isRec = s === recommended
+              return (
+                <button key={s} onClick={() => setStrategy(s)} style={{
+                  flex: 1, padding: '8px 4px', borderRadius: '7px', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', transition: 'all var(--spring-fast)',
+                  background: strategy === s ? 'var(--sand-50)' : 'transparent', position: 'relative',
+                }}>
+                  <p style={{ fontSize: '12px', fontWeight: '600', color: strategy === s ? 'var(--sand-900)' : 'var(--sand-500)', margin: 0 }}>
+                    {STRATEGY_INFO[s].label}
+                  </p>
+                  {isRec && (
+                    <div style={{ position: 'absolute', top: '3px', right: '3px', width: '5px', height: '5px', borderRadius: '50%', background: STRATEGY_INFO[s].color, opacity: 0.7 }} />
+                  )}
+                </button>
+              )
+            })}
           </div>
-          <input type="range" min={0} max={maxExtra} step={25} value={extraPayment}
-            onChange={e => setExtraPayment(parseInt(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--accent)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-            <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>$0</span>
-            <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>Max {fmt(maxExtra)}/mo surplus</span>
+
+          {/* Strategy detail */}
+          <div style={{ padding: '10px 12px', background: planInfo.accent, border: `0.5px solid ${planInfo.border}`, borderRadius: 'var(--radius-sm)', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: planInfo.color }}>{planInfo.label}</span>
+              <span style={{ fontSize: '10px', color: planInfo.color, background: planInfo.border, padding: '1px 6px', borderRadius: '20px', fontWeight: '600' }}>{planInfo.tagline}</span>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5' }}>{planInfo.detail}</p>
           </div>
+
+          {/* Extra payment slider */}
+          {strategy !== 'minimum' && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '12px', color: 'var(--sand-600)', fontWeight: '500' }}>Extra payment / month</label>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: extraPayment > 0 ? 'var(--accent)' : 'var(--sand-500)' }}>
+                  {extraPayment > 0 ? `+${fmt(extraPayment)}` : '$0'}
+                </span>
+              </div>
+              <input type="range" min={0} max={maxExtra} step={25} value={extraPayment}
+                onChange={e => setExtraPayment(parseInt(e.target.value))}
+                style={{ width: '100%', accentColor: 'var(--accent)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>$0</span>
+                <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>Max {fmt(maxExtra)}/mo surplus</span>
+              </div>
+            </div>
+          )}
+
+          {/* Preview results */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '16px' }}>
+            {[
+              { label: 'Debt-free in', value: formatMonths(curResult.months), sub: monthsSaved > 0 ? `↓ ${formatMonths(monthsSaved)} sooner than minimums` : 'slowest path', danger: false },
+              { label: 'Total interest', value: fmt(curResult.totalInterest), sub: interestSaved > 0 ? `↓ ${fmt(interestSaved)} saved vs minimums` : 'maximum interest cost', danger: displayStrategy === 'minimum' },
+            ].map((s, i) => (
+              <div key={i} style={{ background: 'var(--sand-100)', borderRadius: '10px', padding: '12px', border: '0.5px solid var(--sand-200)', textAlign: 'center' }}>
+                <p style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 3px' }}>{s.label}</p>
+                <p style={{ fontSize: '18px', fontWeight: '700', color: s.danger ? 'var(--danger)' : 'var(--sand-900)', margin: '0 0 3px', letterSpacing: '-0.5px' }}>{s.value}</p>
+                <p style={{ fontSize: '10px', color: interestSaved > 0 ? 'var(--success)' : 'var(--sand-400)', margin: 0, fontWeight: '600' }}>{s.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* SELECT PLAN CTA */}
+          <button
+            onClick={() => selectPlan(strategy)}
+            style={{
+              width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
+              border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              background: strategy === 'minimum' ? 'var(--sand-300)' : 'var(--accent)',
+              color: strategy === 'minimum' ? 'var(--sand-700)' : 'var(--sand-50)',
+              fontSize: '14px', fontWeight: '700', letterSpacing: '0.01em',
+              boxShadow: strategy !== 'minimum' ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
+              transition: 'all var(--spring-fast)',
+            }}
+          >
+            {strategy === 'minimum'
+              ? 'Select minimum payments (not recommended)'
+              : `Select ${planInfo.label} plan →`}
+          </button>
+          {activePlan && (
+            <button
+              onClick={() => setChangingPlan(false)}
+              style={{ width: '100%', marginTop: '8px', padding: '10px', background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Keep current plan
+            </button>
+          )}
         </div>
       )}
 
-      {/* Results strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '20px' }}>
-        {[
-          {
-            label: 'Debt-free in',
-            value: formatMonths(curResult.months),
-            sub: monthsSaved > 0 ? `${formatMonths(monthsSaved)} sooner` : strategy === 'minimum' ? 'slowest path' : null,
-            subColor: 'var(--success)',
-          },
-          {
-            label: 'Total interest',
-            value: fmt(curResult.totalInterest),
-            sub: interestSaved > 0 ? `${fmt(interestSaved)} saved` : strategy === 'minimum' ? 'maximum cost' : null,
-            subColor: 'var(--success)',
-          },
-          {
-            label: 'Monthly total',
-            value: fmt(totalMinimums + (strategy !== 'minimum' ? extraPayment : 0)),
-            sub: extraPayment > 0 ? `${fmt(totalMinimums)} min + ${fmt(extraPayment)} extra` : 'minimum payments only',
-            subColor: 'var(--sand-400)',
-          },
-        ].map((s, i) => (
-          <div key={i} style={{ background: i === 1 ? 'rgba(192,57,43,0.04)' : 'var(--sand-100)', borderRadius: '10px', padding: '10px', textAlign: 'center', border: `0.5px solid ${i === 1 ? 'rgba(192,57,43,0.12)' : 'var(--sand-200)'}` }}>
-            <p style={{ fontSize: '9px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 3px' }}>{s.label}</p>
-            <p style={{ fontSize: '15px', fontWeight: '600', color: i === 0 ? 'var(--accent)' : i === 1 ? 'var(--danger)' : 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-0.3px' }}>{s.value}</p>
-            {s.sub && <p style={{ fontSize: '9px', color: s.subColor, margin: 0, fontWeight: '600' }}>↓ {s.sub}</p>}
-          </div>
-        ))}
-      </div>
+      {/* ── PLAN ACTIVE MODE ── */}
+      {activePlan && !changingPlan && (
+        <div className="animate-fade">
 
-      {/* Payment plan — the real useful part */}
-      <div>
-        <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
-          {strategy === 'minimum' ? 'Your debts — minimum payment only' : `Payment plan — ${strategy} order`}
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {sortedDebts.map((debt, i) => {
-            const pmt = thisMonth[i]
-            const payoffMo = payoffByName[debt.name] || 0
-            const isFocus = i === 0 && strategy !== 'minimum'
-            const rateColor = debt.interestRate >= 15 ? 'var(--danger)' : debt.interestRate >= 7 ? 'var(--warning)' : 'var(--success)'
-
-            return (
-              <div key={debt.name} style={{
-                border: isFocus ? `1.5px solid var(--accent-border)` : '0.5px solid var(--sand-200)',
-                borderRadius: '12px',
-                background: isFocus ? 'var(--accent-light)' : 'var(--sand-50)',
-                overflow: 'hidden',
-              }}>
-                {/* Debt header row */}
-                <div style={{ padding: '12px 14px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '2px' }}>
-                      <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: isFocus ? 'var(--accent)' : 'var(--sand-300)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: '9px', fontWeight: '700', color: isFocus ? 'var(--sand-50)' : 'var(--sand-600)' }}>{i + 1}</span>
-                      </div>
-                      <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{debt.name}</p>
-                      {isFocus && (
-                        <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--accent)', background: 'rgba(122,158,110,0.15)', padding: '2px 7px', borderRadius: '20px' }}>FOCUS</span>
-                      )}
-                    </div>
-                    <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0, paddingLeft: '25px' }}>
-                      {fmt(debt.balance)} balance ·{' '}
-                      <span style={{ color: rateColor, fontWeight: '600' }}>{debt.interestRate}% APR</span>
-                    </p>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <p style={{ fontSize: '16px', fontWeight: '700', color: isFocus ? 'var(--accent)' : 'var(--sand-900)', margin: '0 0 1px' }}>{fmt(pmt.payment)}/mo</p>
-                    {isFocus && extraPayment > 0 ? (
-                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
-                        {fmt(debt.minPayment)} min + {fmt(extraPayment)} extra
-                      </p>
-                    ) : (
-                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
-                        {payoffMo > 0 ? `Done in ${formatMonths(payoffMo)}` : '—'}
-                      </p>
-                    )}
-                  </div>
+          {/* Active plan hero */}
+          {activePlan === 'avalanche' && (
+            <div style={{ padding: '14px 16px', background: 'rgba(122,158,110,0.08)', border: '0.5px solid rgba(122,158,110,0.22)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Interest you're eliminating</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '700', color: 'var(--success)', margin: '0 0 1px', letterSpacing: '-0.5px' }}>{fmt(interestSaved)}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>saved vs minimum-only</p>
                 </div>
-
-                {/* Interest / principal breakdown bar */}
-                <div style={{ padding: '0 14px 12px' }}>
-                  {/* Visual breakdown bar */}
-                  <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' }}>
-                    <div style={{
-                      height: '100%',
-                      width: `${pmt.payment > 0 ? Math.min(100, (pmt.monthlyInterest / pmt.payment) * 100) : 0}%`,
-                      background: 'var(--danger)',
-                      borderRadius: '3px',
-                      transition: 'width 0.4s ease'
-                    }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--danger)', fontWeight: '600' }}>
-                      {fmt(pmt.monthlyInterest)} to interest
-                    </span>
-                    <span style={{ fontSize: '10px', color: 'var(--success)', fontWeight: '600' }}>
-                      {fmt(pmt.principal)} to principal
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
-                    {isFocus && extraPayment > 0 ? (
-                      <span style={{ fontSize: '10px', color: 'var(--accent)', fontWeight: '600' }}>
-                        ↑ {fmt(extraPayment)} extra saves {formatMonths(Math.max(0, minResult.payoffMonth[debts.findIndex(d => d.name === debt.name)] - payoffMo))}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>
-                        {strategy !== 'minimum' ? 'minimum payment' : 'minimum only'}
-                      </span>
-                    )}
-                    {payoffMo > 0 && <span style={{ fontSize: '10px', color: 'var(--sand-500)', fontWeight: '600' }}>done in {formatMonths(payoffMo)}</span>}
-                  </div>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '700', color: 'var(--accent)', margin: '0 0 1px', letterSpacing: '-0.5px' }}>{formatMonths(curResult.months)}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>until debt-free</p>
                 </div>
               </div>
-            )
-          })}
-        </div>
+            </div>
+          )}
 
-        {/* Minimum warning */}
-        {strategy === 'minimum' && (
-          <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(192,57,43,0.05)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.12)' }}>
-            <p style={{ fontSize: '12px', color: 'var(--danger)', fontWeight: '600', margin: '0 0 3px' }}>Minimum-only costs you the most</p>
-            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5' }}>
-              Switching to Avalanche saves {fmt(minResult.totalInterest - avaResult.totalInterest)} in interest and finishes {formatMonths(minResult.months - avaResult.months)} sooner — with the same monthly budget.
-            </p>
+          {activePlan === 'snowball' && (
+            <div style={{ padding: '14px 16px', background: 'rgba(106,138,174,0.08)', border: '0.5px solid rgba(106,138,174,0.22)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: '#6a8aae', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Your momentum path</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '700', color: '#6a8aae', margin: '0 0 1px', letterSpacing: '-0.5px' }}>{debts.length}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>debts to eliminate</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: '22px', fontWeight: '700', color: 'var(--accent)', margin: '0 0 1px', letterSpacing: '-0.5px' }}>{formatMonths(curResult.months)}</p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>until debt-free</p>
+                </div>
+              </div>
+              {/* Win counter — debts paid off within 12 months */}
+              {(() => {
+                const quickWins = sortedDebts.filter(d => (payoffByName[d.name] || 999) <= 12)
+                return quickWins.length > 0 ? (
+                  <p style={{ fontSize: '12px', color: '#6a8aae', margin: '10px 0 0', fontWeight: '600' }}>
+                    ⛄ {quickWins.length} debt{quickWins.length > 1 ? 's' : ''} gone within a year: {quickWins.map(d => d.name).join(', ')}
+                  </p>
+                ) : null
+              })()}
+            </div>
+          )}
+
+          {activePlan === 'minimum' && (
+            <div style={{ padding: '14px 16px', background: 'rgba(192,57,43,0.06)', border: '0.5px solid rgba(192,57,43,0.18)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>⚠️ Cost of minimums-only</p>
+              <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 8px', lineHeight: '1.5' }}>
+                You'll pay {fmt(minResult.totalInterest)} in interest over {formatMonths(minResult.months)}. Switching to Avalanche saves {fmt(minResult.totalInterest - avaResult.totalInterest)} and finishes {formatMonths(minResult.months - avaResult.months)} sooner.
+              </p>
+            </div>
+          )}
+
+          {/* Extra payment slider — active mode */}
+          {activePlan !== 'minimum' && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '12px', color: 'var(--sand-600)', fontWeight: '500' }}>Extra payment / month</label>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: extraPayment > 0 ? 'var(--accent)' : 'var(--sand-500)' }}>
+                  {extraPayment > 0 ? `+${fmt(extraPayment)}` : '$0'}
+                </span>
+              </div>
+              <input type="range" min={0} max={maxExtra} step={25} value={extraPayment}
+                onChange={e => setExtraPayment(parseInt(e.target.value))}
+                style={{ width: '100%', accentColor: 'var(--accent)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>$0/mo extra</span>
+                <span style={{ fontSize: '10px', color: 'var(--sand-400)' }}>{fmt(maxExtra)}/mo max surplus</span>
+              </div>
+            </div>
+          )}
+
+          {/* Debt list — plan-optimized */}
+          <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-400)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+            {activePlan === 'avalanche' ? 'Attack order — highest rate first' : activePlan === 'snowball' ? 'Win order — smallest balance first' : 'Minimum payments only'}
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sortedDebts.map((debt, i) => {
+              const pmt = thisMonth[i]
+              const payoffMo = payoffByName[debt.name] || 0
+              const isFocus = i === 0 && activePlan !== 'minimum'
+              const rateColor = debt.interestRate >= 15 ? 'var(--danger)' : debt.interestRate >= 7 ? 'var(--warning)' : 'var(--success)'
+              const focusColor = activePlan === 'snowball' ? '#6a8aae' : 'var(--accent)'
+              const focusBg = activePlan === 'snowball' ? 'rgba(106,138,174,0.08)' : 'var(--accent-light)'
+              const focusBorder = activePlan === 'snowball' ? 'rgba(106,138,174,0.3)' : 'var(--accent-border)'
+
+              return (
+                <div key={debt.name} style={{
+                  border: isFocus ? `1.5px solid ${focusBorder}` : '0.5px solid var(--sand-200)',
+                  borderRadius: '12px',
+                  background: isFocus ? focusBg : 'var(--sand-50)',
+                  overflow: 'hidden',
+                  transition: 'all var(--transition)',
+                }}>
+                  <div style={{ padding: '12px 14px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '2px' }}>
+                        <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: isFocus ? focusColor : 'var(--sand-300)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '9px', fontWeight: '700', color: isFocus ? 'var(--sand-50)' : 'var(--sand-600)' }}>{i + 1}</span>
+                        </div>
+                        <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{debt.name}</p>
+                        {isFocus && (
+                          <span style={{ fontSize: '9px', fontWeight: '700', color: focusColor, background: activePlan === 'snowball' ? 'rgba(106,138,174,0.15)' : 'rgba(122,158,110,0.15)', padding: '2px 7px', borderRadius: '20px' }}>
+                            {planInfo.focusLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0, paddingLeft: '25px' }}>
+                        {fmt(debt.balance)} ·{' '}
+                        <span style={{ color: rateColor, fontWeight: '600' }}>{debt.interestRate}% APR</span>
+                        {activePlan === 'avalanche' && isFocus && (
+                          <span style={{ color: 'var(--danger)', fontWeight: '600' }}> · {fmt(pmt.monthlyInterest)}/mo in interest</span>
+                        )}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <p style={{ fontSize: '16px', fontWeight: '700', color: isFocus ? focusColor : 'var(--sand-900)', margin: '0 0 1px' }}>{fmt(pmt.payment)}/mo</p>
+                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
+                        {isFocus && extraPayment > 0 ? `${fmt(debt.minPayment)} min + ${fmt(extraPayment)} extra` : payoffMo > 0 ? `Done in ${formatMonths(payoffMo)}` : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '0 14px 12px' }}>
+                    <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' }}>
+                      <div style={{ height: '100%', width: `${pmt.payment > 0 ? Math.min(100, (pmt.monthlyInterest / pmt.payment) * 100) : 0}%`, background: 'var(--danger)', borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--danger)', fontWeight: '600' }}>{fmt(pmt.monthlyInterest)} interest</span>
+                      <span style={{ fontSize: '10px', color: 'var(--success)', fontWeight: '600' }}>{fmt(pmt.principal)} principal</span>
+                    </div>
+                    {isFocus && extraPayment > 0 && (
+                      <p style={{ fontSize: '10px', color: focusColor, fontWeight: '600', margin: '5px 0 0' }}>
+                        ↑ +{fmt(extraPayment)} extra cuts {formatMonths(Math.max(0, minResult.payoffMonth[debts.findIndex(d => d.name === debt.name)] - payoffMo))} off payoff
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -864,7 +864,7 @@ function StockDetail({
     : null
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
           <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
@@ -933,7 +933,7 @@ function StockDetail({
                   position: 'absolute', left: 0, top: 0, height: '100%',
                   width: `${Math.min(100, Math.max(0, rangePercent))}%`,
                   background: isPositive ? 'var(--success)' : 'var(--danger)',
-                  borderRadius: '3px', transition: 'width 0.4s ease'
+                  borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)'
                 }} />
                 <div style={{
                   position: 'absolute', top: '50%', transform: 'translateY(-50%)',
@@ -1082,8 +1082,7 @@ export default function Grow() {
   const [shareCounts, setShareCounts] = useState<Record<string, number>>({})
   const [ideaProgress, setIdeaProgress] = useState<Record<string, string>>({})
   const [bookmarks, setBookmarks] = useState<Article[]>([])
-  const [marketBrief, setMarketBrief] = useState('')
-  const [loadingBrief, setLoadingBrief] = useState(false)
+
   const [goalSuggestions, setGoalSuggestions] = useState<GoalSuggestion[]>([])
   const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
   const [showGoals, setShowGoals] = useState(false)
@@ -1163,25 +1162,6 @@ export default function Grow() {
     } catch { }
   }
 
-  const fetchMarketBrief = async () => {
-    const todayKey = `grow_brief_${new Date().toISOString().slice(0, 10)}`
-    const cached = localStorage.getItem(todayKey)
-    if (cached) { setMarketBrief(cached); return }
-    setLoadingBrief(true)
-    try {
-      const res = await fetch('/api/market-brief', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ snapshot: marketSnap })
-      })
-      const data = await res.json()
-      if (data.brief) {
-        setMarketBrief(data.brief)
-        localStorage.setItem(todayKey, data.brief)
-      }
-    } catch { }
-    setLoadingBrief(false)
-  }
 
   const generateIdeas = async (profileData?: any) => {
     const p = profileData || profile
@@ -1868,34 +1848,6 @@ Please give me a thorough breakdown:
       <div className="animate-fade stagger-3" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <p className="label">News</p>
-        </div>
-
-        {/* AI Market Brief */}
-        <div className="card-muted" style={{ padding: '12px 14px', marginBottom: '10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: marketBrief ? '8px' : '0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
-              </div>
-              <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Market Brief</p>
-            </div>
-            <button
-              className="btn-ghost"
-              onClick={fetchMarketBrief}
-              disabled={loadingBrief}
-              style={{ fontSize: '11px', padding: '3px 8px' }}>
-              {loadingBrief ? '...' : marketBrief ? '↻' : 'Generate'}
-            </button>
-          </div>
-          {loadingBrief ? (
-            <div style={{ display: 'flex', gap: '5px', padding: '4px 0' }}>
-              {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
-            </div>
-          ) : marketBrief ? (
-            <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.6' }}>{marketBrief}</p>
-          ) : (
-            <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: 0 }}>Get a quick AI summary of today's market</p>
-          )}
         </div>
 
         {/* Section tabs */}

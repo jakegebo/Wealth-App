@@ -1,4 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useRef, useEffect, useState } from 'react'
 
 const TABS = [
   {
@@ -39,21 +40,36 @@ const TABS = [
 export default function BottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const [pill, setPill] = useState({ left: 0, width: 0, ready: false })
 
-  const activeTab = TABS.find(t => t.path === location.pathname)?.id || 'home'
+  const activeIdx = TABS.findIndex(t => t.path === location.pathname)
+
+  useEffect(() => {
+    const el = tabRefs.current[activeIdx]
+    if (el) {
+      setPill({ left: el.offsetLeft, width: el.offsetWidth, ready: true })
+    }
+  }, [activeIdx])
 
   return (
     <nav className="bottom-nav">
-      {TABS.map(tab => {
-        const active = activeTab === tab.id
+      {pill.ready && (
+        <div
+          className="nav-pill"
+          style={{ left: pill.left, width: pill.width }}
+        />
+      )}
+      {TABS.map((tab, i) => {
+        const active = activeIdx === i
         return (
           <button
             key={tab.id}
+            ref={el => { tabRefs.current[i] = el }}
             className={`nav-tab ${active ? 'active' : ''}`}
             onClick={() => navigate(tab.path)}
           >
-            <div className="nav-tab-indicator" />
-            {tab.icon(active)}
+            <div className="nav-tab-icon">{tab.icon(active)}</div>
             <span>{tab.label}</span>
           </button>
         )

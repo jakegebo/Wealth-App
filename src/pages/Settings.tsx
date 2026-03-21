@@ -62,11 +62,17 @@ export default function Settings() {
   const { preferences, updatePreferences } = useTheme()
   const { profileData: profile } = useProfile()
   const [saved, setSaved] = useState(false)
-  const [layout, setLayout] = useState(preferences.dashboardLayout)
+  const allKnownIds = SECTION_GROUPS.flatMap(g => g.ids)
+  const [layout, setLayout] = useState(() => {
+    const stored = preferences.dashboardLayout
+    const missing = allKnownIds.filter(id => !stored.includes(id))
+    return [...stored, ...missing]
+  })
   const [hidden, setHidden] = useState(preferences.hiddenSections)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [draggingGroup, setDraggingGroup] = useState<string | null>(null)
+  const [dragOverPos, setDragOverPos] = useState<'before' | 'after'>('after')
 
   const handleSave = async () => {
     await updatePreferences({ dashboardLayout: layout, hiddenSections: hidden })
@@ -89,26 +95,33 @@ export default function Settings() {
   const handleDragOver = (e: React.DragEvent, id: string) => {
     e.preventDefault()
     setDragOver(id)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setDragOverPos(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
   }
 
   const handleDrop = (targetId: string, groupKey: string) => {
     if (!dragging || dragging === targetId || draggingGroup !== groupKey) return
     const newLayout = [...layout]
+    // Ensure the dragged item is in layout (it always should be now, but guard anyway)
+    if (!newLayout.includes(dragging)) newLayout.push(dragging)
     const fromIdx = newLayout.indexOf(dragging)
     const toIdx = newLayout.indexOf(targetId)
     if (fromIdx === -1 || toIdx === -1) return
     newLayout.splice(fromIdx, 1)
-    newLayout.splice(toIdx, 0, dragging)
+    const insertAt = newLayout.indexOf(targetId)
+    newLayout.splice(dragOverPos === 'before' ? insertAt : insertAt + 1, 0, dragging)
     setLayout(newLayout)
     setDragging(null)
     setDragOver(null)
     setDraggingGroup(null)
+    setDragOverPos('after')
   }
 
   const handleDragEnd = () => {
     setDragging(null)
     setDragOver(null)
     setDraggingGroup(null)
+    setDragOverPos('after')
   }
 
   const toggleHidden = (id: string) => {
@@ -195,7 +208,7 @@ export default function Settings() {
         {/* Dashboard Layout — grouped by tab */}
         <div>
           <p className="label" style={{ marginBottom: '4px' }}>Dashboard Layout</p>
-          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '16px' }}>Drag within each tab to reorder · tap to show/hide</p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', marginBottom: '16px' }}>Drag to reorder within each section · tap to show/hide</p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {SECTION_GROUPS.map(group => {
@@ -219,14 +232,21 @@ export default function Settings() {
                       return (
                         <div
                           key={id}
+                          style={{ position: 'relative' }}
+                        >
+                          {/* insertion line — before */}
+                          {isDropTarget && dragOverPos === 'before' && (
+                            <div style={{ position: 'absolute', top: '-3px', left: '10px', right: '10px', height: '2px', background: 'var(--accent)', borderRadius: '1px', zIndex: 10 }} />
+                          )}
+                        <div
                           draggable
-                          onDragStart={() => handleDragStart(id, group.key)}
+                          onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; handleDragStart(id, group.key) }}
                           onDragOver={e => handleDragOver(e, id)}
                           onDrop={() => handleDrop(id, group.key)}
                           onDragEnd={handleDragEnd}
                           style={{
                             background: isDropTarget ? 'var(--accent-light)' : 'var(--sand-50)',
-                            border: isDropTarget ? '1px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                            border: isDropTarget ? '1px solid var(--accent-border)' : '0.5px solid var(--sand-300)',
                             borderRadius: 'var(--radius-md)',
                             padding: '12px 14px',
                             display: 'flex',
@@ -234,7 +254,8 @@ export default function Settings() {
                             justifyContent: 'space-between',
                             cursor: 'grab',
                             opacity: isDraggingThis ? 0.35 : 1,
-                            transition: 'all 0.12s',
+                            transition: 'opacity 0.12s, background 0.12s, border-color 0.12s',
+                            userSelect: 'none',
                           }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span style={{ color: 'var(--sand-400)', fontSize: '15px', lineHeight: 1, userSelect: 'none' }}>⠿</span>
@@ -263,6 +284,11 @@ export default function Settings() {
                             }}>
                             {isHidden ? 'Hidden' : 'Visible'}
                           </button>
+                        </div>
+                          {/* insertion line — after */}
+                          {isDropTarget && dragOverPos === 'after' && (
+                            <div style={{ position: 'absolute', bottom: '-3px', left: '10px', right: '10px', height: '2px', background: 'var(--accent)', borderRadius: '1px', zIndex: 10 }} />
+                          )}
                         </div>
                       )
                     })}

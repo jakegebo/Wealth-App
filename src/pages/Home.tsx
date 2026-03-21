@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
@@ -242,19 +242,23 @@ function generateInsights(analysis: Analysis, profile: any): Insight[] {
   return insights.slice(0, 3)
 }
 
-function CountUp({ value, duration = 1200 }: { value: number; duration?: number }) {
+function CountUp({ value, duration = 1000 }: { value: number; duration?: number }) {
   const [display, setDisplay] = useState(0)
   const startRef = useRef<number | null>(null)
   const frameRef = useRef<number>(0)
+  const prevValue = useRef(0)
 
   useEffect(() => {
     if (!value) return
+    const from = prevValue.current
+    prevValue.current = value
     startRef.current = null
     const animate = (timestamp: number) => {
       if (!startRef.current) startRef.current = timestamp
       const progress = Math.min((timestamp - startRef.current) / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      setDisplay(Math.round(eased * value))
+      // Expo ease-out for a crisp, punchy feel
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress)
+      setDisplay(Math.round(from + eased * (value - from)))
       if (progress < 1) frameRef.current = requestAnimationFrame(animate)
     }
     frameRef.current = requestAnimationFrame(animate)
@@ -293,59 +297,103 @@ function greeting() {
   return 'good evening'
 }
 
+const HEALTH_ITEM_META: Record<string, { icon: string; target: string; tip: string }> = {
+  'Savings rate':    { icon: '💰', target: 'Target: 20%+', tip: 'Increase savings by automating transfers on payday.' },
+  'Debt load':       { icon: '💳', target: 'Target: <10% of income', tip: 'Extra payments on high-rate debt free up cash fast.' },
+  'Emergency fund':  { icon: '🛡️', target: 'Target: 6 months', tip: 'Build to 3 months first, then stretch to 6.' },
+  'Diversification': { icon: '📊', target: 'Target: 4+ asset types', tip: 'Add a retirement or brokerage account to diversify.' },
+  'Goal progress':   { icon: '🎯', target: 'Target: 75%+ avg', tip: 'Review goal amounts — smaller targets stay motivating.' },
+}
+
 function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
-  const [expanded, setExpanded] = useState(false)
   const { score, label, color, breakdown } = computeHealthScore(analysis, profile)
 
+  // Find weakest item (lowest pct of max)
+  const weakest = [...breakdown].sort((a, b) => (a.score / a.max) - (b.score / b.max))[0]
+  const weakestMeta = HEALTH_ITEM_META[weakest.label]
+
+  const ringCirc = 163.4
+  const ringFill = (score / 100) * ringCirc
+
   return (
-    <div className="card animate-fade" style={{ marginBottom: '12px', cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <p className="label" style={{ marginBottom: '4px' }}>Financial Health</p>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '44px', fontWeight: '300', color, letterSpacing: '-2px', lineHeight: '1' }}>{score}</span>
-            <span style={{ fontSize: '13px', color: 'var(--sand-500)' }}>/ 100</span>
-          </div>
-          <span style={{ fontSize: '13px', fontWeight: '600', color }}>{label}</span>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          {/* Score ring using SVG */}
-          <svg width="64" height="64" viewBox="0 0 64 64">
-            <circle cx="32" cy="32" r="26" fill="none" stroke="var(--sand-200)" strokeWidth="5" />
-            <circle cx="32" cy="32" r="26" fill="none" stroke={color} strokeWidth="5"
-              strokeDasharray={`${(score / 100) * 163.4} 163.4`}
+    <div className="card animate-fade" style={{ marginBottom: '12px' }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+        {/* Score ring */}
+        <div style={{ flexShrink: 0, position: 'relative' }}>
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="var(--sand-200)" strokeWidth="6" />
+            <circle cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="6"
+              strokeDasharray={`${ringFill} ${ringCirc}`}
               strokeLinecap="round"
-              transform="rotate(-90 32 32)"
-              style={{ transition: 'stroke-dasharray 1s ease' }}
+              transform="rotate(-90 40 40)"
+              style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.22, 1, 0.36, 1)' }}
             />
           </svg>
-          <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '-4px 0 0', textAlign: 'center' }}>{expanded ? 'collapse ▲' : 'details ▼'}</p>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: '22px', fontWeight: '700', color, lineHeight: 1 }}>{score}</span>
+            <span style={{ fontSize: '9px', color: 'var(--sand-500)', fontWeight: '600', letterSpacing: '0.04em' }}>/ 100</span>
+          </div>
+        </div>
+
+        {/* Score label + summary */}
+        <div style={{ flex: 1 }}>
+          <p className="label" style={{ marginBottom: '4px' }}>Financial Health</p>
+          <p style={{ fontSize: '22px', fontWeight: '700', color, margin: '0 0 6px', letterSpacing: '-0.5px' }}>{label}</p>
+          <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>
+            {score >= 80 ? 'You\'re in great shape — keep the momentum.' :
+             score >= 65 ? 'Solid foundation with a few areas to sharpen.' :
+             score >= 45 ? 'Making progress, but a couple areas need attention.' :
+             'Let\'s work on the basics first — you\'ve got this.'}
+          </p>
         </div>
       </div>
 
-      {expanded && (
-        <div className="animate-fade" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '0.5px solid var(--sand-200)' }}>
-          {breakdown.map((item, i) => (
-            <div key={i} style={{ marginBottom: i < breakdown.length - 1 ? '12px' : '0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--sand-700)', fontWeight: '500' }}>{item.label}</span>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{item.note}</span>
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: item.score / item.max >= 0.8 ? 'var(--success)' : item.score / item.max >= 0.5 ? 'var(--accent)' : 'var(--warning)' }}>
-                    {item.score}/{item.max}
-                  </span>
-                </div>
+      {/* Breakdown grid */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+        {breakdown.map((item, i) => {
+          const pct = item.score / item.max
+          const barColor = pct >= 0.8 ? 'var(--success)' : pct >= 0.5 ? 'var(--accent)' : pct >= 0.3 ? 'var(--warning)' : 'var(--danger)'
+          const meta = HEALTH_ITEM_META[item.label]
+          const grade = pct >= 0.9 ? 'A' : pct >= 0.75 ? 'B' : pct >= 0.55 ? 'C' : pct >= 0.35 ? 'D' : 'F'
+          return (
+            <div key={i}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                <span style={{ fontSize: '14px', flexShrink: 0 }}>{meta?.icon}</span>
+                <span style={{ fontSize: '13px', color: 'var(--sand-800)', fontWeight: '500', flex: 1 }}>{item.label}</span>
+                <span style={{ fontSize: '11px', color: 'var(--sand-500)', marginRight: '6px' }}>{item.note}</span>
+                <span style={{
+                  fontSize: '11px', fontWeight: '700', color: barColor,
+                  background: pct >= 0.8 ? 'rgba(122,158,110,0.1)' : pct >= 0.5 ? 'var(--accent-light)' : pct >= 0.3 ? 'rgba(200,148,58,0.1)' : 'rgba(192,57,43,0.08)',
+                  padding: '2px 7px', borderRadius: '6px', flexShrink: 0,
+                }}>{grade}</span>
               </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{
-                  width: `${(item.score / item.max) * 100}%`,
-                  background: item.score / item.max >= 0.8 ? 'var(--success)' : item.score / item.max >= 0.5 ? 'var(--accent)' : 'var(--warning)'
-                }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="progress-bar" style={{ flex: 1 }}>
+                  <div className="progress-fill" style={{ width: `${pct * 100}%`, background: barColor, transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
+                </div>
+                <span style={{ fontSize: '10px', color: 'var(--sand-400)', flexShrink: 0, width: '44px', textAlign: 'right' }}>{meta?.target.replace('Target: ', '')}</span>
               </div>
             </div>
-          ))}
+          )
+        })}
+      </div>
+
+      {/* Improvement tip based on weakest area */}
+      <div style={{
+        background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)',
+        padding: '10px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start',
+      }}>
+        <span style={{ fontSize: '14px', flexShrink: 0 }}>{weakestMeta?.icon}</span>
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 2px' }}>
+            Biggest opportunity — {weakest.label}
+          </p>
+          <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.45' }}>
+            {weakestMeta?.tip}
+          </p>
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -401,7 +449,7 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
   const dot = typeColors[insight.type].dot
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.5)', zIndex: 300, display: 'flex', alignItems: 'flex-end', padding: '0' }} onClick={onClose}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 300, display: 'flex', alignItems: 'flex-end', padding: '0' }} onClick={onClose}>
       <div style={{ background: 'var(--sand-50)', borderRadius: '20px 20px 0 0', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         {/* Handle + header */}
         <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
@@ -489,7 +537,7 @@ function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; 
             const c = typeColors[insight.type]
             const isOpen = expandedIdx === i
             return (
-              <div key={i} style={{ background: c.bg, border: `0.5px solid ${c.border}`, borderRadius: 'var(--radius-md)', overflow: 'hidden', transition: 'all 0.2s' }}>
+              <div key={i} style={{ background: c.bg, border: `0.5px solid ${c.border}`, borderRadius: 'var(--radius-md)', overflow: 'hidden', transition: 'all var(--transition)' }}>
                 {/* Header row — always visible */}
                 <button
                   onClick={() => setExpandedIdx(isOpen ? null : i)}
@@ -500,7 +548,7 @@ function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; 
                     <p style={{ fontSize: '11px', fontWeight: '700', color: c.dot, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 2px' }}>{insight.title}</p>
                     <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--sand-800)', margin: 0 }}>{insight.text}</p>
                   </div>
-                  <span style={{ fontSize: '12px', color: 'var(--sand-400)', flexShrink: 0, marginTop: '2px', transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                  <span style={{ fontSize: '12px', color: 'var(--sand-400)', flexShrink: 0, marginTop: '2px', transition: `transform var(--spring-fast)`, display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
                 </button>
 
                 {/* Expanded content */}
@@ -536,21 +584,202 @@ function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; 
   )
 }
 
+const CONFETTI_COLORS = ['#FFD700','#FF6B6B','#4FC3F7','#81C784','#CE93D8','#FFB74D','#F06292','#4DB6AC','#FFF176','#80DEEA']
+
+function Confetti() {
+  const particles = useMemo(() => Array.from({ length: 65 }, (_, i) => ({
+    id: i,
+    x: 10 + Math.random() * 80,
+    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    w: 5 + Math.random() * 7,
+    h: Math.random() > 0.45 ? (5 + Math.random() * 7) : (10 + Math.random() * 14),
+    delay: Math.random() * 1.4,
+    dur: 2.2 + Math.random() * 2,
+    drift: (-70 + Math.random() * 140).toFixed(0),
+    rot: (200 + Math.random() * 560).toFixed(0),
+    round: Math.random() > 0.55,
+  })), [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 202 }}>
+      {particles.map(p => (
+        <div key={p.id} style={{
+          position: 'absolute',
+          left: `${p.x}%`,
+          top: '-14px',
+          width: `${p.w}px`,
+          height: `${p.h}px`,
+          background: p.color,
+          borderRadius: p.round ? '50%' : '2px',
+          animationName: 'confettiFall',
+          animationDuration: `${p.dur}s`,
+          animationDelay: `${p.delay}s`,
+          animationTimingFunction: 'cubic-bezier(0.23, 1, 0.32, 1)',
+          animationFillMode: 'both',
+          '--drift': `${p.drift}px`,
+          '--rot': `${p.rot}deg`,
+        } as any} />
+      ))}
+    </div>
+  )
+}
+
 function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => void }) {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
+  const [count, setCount] = useState(0)
+
   useEffect(() => {
-    const t = setTimeout(onClose, 5000)
+    const t = setTimeout(onClose, 9000)
     return () => clearTimeout(t)
   }, [])
 
+  // Count-up animation for the amount
+  useEffect(() => {
+    let start: number | null = null
+    const dur = 1400
+    const step = (ts: number) => {
+      if (!start) start = ts
+      const p = Math.min((ts - start) / dur, 1)
+      const eased = 1 - Math.pow(2, -10 * p)
+      setCount(Math.round(eased * amount))
+      if (p < 1) requestAnimationFrame(step)
+    }
+    const id = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(id)
+  }, [amount])
+
+  const trophyEmoji = amount >= 1000000 ? '💎' : amount >= 500000 ? '🏆' : amount >= 100000 ? '⭐' : '🎯'
+  const milestone_label = amount >= 1000000 ? 'Millionaire' : amount >= 500000 ? 'Half a million' : amount >= 250000 ? 'Quarter million' : amount >= 100000 ? 'Six figures' : amount >= 50000 ? 'Fifty thousand' : amount >= 25000 ? 'Twenty-five thousand' : 'Ten thousand'
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }} onClick={onClose}>
-      <div className="animate-scale" style={{ background: 'var(--sand-50)', borderRadius: 'var(--radius-lg)', padding: '32px 28px', textAlign: 'center', maxWidth: '320px', width: '100%' }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎉</div>
-        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 8px' }}>Milestone reached</p>
-        <p style={{ fontSize: '32px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-1px', margin: '0 0 8px' }}>{fmt(amount)}</p>
-        <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 20px', lineHeight: '1.5' }}>Your net worth just crossed {fmt(amount)}. That's a real achievement — keep going.</p>
-        <button onClick={onClose} className="btn-primary" style={{ width: '100%', padding: '12px', fontSize: '14px' }}>Keep building →</button>
+    <>
+      <Confetti />
+      <div
+        style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,4,0.75)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+      >
+        <div
+          style={{ background: 'var(--sand-50)', borderRadius: 'var(--radius-xl)', padding: '40px 32px', textAlign: 'center', maxWidth: '340px', width: '100%', animationName: 'celebrateCardIn', animationDuration: '0.65s', animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)', animationFillMode: 'both', position: 'relative', overflow: 'hidden' }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Glow ring */}
+          <div style={{ position: 'absolute', inset: '-2px', borderRadius: 'calc(var(--radius-xl) + 2px)', background: 'linear-gradient(135deg, #FFD700, #FF6B6B, #4FC3F7, #81C784)', opacity: 0.25, zIndex: -1 }} />
+
+          {/* Trophy emoji with bounce */}
+          <div style={{ fontSize: '64px', marginBottom: '16px', display: 'inline-block', animationName: 'trophyBounce', animationDuration: '0.7s', animationDelay: '0.3s', animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)', animationFillMode: 'both' }}>
+            {trophyEmoji}
+          </div>
+
+          <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', letterSpacing: '0.12em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+            Milestone reached
+          </p>
+          <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)', margin: '0 0 14px' }}>
+            {milestone_label}
+          </p>
+
+          {/* Animated amount */}
+          <div style={{ fontSize: '42px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-2px', lineHeight: '1', margin: '0 0 16px', animationName: 'shimmerGold', animationDuration: '2s', animationIterationCount: '3', animationTimingFunction: 'ease-in-out' }}>
+            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(count)}
+          </div>
+
+          <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 28px', lineHeight: '1.6' }}>
+            Your net worth just crossed {fmt(amount)}.<br />That's a real achievement — keep building.
+          </p>
+
+          <button
+            onClick={onClose}
+            className="btn-primary"
+            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: 'var(--radius-md)', letterSpacing: '0.01em' }}
+          >
+            Keep building →
+          </button>
+
+          <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '12px 0 0' }}>
+            Saved to your achievements ↗
+          </p>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
+  const fmtAmt = (n: number) => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+    if (n >= 1_000) return `$${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`
+    return `$${n}`
+  }
+
+  const fmtDate = (iso: string | null) => {
+    if (!iso) return null
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }
+
+  const milestoneMeta: Record<number, { icon: string; label: string }> = {
+    10000:   { icon: '🪙', label: '$10k club' },
+    25000:   { icon: '💫', label: '$25k reached' },
+    50000:   { icon: '🎯', label: 'Fifty thousand' },
+    100000:  { icon: '⭐', label: 'Six figures' },
+    250000:  { icon: '🔥', label: 'Quarter million' },
+    500000:  { icon: '🏆', label: 'Half million' },
+    1000000: { icon: '💎', label: 'Millionaire' },
+  }
+
+  const milestones = MILESTONES.map(m => {
+    const raw = localStorage.getItem(`${userId}_milestone_${m}`)
+    if (!raw) return null
+    let date: string | null = null
+    if (raw !== '1') { try { date = JSON.parse(raw).date } catch {} }
+    const meta = milestoneMeta[m] || { icon: '🏅', label: fmtAmt(m) }
+    return { key: `m_${m}`, icon: meta.icon, title: meta.label, sub: fmtAmt(m) + ' net worth', date }
+  }).filter(Boolean) as { key: string; icon: string; title: string; sub: string; date: string | null }[]
+
+  const completedGoals = goals
+    .filter(g => g.target_amount > 0 && g.current_amount >= g.target_amount)
+    .map(g => {
+      let date: string | null = null
+      const raw = localStorage.getItem(`${userId}_goal_done_${g.name}`)
+      if (raw) { try { date = JSON.parse(raw).date } catch {} }
+      return { key: `g_${g.name}`, icon: '✅', title: g.name, sub: `${fmtAmt(g.target_amount)} goal`, date }
+    })
+
+  const all = [...milestones, ...completedGoals]
+  if (!all.length) return null
+
+  return (
+    <div className="animate-fade" style={{ marginBottom: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+        <p className="label" style={{ margin: 0 }}>Achievements</p>
+        <span style={{ fontSize: '10px', color: 'var(--sand-400)', fontWeight: '500' }}>{all.length} earned</span>
+      </div>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
+        {all.map((item, i) => (
+          <div
+            key={item.key}
+            style={{
+              flexShrink: 0,
+              background: 'var(--sand-50)',
+              border: '0.5px solid var(--sand-300)',
+              borderRadius: 'var(--radius-md)',
+              padding: '14px 14px 12px',
+              minWidth: '112px',
+              textAlign: 'center',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+              animationName: 'achieveBadgeIn',
+              animationDuration: '0.35s',
+              animationDelay: `${i * 0.06}s`,
+              animationFillMode: 'both',
+              animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+            }}
+          >
+            <div style={{ fontSize: '28px', marginBottom: '7px', lineHeight: 1 }}>{item.icon}</div>
+            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)', margin: '0 0 2px', lineHeight: '1.2' }}>{item.title}</p>
+            <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 5px' }}>{item.sub}</p>
+            {item.date && (
+              <p style={{ fontSize: '9px', color: 'var(--sand-400)', margin: 0, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{fmtDate(item.date)}</p>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -988,7 +1217,7 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
   const formatText = (text: string) => formatAIText(stripMeta(text), { baseFontSize: '14px' })
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
@@ -1055,7 +1284,7 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
                   </div>
                 </div>
                 <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '3px', transition: 'width 0.4s ease' }} />
+                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
                 </div>
               </div>
             ))}
@@ -1310,7 +1539,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
@@ -1625,7 +1854,7 @@ function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
   const formatText = (text: string) => formatAIText(stripMeta(text))
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
@@ -1819,14 +2048,37 @@ export default function Home() {
       .catch(() => {})
   }, [userId])
 
+  // Track completed goals in localStorage so TrophySection can display them with dates
+  useEffect(() => {
+    if (!userId || !profile?.goals) return
+    const now = JSON.stringify({ date: new Date().toISOString() })
+    ;(profile.goals as any[]).forEach((g: any) => {
+      if (g.target_amount > 0 && g.current_amount >= g.target_amount) {
+        const k = `${userId}_goal_done_${g.name}`
+        if (!localStorage.getItem(k)) localStorage.setItem(k, now)
+      }
+    })
+  }, [profile?.goals, userId])
+
   const checkMilestone = (netWorth: number) => {
-    const key = getMilestoneKey(netWorth)
-    if (!key || !userId) return
-    const storageKey = `${userId}_${key}`
-    if (!localStorage.getItem(storageKey)) {
-      const threshold = MILESTONES.filter(m => netWorth >= m).pop()!
-      setMilestone(threshold)
-      localStorage.setItem(storageKey, '1')
+    if (!userId) return
+    const allHit = MILESTONES.filter(m => netWorth >= m)
+    if (!allHit.length) return
+
+    const now = JSON.stringify({ date: new Date().toISOString() })
+
+    // Silently backfill all lower milestones (no overlay — they were passed before we tracked)
+    allHit.slice(0, -1).forEach(m => {
+      const k = `${userId}_milestone_${m}`
+      if (!localStorage.getItem(k)) localStorage.setItem(k, now)
+    })
+
+    // Show overlay only for the highest milestone if it's new
+    const highest = allHit[allHit.length - 1]
+    const highestKey = `${userId}_milestone_${highest}`
+    if (!localStorage.getItem(highestKey)) {
+      setMilestone(highest)
+      localStorage.setItem(highestKey, now)
     }
   }
 
@@ -2074,7 +2326,11 @@ export default function Home() {
             { id: 'savings', label: 'Save/mo', value: fmt(analysis.availableToSave), color: 'var(--success)', bg: 'rgba(122,158,110,0.08)' }
           ].map(item => (
             <button key={item.id} onClick={() => openMiniDash(item.id as any)}
-              style={{ background: item.bg, border: 'none', borderRadius: 'var(--radius-sm)', padding: '10px 8px', textAlign: 'center', cursor: 'pointer', fontFamily: 'inherit', transition: 'opacity 0.15s' }}>
+              style={{ background: item.bg, border: 'none', borderRadius: 'var(--radius-sm)', padding: '10px 8px', textAlign: 'center', cursor: 'pointer', fontFamily: 'inherit', transition: `transform var(--spring-fast), opacity var(--transition)` }}
+              onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.03)')}
+              onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+              onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.97)')}
+              onMouseUp={e => (e.currentTarget.style.transform = 'scale(1.03)')}>
               <p className="label" style={{ marginBottom: '3px', fontSize: '9px' }}>{item.label}</p>
               <p style={{ fontSize: '13px', fontWeight: '600', color: item.color, margin: '0 0 3px' }}>{item.value}</p>
               <p style={{ fontSize: '9px', color: 'var(--sand-500)', margin: 0 }}>tap to analyze</p>
@@ -2082,6 +2338,11 @@ export default function Home() {
           ))}
         </div>
       </div>
+
+      {/* Financial Health Score */}
+      {isVisible('health') && (
+        <HealthScoreCard analysis={analysis} profile={profile} />
+      )}
 
       {/* Assets breakdown */}
       {(() => {
@@ -2206,7 +2467,7 @@ export default function Home() {
                             </div>
                           </div>
                           <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: group.color, borderRadius: '2px', transition: 'width 0.5s ease' }} />
+                            <div style={{ height: '100%', width: `${pct}%`, background: group.color, borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
                           </div>
                         </div>
                       )
@@ -2301,7 +2562,7 @@ export default function Home() {
                       </div>
                     </div>
                     <div style={{ height: '3px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: debtSparkPath ? '6px' : '0' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 0.5s ease', opacity: 0.6 }} />
+                      <div style={{ height: '100%', width: `${pct}%`, background: rateColor, borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)', opacity: 0.6 }} />
                     </div>
                     {debtSparkPath && (
                       <svg width="100%" height="28" viewBox="0 0 280 28" preserveAspectRatio="none" style={{ display: 'block', opacity: 0.65 }}>
@@ -2320,11 +2581,6 @@ export default function Home() {
           </div>
         )
       })()}
-
-      {/* Financial Health Score */}
-      {isVisible('health') && (
-        <HealthScoreCard analysis={analysis} profile={profile} />
-      )}
 
       {/* Today's Focus */}
       {isVisible('focus') && topAction && (
@@ -2358,7 +2614,7 @@ export default function Home() {
       {/* Quick Stats */}
       {isVisible('stats') && (
         <div className="animate-fade stagger-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-          <div className="card" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => navigate('/retirement')}>
+          <div className="card card-interactive" style={{ padding: '16px' }} onClick={() => navigate('/retirement')}>
             <p className="label" style={{ marginBottom: '4px' }}>Retire at</p>
             <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>
               {profile?.retirement_plan?.targetAge || '—'}
@@ -2396,7 +2652,7 @@ export default function Home() {
                   <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(row.value)}</span>
                 </div>
                 <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
                 </div>
               </div>
             ))}
@@ -2433,7 +2689,7 @@ export default function Home() {
                     </div>
                   </div>
                   <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: '10px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 0.4s ease' }} />
+                    <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
                   </div>
                   {isEditing ? (
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -2469,6 +2725,11 @@ export default function Home() {
             })}
           </div>
         </div>
+      )}
+
+      {/* Achievements / Trophy collection */}
+      {userId && (
+        <TrophySection userId={userId} goals={profile?.goals || []} />
       )}
 
       {miniDash && (

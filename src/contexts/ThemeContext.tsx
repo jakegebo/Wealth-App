@@ -16,7 +16,7 @@ interface ThemeContextType {
 const DEFAULT_PREFERENCES: Preferences = {
   accent: 'default',
   darkMode: false,
-  dashboardLayout: ['focus', 'stats', 'watchlist', 'goals', 'retirement', 'debt', 'news', 'income'],
+  dashboardLayout: ['health', 'insights', 'focus', 'stats', 'cashflow', 'goals', 'actions', 'debt', 'watchlist', 'income', 'news', 'retirement'],
   hiddenSections: []
 }
 

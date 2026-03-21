@@ -26,7 +26,9 @@ function Layout({ user, children }: { user: any; children: React.ReactNode }) {
 
   return (
     <>
-      {children}
+      <div key={location.pathname} className="page-enter">
+        {children}
+      </div>
       {showNav && <BottomNav />}
       {showNav && <FAB />}
     </>

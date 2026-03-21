@@ -196,7 +196,7 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
         {/* Track */}
         <div style={{ position: 'relative', height: '18px', marginBottom: '6px' }}>
           <div style={{ position: 'absolute', top: '8px', left: '9px', right: '9px', height: '3px', background: 'var(--sand-200)', borderRadius: '2px' }}>
-            <div style={{ height: '100%', width: `${currentPhase === 0 ? 4 : currentPhase === 1 ? 37 : 70}%`, background: 'var(--accent)', borderRadius: '2px', transition: 'width 0.5s ease' }} />
+            <div style={{ height: '100%', width: `${currentPhase === 0 ? 4 : currentPhase === 1 ? 37 : 70}%`, background: 'var(--accent)', borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
           </div>
           {TIMELINE_DOTS.map((dot, i) => (
             <div key={i} style={{ position: 'absolute', top: '0', left: dot.pct === 0 ? '0' : dot.pct === 100 ? 'auto' : `calc(${dot.pct}% - 9px)`, right: dot.pct === 100 ? '0' : 'auto' }}>
@@ -325,7 +325,7 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
               <span style={{ fontSize: '16px', fontWeight: '700', color: item.color }}>{item.pct}%</span>
             </div>
             <div style={{ height: '6px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden', marginBottom: '4px' }}>
-              <div style={{ height: '100%', width: `${item.pct}%`, background: item.color, borderRadius: '3px', transition: 'width 0.5s ease' }} />
+              <div style={{ height: '100%', width: `${item.pct}%`, background: item.color, borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
             </div>
             <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{item.note}</p>
           </div>
