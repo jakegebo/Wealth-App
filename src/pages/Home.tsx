@@ -2134,7 +2134,6 @@ export default function Home() {
     const profileChangedSinceAnalysis = fp && storedFp && fp !== storedFp
     if (analysis && !profileChangedSinceAnalysis) {
       saveNetWorthHistory(userId!, analysis, profile)
-      checkMilestone(analysis.netWorth)
     } else if (profile) {
       // Either no analysis yet, or profile changed since last analysis ran
       runAnalysis(profile)

@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
-import { formatAIText } from '../lib/formatAIText'
 
 interface Goal {
   name: string
@@ -763,74 +761,11 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
 
 export default function Plan() {
   const navigate = useNavigate()
-  const { preferences } = useTheme()
-  const { userId, profileData: profile, analysis, chatRefs, goalAdvice, loading, updateProfile } = useProfile()
+  const { userId, profileData: profile, analysis, chatRefs, loading, updateProfile } = useProfile()
   const [updatingGoal, setUpdatingGoal] = useState<Goal | null>(null)
-  const [expandedAction, setExpandedAction] = useState<number | null>(null)
-  const [loadingAdvice, setLoadingAdvice] = useState<string | null>(null)
-  const [minimizedAdvice, setMinimizedAdvice] = useState<Record<string, boolean>>({})
-
-  // Goal suggestions
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const [addingGoalId, setAddingGoalId] = useState<string | null>(null)
-  // Goal removal
   const [confirmRemoveGoal, setConfirmRemoveGoal] = useState<number | null>(null)
-  // Action completion
-  const [showCompletedActions, setShowCompletedActions] = useState(false)
-
-  const stripAdviceMeta = (text: string) =>
-    text.replace(/<followups>[\s\S]*?<\/followups>/g, '').replace(/<chart>[\s\S]*?<\/chart>/g, '').trim()
-
-  const formatAdvice = (text: string) =>
-    formatAIText(stripAdviceMeta(text), { baseFontSize: '12px', textColor: 'var(--sand-700)' })
-
-  const fetchGoalAdvice = async (goal: Goal, force = false) => {
-    if (!force && goalAdvice[goal.name]) return
-    if (loadingAdvice === goal.name) return
-    setLoadingAdvice(goal.name)
-
-    const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
-    const pct = Math.round(goal.percentage)
-    const remaining = goal.targetAmount - goal.currentAmount
-    const monthsLeft = goal.monthlyNeeded > 0 ? Math.ceil(remaining / goal.monthlyNeeded) : null
-    const availableToSave = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
-
-    // Craft prompt that adapts to where they are in the goal
-    let progressContext: string
-    if (pct >= 100) {
-      progressContext = `I've fully achieved this goal — I have ${fmt(goal.currentAmount)} against a ${fmt(goal.targetAmount)} target, a surplus of ${fmt(goal.currentAmount - goal.targetAmount)}. What should I do with this money now?`
-    } else if (pct >= 75) {
-      progressContext = `I'm ${pct}% of the way there — ${fmt(remaining)} left to reach ${fmt(goal.targetAmount)}. At ${fmt(goal.monthlyNeeded)}/mo I'm ${monthsLeft ? `~${monthsLeft} months away` : 'close'}. How do I make the final push and what should I do once I hit it?`
-    } else if (pct >= 40) {
-      progressContext = `I'm ${pct}% funded (${fmt(goal.currentAmount)} of ${fmt(goal.targetAmount)}). I need ${fmt(goal.monthlyNeeded)}/mo and have ${fmt(availableToSave)}/mo available. Am I on track? What's the best way to accelerate?`
-    } else if (pct >= 10) {
-      progressContext = `I've started but I'm only ${pct}% funded — ${fmt(goal.currentAmount)} of ${fmt(goal.targetAmount)}. I need ${fmt(goal.monthlyNeeded)}/mo. What's the best account or vehicle to hold this money, and how do I build momentum?`
-    } else {
-      progressContext = `I'm just getting started on this goal (${pct}% funded, ${fmt(goal.currentAmount)} saved). My target is ${fmt(goal.targetAmount)}. I have ${fmt(availableToSave)}/mo surplus. What's the single best first step and where should I keep this money?`
-    }
-
-    const prompt = `Goal: "${goal.name}" — ${progressContext}
-
-Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff. End with one concrete action I can take today.`
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          profile: profile || {},
-          topic: 'goals'
-        })
-      })
-      const data = await res.json()
-      const raw = data.message || 'Unable to load advice.'
-      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: raw } })
-    } catch {
-      await updateProfile({ goal_advice: { ...goalAdvice, [goal.name]: 'Unable to load advice. Please try again.' } })
-    }
-    setLoadingAdvice(null)
-  }
+  const [activeTab, setActiveTab] = useState<'goals' | 'debt' | 'retire'>('goals')
 
   const saveGoalProgress = async (goal: Goal, newAmount: number) => {
     if (!profile || !userId) return
@@ -838,10 +773,7 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
       g.name === goal.name ? { ...g, current_amount: newAmount } : g
     ) || []
     const updatedProfile = { ...profile, goals: updatedGoals }
-    const newAdvice = { ...goalAdvice }
-    delete newAdvice[goal.name]
-    await updateProfile({ profile_data: updatedProfile, goal_advice: newAdvice })
-
+    await updateProfile({ profile_data: updatedProfile })
     const res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -850,9 +782,6 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
     const result = await res.json()
     await updateProfile({ analysis: result })
     setUpdatingGoal(null)
-    // Refresh advice with new progress context
-    const updatedGoal = result.goals?.find((g: any) => g.name === goal.name) || goal
-    setTimeout(() => fetchGoalAdvice(updatedGoal, true), 200)
   }
 
   const rerunAnalysis = async (updatedProfile: any) => {
@@ -868,12 +797,9 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
 
   const removeGoal = async (goalIndex: number) => {
     if (!profile) return
-    const goalToRemove = (profile.goals || [])[goalIndex]
     const updatedGoals = (profile.goals || []).filter((_: any, i: number) => i !== goalIndex)
     const updatedProfile = { ...profile, goals: updatedGoals }
-    const newAdvice = { ...goalAdvice }
-    if (goalToRemove?.name) delete newAdvice[goalToRemove.name]
-    await updateProfile({ profile_data: updatedProfile, goal_advice: newAdvice })
+    await updateProfile({ profile_data: updatedProfile })
     setConfirmRemoveGoal(null)
     rerunAnalysis(updatedProfile)
   }
@@ -894,25 +820,12 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
     await updateProfile({ profile_data: updatedProfile })
     await rerunAnalysis(updatedProfile)
     setAddingGoalId(null)
-    setShowSuggestions(false)
   }
 
   const dismissSuggestion = async (id: string) => {
     if (!profile) return
     const dismissed = [...(profile.dismissed_suggestions || []), id]
     await updateProfile({ profile_data: { ...profile, dismissed_suggestions: dismissed } })
-  }
-
-  const completeAction = async (actionTitle: string) => {
-    if (!profile) return
-    const completed = [...(profile.completed_actions || []), actionTitle]
-    await updateProfile({ profile_data: { ...profile, completed_actions: completed } })
-  }
-
-  const uncompleteAction = async (actionTitle: string) => {
-    if (!profile) return
-    const completed = (profile.completed_actions || []).filter((t: string) => t !== actionTitle)
-    await updateProfile({ profile_data: { ...profile, completed_actions: completed } })
   }
 
   const openChat = async (key: string, prompt: string, title: string) => {
@@ -927,7 +840,6 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
     }
   }
 
-  const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
 
   if (loading) return (
@@ -945,326 +857,237 @@ Give me a sharp, specific 3-4 sentence analysis. Use my actual numbers. No fluff
   const retirementPlan = profile?.retirement_plan
   const income = profile?.monthly_income || analysis.monthlyIncome || 0
   const expenses = profile?.monthly_expenses || 0
+  const surplus = Math.max(0, income - expenses)
   const savingsRate = income > 0 ? (analysis.availableToSave / income) * 100 : 0
-  const completedActions: string[] = profile?.completed_actions || []
-  const pendingActions = analysis.nextActions.filter((a: any) => !completedActions.includes(a.title))
-  const doneActions = analysis.nextActions.filter((a: any) => completedActions.includes(a.title))
+  const suggestions = generateGoalSuggestions(profile, analysis)
+  const hasDebt = profile?.debts?.length > 0
+
+  const TABS = [
+    { id: 'goals' as const, label: analysis.goals.length > 0 ? `Goals (${analysis.goals.length})` : 'Goals' },
+    { id: 'debt' as const, label: 'Debt', dim: !hasDebt },
+    { id: 'retire' as const, label: 'Retire' },
+  ]
 
   return (
     <div className="page" style={{ paddingTop: '0' }}>
 
       {/* Header */}
       <div style={{ padding: '52px 0 20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-0.5px' }}>Your Plan</h1>
-        <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Goals, cash flow, retirement & debt</p>
+        <h1 style={{ fontSize: '24px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 10px', letterSpacing: '-0.5px' }}>Your Plan</h1>
+
+        {/* Compact cash flow strip */}
+        {income > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', color: 'var(--sand-600)' }}>{fmt(income)}/mo</span>
+            <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>−</span>
+            <span style={{ fontSize: '13px', color: 'var(--sand-600)' }}>{fmt(expenses)} expenses</span>
+            <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>=</span>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: surplus > 0 ? 'var(--success)' : 'var(--danger)' }}>{fmt(surplus)} free</span>
+            <span style={{
+              fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px',
+              background: savingsRate >= 20 ? 'rgba(122,158,110,0.12)' : savingsRate >= 10 ? 'var(--accent-light)' : 'rgba(192,57,43,0.07)',
+              color: savingsRate >= 20 ? 'var(--success)' : savingsRate >= 10 ? 'var(--accent)' : 'var(--danger)',
+            }}>{Math.round(savingsRate)}% saved</span>
+          </div>
+        )}
       </div>
 
-      {/* Cash Flow */}
-      {isVisible('cashflow') && income > 0 && (
-        <CashFlowCard income={income} expenses={expenses} availableToSave={analysis.availableToSave} savingsRate={savingsRate} />
-      )}
+      {/* Tab bar */}
+      <div style={{ display: 'flex', background: 'var(--sand-200)', borderRadius: '12px', padding: '3px', marginBottom: '20px' }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              flex: 1, padding: '9px 6px', border: 'none', borderRadius: '9px',
+              background: activeTab === tab.id ? 'var(--sand-50)' : 'transparent',
+              color: activeTab === tab.id ? 'var(--sand-900)' : tab.dim ? 'var(--sand-400)' : 'var(--sand-600)',
+              fontSize: '13px', fontWeight: activeTab === tab.id ? '600' : '400',
+              cursor: 'pointer', fontFamily: 'inherit',
+              transition: 'all 0.15s',
+              boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {/* Goals */}
-      {isVisible('goals') && analysis.goals.length > 0 && (() => {
-        const suggestions = generateGoalSuggestions(profile, analysis)
-        return (
-        <div className="animate-fade" style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <p className="label">Goals</p>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {suggestions.length > 0 && (
-                <button
-                  onClick={() => setShowSuggestions(s => !s)}
-                  style={{ fontSize: '11px', padding: '3px 8px', background: showSuggestions ? 'var(--accent)' : 'var(--sand-200)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: showSuggestions ? 'white' : 'var(--sand-700)', fontFamily: 'inherit', fontWeight: '500' }}>
-                  💡 {suggestions.length} Suggestion{suggestions.length > 1 ? 's' : ''}
-                </button>
-              )}
-              <button className="btn-ghost" onClick={() => navigate('/onboarding?step=4')} style={{ fontSize: '11px', padding: '3px 8px' }}>+ Add goal</button>
+      {/* ── GOALS TAB ── */}
+      {activeTab === 'goals' && (
+        <div className="animate-fade">
+          {analysis.goals.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+              <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: '0 0 16px' }}>No goals yet.</p>
+              <button className="btn-primary" onClick={() => navigate('/onboarding?step=4')} style={{ padding: '11px 24px', fontSize: '14px' }}>
+                + Add your first goal
+              </button>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+              {analysis.goals.map((goal, i) => {
+                const isAchieved = goal.currentAmount >= goal.targetAmount
+                const goalSurplus = goal.currentAmount - goal.targetAmount
+                const pct = Math.min(100, Math.round(goal.percentage))
+                const goalColor = goal.feasibility === 'achievable' ? 'var(--success)' : goal.feasibility === 'stretch' ? 'var(--warning)' : 'var(--danger)'
 
-          {/* Suggestions panel */}
-          {showSuggestions && suggestions.length > 0 && (
-            <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {suggestions.map(s => (
-                <div key={s.id} style={{ background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius)', padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                    <span style={{ fontSize: '20px', flexShrink: 0 }}>{s.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '14px', fontWeight: '600', margin: '0 0 2px', color: 'var(--sand-900)' }}>{s.name}</p>
-                      <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: '0 0 4px', lineHeight: '1.4' }}><strong>Why:</strong> {s.why}</p>
-                      <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: '0 0 8px', lineHeight: '1.4' }}><strong>How:</strong> {s.how}</p>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {s.targetAmount > 0 && <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>Target: {fmt(s.targetAmount)}</span>}
-                        {s.monthlyNeeded > 0 && <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>· {fmt(s.monthlyNeeded)}/mo</span>}
+                return (
+                  <div key={i} className="card animate-fade" style={{ animationDelay: `${i * 0.05}s`, opacity: 0 }}>
+                    {/* Top row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                          <p style={{ fontSize: '15px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>{goal.name}</p>
+                          {isAchieved && (
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.1)', padding: '2px 8px', borderRadius: '20px' }}>Achieved ✓</span>
+                          )}
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0 }}>
+                          {fmt(goal.currentAmount)} of {fmt(goal.targetAmount)}
+                          {isAchieved && goalSurplus > 0 && <span style={{ color: 'var(--success)' }}> · +{fmt(goalSurplus)} surplus</span>}
+                        </p>
+                      </div>
+                      <p style={{ fontSize: '22px', fontWeight: '300', color: isAchieved ? 'var(--success)' : 'var(--sand-800)', margin: 0, letterSpacing: '-0.5px', flexShrink: 0, paddingLeft: '12px' }}>
+                        {isAchieved ? '✓' : `${pct}%`}
+                      </p>
+                    </div>
+
+                    {!isAchieved && <ProgressBar value={goal.percentage} color={goalColor} />}
+
+                    {!isAchieved && goal.monthlyNeeded > 0 && (
+                      <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '8px 0 0' }}>{fmt(goal.monthlyNeeded)}/mo needed</p>
+                    )}
+
+                    {/* Footer */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '0.5px solid var(--sand-200)' }}>
+                      <button
+                        onClick={() => openChat(
+                          isAchieved ? `goal_surplus_${i}` : `goal_${i}`,
+                          isAchieved
+                            ? `I've exceeded my "${goal.name}" goal with a ${fmt(goalSurplus)} surplus. What are the smartest ways to put this money to work?`
+                            : `Give me a detailed plan for my "${goal.name}" goal. I have ${fmt(goal.currentAmount)} saved toward ${fmt(goal.targetAmount)}.`,
+                          isAchieved ? `${goal.name} — Surplus` : `${goal.name} Plan`
+                        )}
+                        style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+                        {isAchieved ? 'Put this to work →' : chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get advice →'}
+                      </button>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {confirmRemoveGoal === i ? (
+                          <>
+                            <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>Remove?</span>
+                            <button onClick={() => removeGoal(i)} style={{ background: 'var(--danger)', border: 'none', color: 'white', fontSize: '11px', fontWeight: '600', cursor: 'pointer', padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>Yes</button>
+                            <button onClick={() => setConfirmRemoveGoal(null)} style={{ background: 'var(--sand-200)', border: 'none', color: 'var(--sand-700)', fontSize: '11px', cursor: 'pointer', padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>No</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => setUpdatingGoal(goal)} style={{ background: 'var(--sand-200)', border: 'none', color: 'var(--sand-700)', fontSize: '11px', fontWeight: '500', cursor: 'pointer', padding: '5px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>Update</button>
+                            <button onClick={() => setConfirmRemoveGoal(i)} style={{ background: 'none', border: '0.5px solid var(--sand-300)', color: 'var(--sand-500)', fontSize: '11px', cursor: 'pointer', padding: '5px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>✕</button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', paddingTop: '10px', borderTop: '0.5px solid var(--accent-border)' }}>
-                    <button
-                      disabled={addingGoalId === s.id}
-                      onClick={() => addSuggestedGoal(s)}
-                      style={{ flex: 1, background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'white', fontSize: '12px', fontWeight: '600', padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit', opacity: addingGoalId === s.id ? 0.6 : 1 }}>
-                      {addingGoalId === s.id ? 'Adding…' : '+ Add to my goals'}
-                    </button>
-                    <button
-                      onClick={() => dismissSuggestion(s.id)}
-                      style={{ background: 'none', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', color: 'var(--sand-500)', fontSize: '12px', padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {analysis.goals.map((goal, i) => {
-              const isAchieved = goal.currentAmount >= goal.targetAmount
-              const surplus = goal.currentAmount - goal.targetAmount
-              const goalColor = goal.feasibility === 'achievable' ? 'var(--success)' : goal.feasibility === 'stretch' ? 'var(--warning)' : 'var(--danger)'
-              const advice = goalAdvice[goal.name]
+          {/* Add goal */}
+          <button
+            className="btn-ghost"
+            onClick={() => navigate('/onboarding?step=4')}
+            style={{ width: '100%', padding: '12px', fontSize: '13px', marginBottom: suggestions.length > 0 ? '28px' : '0' }}>
+            + Add goal
+          </button>
 
-              return (
-                <div key={i} className="card animate-fade" style={{ animationDelay: `${i * 0.05}s`, opacity: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <p style={{ fontSize: '15px', fontWeight: '500', margin: 0, color: 'var(--sand-900)' }}>{goal.name}</p>
-                        {isAchieved && (
-                          <span style={{ fontSize: '10px', fontWeight: '600', color: 'var(--success)', background: 'rgba(122,158,110,0.1)', padding: '2px 8px', borderRadius: '20px' }}>Achieved ✓</span>
-                        )}
-                      </div>
-                      <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '2px 0 0' }}>
-                        {fmt(goal.currentAmount)} of {fmt(goal.targetAmount)}
-                        {isAchieved && surplus > 0 && <span style={{ color: 'var(--success)' }}> · +{fmt(surplus)} surplus</span>}
-                      </p>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <p style={{ fontSize: '20px', fontWeight: '300', color: isAchieved ? 'var(--success)' : 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px' }}>
-                        {isAchieved ? '✓' : `${Math.round(goal.percentage)}%`}
-                      </p>
-                      {!isAchieved && goal.monthlyNeeded > 0 && (
-                        <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{fmt(goal.monthlyNeeded)}/mo</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {!isAchieved && <ProgressBar value={goal.percentage} color={goalColor} />}
-
-                  {/* Goal Advice Recap */}
-                  <div style={{ marginTop: '12px', background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                    {advice ? (
-                      <>
-                        {/* Header row — always visible */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', cursor: 'pointer' }}
-                          onClick={() => setMinimizedAdvice(m => ({ ...m, [goal.name]: !m[goal.name] }))}>
-                          <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
-                          </div>
-                          <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-600)', margin: 0, flex: 1, textTransform: 'uppercase', letterSpacing: '0.04em' }}>AI Analysis</p>
-                          <span style={{ fontSize: '11px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: minimizedAdvice[goal.name] ? 'rotate(180deg)' : 'none' }}>▾</span>
+          {/* Suggestions — always shown if available */}
+          {suggestions.length > 0 && (
+            <div>
+              <p className="label" style={{ marginBottom: '10px' }}>💡 Suggested for you</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {suggestions.map(s => (
+                  <div key={s.id} style={{ background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius)', padding: '14px' }}>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: '22px', flexShrink: 0, lineHeight: '1' }}>{s.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                          <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{s.name}</p>
+                          {s.priority === 'high' && (
+                            <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--accent)', background: 'rgba(122,158,110,0.15)', padding: '2px 6px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Priority</span>
+                          )}
                         </div>
-                        {/* Collapsible body */}
-                        {minimizedAdvice[goal.name] && (
-                          <div style={{ padding: '0 12px 10px' }}>
-                            <div>{formatAdvice(advice)}</div>
-                            <button
-                              onClick={async () => {
-                                const newAdvice = { ...goalAdvice }
-                                delete newAdvice[goal.name]
-                                await updateProfile({ goal_advice: newAdvice })
-                                setTimeout(() => fetchGoalAdvice(goal, true), 100)
-                              }}
-                              style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '10px', cursor: 'pointer', padding: '6px 0 0', fontFamily: 'inherit' }}>
-                              ↻ Refresh
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : loadingAdvice === goal.name ? (
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '10px 12px' }}>
-                        <div style={{ width: '18px', height: '18px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <span style={{ color: 'var(--sand-50)', fontSize: '7px', fontWeight: '700' }}>AI</span>
+                        <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: '0 0 6px', lineHeight: '1.5' }}>{s.why}</p>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                          {s.targetAmount > 0 && <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>Target: {fmt(s.targetAmount)}</span>}
+                          {s.monthlyNeeded > 0 && <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>{fmt(s.monthlyNeeded)}/mo · {s.timeline}</span>}
                         </div>
-                        {[0, 150, 300].map(d => (
-                          <div key={d} style={{ width: '5px', height: '5px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />
-                        ))}
                       </div>
-                    ) : (
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                       <button
-                        onClick={() => fetchGoalAdvice(goal)}
-                        style={{ background: 'none', border: 'none', color: 'var(--sand-500)', fontSize: '12px', cursor: 'pointer', padding: '10px 12px', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
-                        <div style={{ width: '18px', height: '18px', background: 'var(--sand-300)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <span style={{ color: 'var(--sand-600)', fontSize: '7px', fontWeight: '700' }}>AI</span>
-                        </div>
-                        Get AI analysis
+                        disabled={addingGoalId === s.id}
+                        onClick={() => addSuggestedGoal(s)}
+                        style={{ flex: 1, background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius-sm)', color: 'white', fontSize: '13px', fontWeight: '600', padding: '9px 12px', cursor: 'pointer', fontFamily: 'inherit', opacity: addingGoalId === s.id ? 0.6 : 1 }}>
+                        {addingGoalId === s.id ? 'Adding…' : '+ Add goal'}
                       </button>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '10px', borderTop: '0.5px solid var(--sand-200)' }}>
-                    <button
-                      onClick={() => openChat(
-                        isAchieved ? `goal_surplus_${i}` : `goal_${i}`,
-                        isAchieved
-                          ? `I've exceeded my "${goal.name}" goal with a ${fmt(surplus)} surplus. What are the smartest ways to put this money to work?`
-                          : `Give me a detailed plan for my "${goal.name}" goal. I have ${fmt(goal.currentAmount)} saved toward ${fmt(goal.targetAmount)}.`,
-                        isAchieved ? `${goal.name} — Surplus` : `${goal.name} Plan`
-                      )}
-                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
-                      {isAchieved ? 'Put this money to work →' : chatRefs[`goal_${i}`] ? 'Continue plan →' : 'Get full advice →'}
-                    </button>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      {confirmRemoveGoal === i ? (
-                        <>
-                          <span style={{ fontSize: '11px', color: 'var(--sand-500)' }}>Remove goal?</span>
-                          <button
-                            onClick={() => removeGoal(i)}
-                            style={{ background: 'var(--danger)', border: 'none', color: 'white', fontSize: '11px', fontWeight: '600', cursor: 'pointer', padding: '5px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>
-                            Yes
-                          </button>
-                          <button
-                            onClick={() => setConfirmRemoveGoal(null)}
-                            style={{ background: 'var(--sand-200)', border: 'none', color: 'var(--sand-700)', fontSize: '11px', cursor: 'pointer', padding: '5px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>
-                            No
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => setUpdatingGoal(goal)}
-                            style={{ background: 'var(--sand-200)', border: 'none', color: 'var(--sand-700)', fontSize: '11px', fontWeight: '500', cursor: 'pointer', padding: '5px 10px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>
-                            Update
-                          </button>
-                          <button
-                            onClick={() => setConfirmRemoveGoal(i)}
-                            style={{ background: 'none', border: '0.5px solid var(--sand-300)', color: 'var(--sand-500)', fontSize: '11px', cursor: 'pointer', padding: '5px 8px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>
-                            ✕
-                          </button>
-                        </>
-                      )}
+                      <button
+                        onClick={() => dismissSuggestion(s.id)}
+                        style={{ background: 'none', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', color: 'var(--sand-500)', fontSize: '13px', padding: '9px 14px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Dismiss
+                      </button>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )
-      })()}
+      )}
 
-      {/* Retirement */}
-      {isVisible('retirement') && (
-        <div className="animate-fade stagger-2" style={{ marginBottom: '24px' }}>
-          <p className="label" style={{ marginBottom: '10px' }}>Retirement</p>
-          <div className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('/retirement')}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* ── DEBT TAB ── */}
+      {activeTab === 'debt' && (
+        <div className="animate-fade">
+          {hasDebt ? (
+            <DebtOptimizerCard profileDebts={profile.debts} availableToSave={analysis.availableToSave} />
+          ) : (
+            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <p style={{ fontSize: '36px', margin: '0 0 12px' }}>🎉</p>
+              <p style={{ fontSize: '15px', fontWeight: '500', color: 'var(--sand-800)', margin: '0 0 6px' }}>No debt on record</p>
+              <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Add debts in settings to see your payoff plan.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── RETIRE TAB ── */}
+      {activeTab === 'retire' && (
+        <div className="animate-fade">
+          <div className="card" style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 4px' }}>
-                  {retirementPlan ? 'Projected retirement age' : 'Plan not set up yet'}
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                  {retirementPlan ? 'Target retirement age' : 'Not set up yet'}
                 </p>
-                <p style={{ fontSize: '36px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 4px', letterSpacing: '-1px' }}>
+                <p style={{ fontSize: '48px', fontWeight: '200', color: 'var(--sand-900)', margin: '0 0 6px', letterSpacing: '-2px', lineHeight: '1' }}>
                   {retirementPlan?.targetAge || '—'}
                 </p>
-                <p style={{ fontSize: '12px', color: retirementPlan?.onTrack ? 'var(--success)' : 'var(--sand-500)', margin: 0 }}>
-                  {retirementPlan ? (retirementPlan.onTrack ? 'On track ✓' : 'Needs attention') : 'Tap to build your plan →'}
+                <p style={{ fontSize: '13px', color: retirementPlan?.onTrack ? 'var(--success)' : 'var(--sand-500)', margin: 0, fontWeight: retirementPlan ? '500' : '400' }}>
+                  {retirementPlan ? (retirementPlan.onTrack ? '✓ On track' : 'Needs attention') : 'Build your retirement plan below'}
                 </p>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                {retirementPlan ? (
-                  <>
-                    <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 4px' }}>Save/mo</p>
-                    <p style={{ fontSize: '18px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{fmt(retirementPlan.monthlyContribution ?? 0)}</p>
-                  </>
-                ) : null}
-                <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '4px 0 0' }}>View full plan →</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Action Plan */}
-      {isVisible('actions') && analysis.nextActions.length > 0 && (
-        <div className="animate-fade stagger-3" style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <p className="label">Action Plan</p>
-            {doneActions.length > 0 && (
-              <button
-                onClick={() => setShowCompletedActions(s => !s)}
-                style={{ fontSize: '11px', padding: '3px 8px', background: 'var(--sand-200)', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', color: 'var(--sand-600)', fontFamily: 'inherit' }}>
-                ✓ Completed ({doneActions.length})
-              </button>
-            )}
-          </div>
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            {pendingActions.slice(0, 5).map((action: any, i: number) => (
-              <div key={i} style={{ borderBottom: i < Math.min(pendingActions.length, 5) - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
-                <button
-                  onClick={() => setExpandedAction(expandedAction === i ? null : i)}
-                  style={{ width: '100%', background: 'none', border: 'none', padding: '14px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-400)', minWidth: '16px' }}>{i + 1}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 1px', color: 'var(--sand-900)' }}>{action.title}</p>
-                      <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>{action.timeframe}</p>
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>{expandedAction === i ? '▲' : '▼'}</span>
-                  </div>
-                </button>
-                {expandedAction === i && (
-                  <div className="animate-fade" style={{ padding: '0 16px 14px', paddingLeft: '40px' }}>
-                    <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: '0 0 12px', lineHeight: '1.5' }}>{action.description}</p>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={() => openChat(`action_${i}`, `Give me a step by step plan for: ${action.title}`, action.title)}
-                        className="btn-primary"
-                        style={{ fontSize: '12px', padding: '8px 14px' }}>
-                        {chatRefs[`action_${i}`] ? 'Continue plan →' : 'Get detailed steps →'}
-                      </button>
-                      <button
-                        onClick={() => completeAction(action.title)}
-                        style={{ background: 'none', border: '0.5px solid var(--success)', color: 'var(--success)', fontSize: '12px', fontWeight: '500', cursor: 'pointer', padding: '7px 12px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit' }}>
-                        ✓ Mark done
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Completed actions */}
-          {showCompletedActions && doneActions.length > 0 && (
-            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {doneActions.map((action: any, i: number) => (
-                <div key={i} style={{ background: 'var(--sand-100)', border: '0.5px solid var(--sand-200)', borderRadius: 'var(--radius)', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ color: 'white', fontSize: '11px', fontWeight: '700' }}>✓</span>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: '13px', fontWeight: '500', margin: 0, color: 'var(--sand-600)', textDecoration: 'line-through' }}>{action.title}</p>
-                  </div>
-                  <button
-                    onClick={() => uncompleteAction(action.title)}
-                    style={{ background: 'none', border: 'none', color: 'var(--sand-400)', fontSize: '11px', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}>
-                    Undo
-                  </button>
+              {retirementPlan && (
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly</p>
+                  <p style={{ fontSize: '20px', fontWeight: '500', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px' }}>{fmt(retirementPlan.monthlyContribution ?? 0)}</p>
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Debt */}
-      {isVisible('debt') && (profile?.debts?.length > 0) && (
-        <div className="animate-fade stagger-4" style={{ marginBottom: '24px' }}>
-          <DebtOptimizerCard
-            profileDebts={profile.debts}
-            availableToSave={analysis.availableToSave}
-          />
+          </div>
+          <button
+            className="btn-primary"
+            onClick={() => navigate('/retirement')}
+            style={{ width: '100%', padding: '14px', fontSize: '14px', borderRadius: 'var(--radius-md)' }}>
+            {retirementPlan ? 'View full plan →' : 'Build retirement plan →'}
+          </button>
         </div>
       )}
 

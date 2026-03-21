@@ -1477,6 +1477,9 @@ Please give me a thorough breakdown:
                   })}
                 </div>
               </div>
+              <div style={{ flexShrink: 0, padding: '7px 12px', borderLeft: '0.5px solid var(--sand-200)', background: 'var(--sand-200)', display: 'flex', alignItems: 'center' }}>
+                <p style={{ fontSize: '8px', fontWeight: '800', color: 'var(--sand-600)', margin: 0, letterSpacing: '0.1em', textTransform: 'uppercase', writingMode: 'horizontal-tb' }}>TOP MOVERS</p>
+              </div>
             </div>
           </div>
         )
