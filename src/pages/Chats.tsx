@@ -110,7 +110,7 @@ export default function Chats() {
               {chats.map(chat => (
                 <div key={chat.id} style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
                   <button onClick={() => navigate(`/chat/${chat.id}`)}
-                    style={{ flex: 1, padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    style={{ flex: 1, minWidth: 0, padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: '36px', height: '36px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '16px' }}>
                       {TOPIC_ICONS[chat.topic] || '💬'}
                     </div>
@@ -122,7 +122,7 @@ export default function Chats() {
                     </div>
                   </button>
                   <button onClick={() => deleteChat(chat.id)}
-                    style={{ padding: '14px 16px', background: 'none', border: 'none', borderLeft: '0.5px solid var(--sand-200)', cursor: 'pointer', color: deleting === chat.id ? 'var(--danger)' : 'var(--sand-400)', fontSize: '16px', transition: 'color 0.15s' }}>
+                    style={{ flexShrink: 0, padding: '14px 16px', background: 'none', border: 'none', borderLeft: '0.5px solid var(--sand-200)', cursor: 'pointer', color: deleting === chat.id ? 'var(--danger)' : 'var(--sand-400)', fontSize: '16px', transition: 'color 0.15s' }}>
                     {deleting === chat.id ? '...' : '×'}
                   </button>
                 </div>

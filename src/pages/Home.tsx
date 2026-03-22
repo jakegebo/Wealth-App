@@ -2881,7 +2881,8 @@ export default function Home() {
       {activeTab === 'cashflow' && (() => {
         const totalDebtPayments = (profile?.debts || []).reduce((s: number, d: any) => s + (d.monthly_payment || d.minimum_payment || 0), 0)
         const totalGoalContributions = (profile?.goals || []).reduce((s: number, g: any) => s + (g.monthly_contribution || 0), 0)
-        const efMonths = profile?.emergency_fund_months || 0
+        const liquid = (profile?.assets || []).filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0)
+        const efMonths = expenses > 0 ? liquid / expenses : 0
         const efTarget = 6
         const efPct = Math.min(100, (efMonths / efTarget) * 100)
         const surplus = analysis.availableToSave
@@ -2994,14 +2995,14 @@ export default function Home() {
         )}
 
         {/* Emergency fund */}
-        {efMonths > 0 && (
+        {(liquid > 0 || efMonths > 0) && (
           <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
             <p className="label" style={{ marginBottom: '8px' }}>Emergency fund</p>
             <div className="card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '10px' }}>
                 <div>
-                  <p style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px', lineHeight: 1 }}>{efMonths} <span style={{ fontSize: '14px', color: 'var(--sand-500)', fontWeight: '400' }}>months</span></p>
-                  <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '3px 0 0' }}>of expenses covered</p>
+                  <p style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px', lineHeight: 1 }}>{efMonths.toFixed(1)} <span style={{ fontSize: '14px', color: 'var(--sand-500)', fontWeight: '400' }}>months</span></p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '3px 0 0' }}>{fmt(liquid)} in savings · {fmt(expenses)}/mo expenses</p>
                 </div>
                 <span style={{
                   fontSize: '11px', fontWeight: '600', padding: '3px 9px', borderRadius: '20px',
@@ -3014,7 +3015,7 @@ export default function Home() {
               <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${efPct}%`, background: efMonths >= 6 ? 'var(--success)' : efMonths >= 3 ? '#d4a017' : 'var(--danger)', borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22,1,0.36,1)' }} />
               </div>
-              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '8px 0 0' }}>Target: 6 months{efMonths < 6 ? ` — ${6 - efMonths} more to go` : ''}</p>
+              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '8px 0 0' }}>Target: {fmt(expenses * 6)} (6 months){efMonths < 6 ? ` — ${fmt(Math.max(0, expenses * 6 - liquid))} to go` : ''}</p>
             </div>
           </div>
         )}

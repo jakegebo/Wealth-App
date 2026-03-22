@@ -254,8 +254,8 @@ body {
 
 .fab {
   position: fixed;
-  bottom: 84px;
-  right: 20px;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  right: max(20px, calc(16px + env(safe-area-inset-right)));
   width: 52px;
   height: 52px;
   background: var(--accent);
@@ -296,7 +296,7 @@ body {
   display: flex;
   justify-content: space-around;
   align-items: flex-start;
-  padding: 8px 8px 20px;
+  padding: 8px 8px max(20px, calc(8px + env(safe-area-inset-bottom)));
   z-index: 40;
   max-width: 680px;
   margin: 0 auto;
@@ -347,7 +347,7 @@ body {
 .page {
   max-width: 680px;
   margin: 0 auto;
-  padding: 0 16px 100px;
+  padding: 0 16px max(100px, calc(80px + env(safe-area-inset-bottom)));
   min-height: 100vh;
 }
 
@@ -418,3 +418,74 @@ input:focus, textarea:focus {
 input::placeholder { color: var(--sand-500); }
 
 ::-webkit-scrollbar { width: 0; }
+
+/* ── Dashboard responsive grids ── */
+.dash-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+.dash-grid-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.dash-grid-sidebar {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+}
+
+/* Scrollable header action row */
+.dash-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.dash-nav-actions::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .dash-grid-2col,
+  .dash-grid-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dash-grid-3col {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-content {
+    padding-bottom: max(120px, calc(100px + env(safe-area-inset-bottom))) !important;
+  }
+}
+
+/* Landscape: reduce vertical space consumed by fixed UI */
+@media (orientation: landscape) and (max-height: 500px) {
+  .bottom-nav {
+    padding-top: 4px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .fab {
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
+    font-size: 11px;
+  }
+
+  .page {
+    padding-bottom: max(72px, calc(60px + env(safe-area-inset-bottom)));
+  }
+}

@@ -220,7 +220,7 @@ export default function Dashboard() {
             </div>
             <span style={{ color: theme.text, fontWeight: '500', fontSize: '15px' }}>WealthApp</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div className="dash-nav-actions">
             {[
               { label: '📰', path: '/news', title: 'News' },
               { label: '🏖️', path: '/retirement', title: 'Retire' },
@@ -239,11 +239,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="dash-content" style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
         {/* Net Worth — always visible */}
         {isVisible('networth') && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '16px' }}>
+          <div className="dash-grid-2col">
             <div style={{ ...s.card, background: `linear-gradient(135deg, ${theme.bgSecondary}, ${theme.bgTertiary})` }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div>
@@ -292,7 +292,7 @@ export default function Dashboard() {
 
         {/* Charts */}
         {isVisible('charts') && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+          <div className="dash-grid-3col">
             {assetData && (
               <div style={s.cardSm}>
                 <p style={{ ...s.label, marginBottom: '12px' }}>Asset Allocation</p>
@@ -312,7 +312,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px' }}>
+        <div className="dash-grid-sidebar">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
             {/* Action Plan */}
