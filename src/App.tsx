@@ -5,6 +5,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { ProfileProvider } from './contexts/ProfileContext'
 import BottomNav from './components/BottomNav'
 import FAB from './components/FAB'
+import SideNav from './components/SideNav'
 
 // Eagerly load the two most-visited pages
 import Landing from './pages/Landing'
@@ -23,6 +24,7 @@ const Money = lazy(() => import('./pages/Money'))
 const Settings = lazy(() => import('./pages/Settings'))
 
 const SHOW_NAV = ['/dashboard', '/plan', '/grow']
+const NO_SHELL = ['/', '/login', '/onboarding']
 
 const PageFallback = () => (
   <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
@@ -33,10 +35,16 @@ const PageFallback = () => (
 function Layout({ user, children }: { user: any; children: React.ReactNode }) {
   const location = useLocation()
   const showNav = user && SHOW_NAV.includes(location.pathname)
+  const showShell = user && !NO_SHELL.includes(location.pathname)
 
   return (
-    <div key={location.pathname} className="page-enter">
-      {children}
+    <div className="app-shell">
+      {showShell && <SideNav />}
+      <div className={showShell ? 'app-content' : undefined}>
+        <div key={location.pathname} className="page-enter">
+          {children}
+        </div>
+      </div>
       {showNav && <BottomNav />}
       {showNav && <FAB />}
     </div>
