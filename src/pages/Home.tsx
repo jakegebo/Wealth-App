@@ -2404,6 +2404,13 @@ export default function Home() {
   const currencyFormatter = useMemo(() => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), [])
   const fmt = (n: number) => currencyFormatter.format(isFinite(n) ? n : 0)
 
+  const completedFocusItems: any[] = profile?.completed_focus_items || []
+  const { completedTitles, topAction } = useMemo(() => {
+    const titles = new Set(completedFocusItems.map((c: any) => c.title?.toLowerCase().trim()))
+    const action = analysis?.nextActions?.find((a: any) => !titles.has(a.title?.toLowerCase().trim()))
+    return { completedTitles: titles, topAction: action }
+  }, [completedFocusItems, analysis?.nextActions])
+
   if (profileLoading || analyzing) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
@@ -2431,13 +2438,6 @@ export default function Home() {
   }
 
   if (!analysis) return null
-
-  const completedFocusItems: any[] = profile?.completed_focus_items || []
-  const { completedTitles, topAction } = useMemo(() => {
-    const titles = new Set(completedFocusItems.map((c: any) => c.title?.toLowerCase().trim()))
-    const action = analysis.nextActions?.find((a: any) => !titles.has(a.title?.toLowerCase().trim()))
-    return { completedTitles: titles, topAction: action }
-  }, [completedFocusItems, analysis.nextActions])
 
   const completeFocusItem = async (action: { title: string; description: string }) => {
     const newItem = { title: action.title, description: action.description, completedAt: new Date().toISOString() }
