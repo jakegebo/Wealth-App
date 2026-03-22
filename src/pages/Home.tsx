@@ -2160,6 +2160,7 @@ export default function Home() {
   const [analysisError, setAnalysisError] = useState(false)
   const [milestone, setMilestone] = useState<number | null>(null)
   const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null)
+  const [staleBannerDismissed, setStaleBannerDismissed] = useState(false)
   const [editingGoalIdx, setEditingGoalIdx] = useState<number | null>(null)
   const [goalInputVal, setGoalInputVal] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
@@ -2489,6 +2490,19 @@ export default function Home() {
           </button>
         </div>
       </div>
+
+      {/* Staleness banner */}
+      {!staleBannerDismissed && lastAnalyzedAt && (Date.now() - new Date(lastAnalyzedAt).getTime()) > 30 * 24 * 60 * 60 * 1000 && (
+        <div className="animate-fade" style={{ margin: '12px 16px 0', padding: '10px 14px', background: 'rgba(200,148,58,0.1)', border: '0.5px solid rgba(200,148,58,0.35)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <p style={{ fontSize: '12px', color: '#9a6a20', margin: 0, lineHeight: '1.4' }}>
+            Your data is {Math.floor((Date.now() - new Date(lastAnalyzedAt).getTime()) / (24 * 60 * 60 * 1000))} days old — refresh it so your AI advisor stays accurate.
+          </p>
+          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+            <button onClick={() => navigate('/onboarding')} style={{ fontSize: '11px', fontWeight: '600', color: '#9a6a20', background: 'rgba(200,148,58,0.15)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Update</button>
+            <button onClick={() => setStaleBannerDismissed(true)} style={{ fontSize: '13px', color: '#9a6a20', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>×</button>
+          </div>
+        </div>
+      )}
 
       {/* Tab bar */}
       <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--sand-100)', paddingTop: '16px', paddingBottom: '2px' }}>

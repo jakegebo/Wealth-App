@@ -149,8 +149,15 @@ Insurance gaps: Term life (10–20× gross income, level-term), own-occupation d
 
 End every response with: <followups>["Personalized follow-up question 1?","Personalized follow-up question 2?","Personalized follow-up question 3?"]</followups>`
 
-    // Cap context to last 10 messages to control cost
-    const contextMessages = messages.slice(-10).map((m: any) => ({ role: m.role, content: m.content }))
+    // Keep last 20 messages; compress content of older ones to save tokens
+    const recent = messages.slice(-20)
+    const contextMessages = recent.map((m: any, i: number) => {
+      const isOld = i < recent.length - 8
+      const content = isOld && typeof m.content === 'string' && m.content.length > 300
+        ? m.content.slice(0, 300) + '…'
+        : m.content
+      return { role: m.role, content }
+    })
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',

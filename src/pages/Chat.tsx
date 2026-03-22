@@ -293,6 +293,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(false)
   const [title, setTitle] = useState('Chat')
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([])
+  const [expandedFollowUps, setExpandedFollowUps] = useState<Set<number>>(new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const initialized = useRef(false)
@@ -348,7 +349,7 @@ export default function Chat() {
       if (followupMatch) {
         try {
           const parsed = JSON.parse(followupMatch[1].trim())
-          if (Array.isArray(parsed)) setFollowUpQuestions(parsed.slice(0, 3))
+          if (Array.isArray(parsed)) { setFollowUpQuestions(parsed.slice(0, 3)); setExpandedFollowUps(new Set()) }
         } catch {}
         rawContent = rawContent.replace(/<followups>[\s\S]*?<\/followups>/g, '').trim()
       }
@@ -591,45 +592,88 @@ export default function Chat() {
                   }}>
                     Ask next
                   </p>
-                  {followUpQuestions.map((q, qi) => (
-                    <button
-                      key={qi}
-                      onClick={() => sendMessage(q)}
-                      style={{
-                        background: 'var(--sand-50)',
-                        border: '0.5px solid var(--sand-300)',
-                        borderRadius: '20px',
-                        padding: '9px 14px',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        color: 'var(--sand-700)',
-                        fontFamily: 'inherit',
-                        lineHeight: '1.4',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'all 0.15s',
-                        boxShadow: '0 1px 3px rgba(26,18,8,0.04)'
-                      }}
-                      onMouseEnter={e => {
-                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-100)'
-                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'
-                      }}
-                      onMouseLeave={e => {
-                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-50)'
-                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--sand-300)'
-                      }}
-                    >
-                      <span style={{
-                        width: '18px', height: '18px', borderRadius: '50%',
-                        background: 'var(--accent)', color: 'var(--sand-50)',
-                        fontSize: '10px', fontWeight: '700', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                      }}>↗</span>
-                      {q}
-                    </button>
-                  ))}
+                  {followUpQuestions.map((q, qi) => {
+                    const isExpanded = expandedFollowUps.has(qi)
+                    return (
+                      <div key={qi} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                        <button
+                          onClick={() => sendMessage(q)}
+                          style={{
+                            background: 'var(--sand-50)',
+                            border: '0.5px solid var(--sand-300)',
+                            borderRadius: '20px',
+                            padding: '9px 14px',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            color: 'var(--sand-700)',
+                            fontFamily: 'inherit',
+                            lineHeight: '1.4',
+                            display: 'flex',
+                            alignItems: isExpanded ? 'flex-start' : 'center',
+                            gap: '8px',
+                            transition: 'all 0.15s',
+                            boxShadow: '0 1px 3px rgba(26,18,8,0.04)',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-100)'
+                            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-50)'
+                            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--sand-300)'
+                          }}
+                        >
+                          <span style={{
+                            width: '18px', height: '18px', borderRadius: '50%',
+                            background: 'var(--accent)', color: 'var(--sand-50)',
+                            fontSize: '10px', fontWeight: '700', display: 'flex',
+                            alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>↗</span>
+                          <span style={{
+                            overflow: isExpanded ? 'visible' : 'hidden',
+                            whiteSpace: isExpanded ? 'normal' : 'nowrap',
+                            textOverflow: isExpanded ? 'unset' : 'ellipsis',
+                          }}>{q}</span>
+                        </button>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            setExpandedFollowUps(prev => {
+                              const next = new Set(prev)
+                              isExpanded ? next.delete(qi) : next.add(qi)
+                              return next
+                            })
+                          }}
+                          title={isExpanded ? 'Collapse' : 'Expand'}
+                          style={{
+                            flexShrink: 0,
+                            width: '26px', height: '26px',
+                            borderRadius: '50%',
+                            border: '0.5px solid var(--sand-300)',
+                            background: 'var(--sand-50)',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '11px', color: 'var(--sand-500)',
+                            marginTop: '6px',
+                            transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-100)'
+                            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'
+                            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'
+                          }}
+                          onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'var(--sand-50)'
+                            ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--sand-300)'
+                            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--sand-500)'
+                          }}
+                        >{isExpanded ? '↑' : '↓'}</button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

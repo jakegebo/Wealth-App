@@ -549,9 +549,43 @@ export default function Onboarding() {
           {view === 'hub' && (
             <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {!hasExistingProfile && (
-                <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 8px', lineHeight: '1.5' }}>
-                  The more detail you provide, the better your AI advisor can tailor recommendations to your situation.
-                </p>
+                <>
+                  {/* Dashboard preview card */}
+                  <div style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '8px', position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
+                      {/* Mini score ring */}
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <svg width="52" height="52" viewBox="0 0 52 52">
+                          <circle cx="26" cy="26" r="21" fill="none" stroke="var(--sand-200)" strokeWidth="4" />
+                          <circle cx="26" cy="26" r="21" fill="none" stroke="var(--sand-300)" strokeWidth="4"
+                            strokeDasharray="66 106" strokeLinecap="round" transform="rotate(-90 26 26)" />
+                        </svg>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-400)' }}>?</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>Your dashboard unlocks here</p>
+                        <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>Health score · Net worth · Action plan · AI advisor</p>
+                      </div>
+                    </div>
+                    {/* Mock stat row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                      {['Net Worth', 'Savings Rate', 'Next Action'].map(label => (
+                        <div key={label} style={{ background: 'var(--sand-200)', borderRadius: '6px', padding: '8px', textAlign: 'center' }}>
+                          <div style={{ height: '12px', background: 'var(--sand-300)', borderRadius: '4px', marginBottom: '4px' }} />
+                          <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0, fontWeight: '600' }}>{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '10px 0 0', textAlign: 'center' }}>
+                      Complete the sections below to see your real numbers
+                    </p>
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: '0 0 0', lineHeight: '1.5' }}>
+                    The more detail you provide, the better your AI advisor can tailor recommendations to your situation.
+                  </p>
+                </>
               )}
               {sections.map((section, i) => (
                 <button

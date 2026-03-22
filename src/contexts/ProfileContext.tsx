@@ -117,7 +117,20 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       setProfileData(pd)
       setAnalysis(data.analysis || null)
       setChatRefs(data.chat_refs || {})
-      setWatchlist(data.watchlist || ['SPY', 'QQQ', 'AAPL'])
+      const savedWatchlist = data.watchlist?.length ? data.watchlist : null
+      if (!savedWatchlist && data.profile_data?.assets) {
+        const holdingSymbols: string[] = []
+        for (const a of data.profile_data.assets) {
+          for (const p of a.positions || []) {
+            if (p.symbol && !holdingSymbols.includes(p.symbol)) holdingSymbols.push(p.symbol)
+            if (holdingSymbols.length >= 6) break
+          }
+          if (holdingSymbols.length >= 6) break
+        }
+        setWatchlist(holdingSymbols.length ? holdingSymbols : ['SPY', 'QQQ', 'AAPL'])
+      } else {
+        setWatchlist(savedWatchlist || ['SPY', 'QQQ', 'AAPL'])
+      }
       setSavedIdeas(data.saved_income_ideas || [])
       setIncomeIdeas(data.income_ideas || [])
       setGoalAdvice(data.goal_advice || {})
