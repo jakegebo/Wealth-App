@@ -1320,15 +1320,24 @@ export default function Grow() {
     try {
       let newArticles: Article[] = []
       if (category === 'portfolio') {
-        const res = await fetch(`/api/news?category=markets&page=${pageNum}`)
-        const data = await res.json()
-        const all: Article[] = data.articles || []
-        newArticles = watchlist.length > 0
-          ? all.filter(a => watchlist.some(sym =>
-            a.title?.toLowerCase().includes(sym.toLowerCase()) ||
-            a.description?.toLowerCase().includes(sym.toLowerCase())
-          ))
-          : []
+        if (watchlist.length === 0) {
+          newArticles = []
+        } else {
+          // Build query from company names (better than tickers for news search)
+          // Fall back to ticker symbols if name not available
+          const terms = watchlist.slice(0, 6).map(sym => {
+            const stock = stocks.find(s => s.symbol === sym)
+            if (stock?.name) {
+              // Strip common suffixes to get a cleaner search term
+              return stock.name.replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC\.?|Holdings?|Group|Co\.?|plc)$/i, '').trim()
+            }
+            return sym
+          })
+          const q = terms.join(' OR ')
+          const res = await fetch(`/api/news?q=${encodeURIComponent(q)}&page=${pageNum}`)
+          const data = await res.json()
+          newArticles = data.articles || []
+        }
       } else {
         const res = await fetch(`/api/news?category=${category}&page=${pageNum}`)
         const data = await res.json()
@@ -1661,96 +1670,6 @@ Please give me a thorough breakdown:
       {activeGrowTab === 'holdings' && (
       <div className="animate-fade">
 
-      {/* Goal-Aligned Investment Ideas */}
-      {goalSuggestions.length > 0 && isVisible('watchlist') && (
-        <div className="animate-fade" style={{ marginBottom: '28px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <p className="label" style={{ marginBottom: '2px' }}>Goal-Aligned Strategy</p>
-              <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Tailored to each of your financial goals</p>
-            </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {goalSuggestions.map((gs, i) => {
-              const isOpen = expandedGoal === gs.goal
-              return (
-                <div key={i} className="card" style={{ padding: '0', overflow: 'hidden' }}>
-                  {/* Goal header — always visible */}
-                  <div
-                    onClick={() => setExpandedGoal(isOpen ? null : gs.goal)}
-                    style={{ padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                        <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{gs.goal}</p>
-                        <span style={{ fontSize: '10px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '1px 7px', borderRadius: '20px', fontWeight: '500', flexShrink: 0 }}>{gs.timeline}</span>
-                      </div>
-                      {gs.target && (
-                        <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '0 0 4px' }}>Target: ${gs.target.toLocaleString()}</p>
-                      )}
-                      <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5', fontStyle: 'italic' }}>{gs.strategy}</p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      {/* Asset type dots preview */}
-                      <div style={{ display: 'flex', gap: '3px' }}>
-                        {[...new Set(gs.ideas.map(i => i.type))].slice(0, 4).map(type => (
-                          <div key={type} style={{ width: '8px', height: '8px', borderRadius: '50%', background: IDEA_TYPE_META[type].color, opacity: 0.7 }} />
-                        ))}
-                      </div>
-                      <span style={{ fontSize: '10px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
-                    </div>
-                  </div>
-
-                  {/* Expanded ideas */}
-                  {isOpen && (
-                    <div className="animate-fade" style={{ borderTop: '0.5px solid var(--sand-200)' }}>
-                      {gs.ideas.map((idea, j) => {
-                        const typeMeta = IDEA_TYPE_META[idea.type]
-                        const riskMeta = RISK_META[idea.risk]
-                        return (
-                          <div
-                            key={j}
-                            style={{
-                              padding: '12px 16px',
-                              borderBottom: j < gs.ideas.length - 1 ? '0.5px solid var(--sand-200)' : 'none',
-                              display: 'flex', flexDirection: 'column', gap: '6px',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-900)' }}>{idea.name}</span>
-                                <span style={{ fontSize: '9px', fontWeight: '700', color: typeMeta.color, background: typeMeta.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>{typeMeta.label}</span>
-                                <span style={{ fontSize: '9px', fontWeight: '700', color: riskMeta.color, background: riskMeta.bg, padding: '2px 7px', borderRadius: '20px' }}>{idea.risk} risk</span>
-                              </div>
-                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                {idea.ticker && (
-                                  <button
-                                    onClick={() => addToWatchlist(idea.ticker!)}
-                                    style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                                    + Watch
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.55' }}>{idea.reason}</p>
-                            {idea.action && !idea.ticker && (
-                              <p style={{ fontSize: '11px', color: 'var(--accent)', margin: 0, fontWeight: '500' }}>→ {idea.action}</p>
-                            )}
-                          </div>
-                        )
-                      })}
-                      <div style={{ padding: '8px 16px', borderTop: '0.5px solid var(--sand-200)' }}>
-                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>Not financial advice. Consult a financial advisor for personalized guidance.</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Growth Section */}
       <GrowthSection
         profile={profile}
@@ -1927,12 +1846,108 @@ Please give me a thorough breakdown:
         </div>
       )}
 
-      </div>
+
+</div>
       )} {/* end holdings tab */}
 
       {/* ── IDEAS TAB ── */}
       {activeGrowTab === 'ideas' && (
       <div className="animate-fade">
+
+      {/* Goal-Aligned Strategy */}
+      {goalSuggestions.length > 0 && (
+        <div className="animate-fade" style={{ marginBottom: '28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <p className="label" style={{ marginBottom: '2px' }}>Goal-Aligned Strategy</p>
+              <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>
+                Investment ideas tailored to each of your {goalSuggestions.length} active goal{goalSuggestions.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {goalSuggestions.map((gs, i) => {
+              const isOpen = expandedGoal === gs.goal
+              const totalIdeas = gs.ideas.length
+              return (
+                <div key={i} className="card" style={{ padding: '0', overflow: 'hidden' }}>
+                  {/* Goal header — always visible */}
+                  <div
+                    onClick={() => setExpandedGoal(isOpen ? null : gs.goal)}
+                    style={{ padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px', flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{gs.goal}</p>
+                        <span style={{ fontSize: '10px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '1px 7px', borderRadius: '20px', fontWeight: '500', flexShrink: 0 }}>{gs.timeline}</span>
+                        {gs.target && (
+                          <span style={{ fontSize: '10px', color: 'var(--accent)', background: 'var(--sand-100)', padding: '1px 7px', borderRadius: '20px', fontWeight: '600', flexShrink: 0, border: '0.5px solid var(--sand-200)' }}>
+                            ${gs.target.toLocaleString()} target
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.5' }}>{gs.strategy}</p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '3px' }}>
+                          {[...new Set(gs.ideas.map(i => i.type))].slice(0, 4).map(type => (
+                            <div key={type} title={IDEA_TYPE_META[type].label} style={{ width: '8px', height: '8px', borderRadius: '50%', background: IDEA_TYPE_META[type].color }} />
+                          ))}
+                        </div>
+                        <span style={{ fontSize: '10px', color: 'var(--sand-400)', fontWeight: '500' }}>{totalIdeas} idea{totalIdeas !== 1 ? 's' : ''}</span>
+                      </div>
+                      <span style={{ fontSize: '10px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                    </div>
+                  </div>
+
+                  {/* Expanded ideas */}
+                  {isOpen && (
+                    <div className="animate-fade" style={{ borderTop: '0.5px solid var(--sand-200)' }}>
+                      {gs.ideas.map((idea, j) => {
+                        const typeMeta = IDEA_TYPE_META[idea.type]
+                        const riskMeta = RISK_META[idea.risk]
+                        return (
+                          <div
+                            key={j}
+                            style={{
+                              padding: '12px 16px',
+                              borderBottom: j < gs.ideas.length - 1 ? '0.5px solid var(--sand-200)' : 'none',
+                              display: 'flex', flexDirection: 'column', gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-900)' }}>{idea.name}</span>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: typeMeta.color, background: typeMeta.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>{typeMeta.label}</span>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: riskMeta.color, background: riskMeta.bg, padding: '2px 7px', borderRadius: '20px' }}>{idea.risk} risk</span>
+                              </div>
+                              {idea.ticker && (
+                                <button
+                                  onClick={() => addToWatchlist(idea.ticker!)}
+                                  style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                  + Watch
+                                </button>
+                              )}
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.55' }}>{idea.reason}</p>
+                            {idea.action && !idea.ticker && (
+                              <p style={{ fontSize: '11px', color: 'var(--accent)', margin: 0, fontWeight: '500' }}>→ {idea.action}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div style={{ padding: '8px 16px', borderTop: '0.5px solid var(--sand-200)' }}>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>AI-generated suggestions. Not financial advice — consult a financial advisor.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Income Ideas */}
       {isVisible('income') && (

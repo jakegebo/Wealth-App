@@ -2,7 +2,7 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
   const newsKey = process.env.NEWS_API_KEY
-  const { category = 'markets', page = '1', from: fromParam, to: toParam } = req.query
+  const { category = 'markets', page = '1', from: fromParam, to: toParam, q: customQuery } = req.query
 
   const queries: Record<string, string> = {
     markets: 'stock market investing Wall Street S&P 500',
@@ -12,7 +12,9 @@ export default async function handler(req: any, res: any) {
     ai: 'artificial intelligence AI investing OpenAI technology'
   }
 
-  const query = encodeURIComponent(queries[category as string] || queries.markets)
+  const query = encodeURIComponent(
+    (customQuery as string) || queries[category as string] || queries.markets
+  )
 
   try {
     const today = new Date().toISOString().split('T')[0]
@@ -23,9 +25,20 @@ export default async function handler(req: any, res: any) {
       `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${fromDate}&to=${toDate}&apiKey=${newsKey}`
     )
     let data = await response.json()
-    let articles = (data.articles || []).filter((a: any) =>
-      a.title && !a.title.includes('[Removed]') && a.description
+    const EXCLUDED_SOURCES = [
+      'Times of India',
+      'Hindustan Times',
+      'Zero Hedge',
+      'InvestorPlace',
+      'Daily Mail',
+      'The Sun',
+    ]
+    const filterArticles = (list: any[]) => list.filter((a: any) =>
+      a.title && !a.title.includes('[Removed]') && a.description &&
+      !EXCLUDED_SOURCES.includes(a.source?.name)
     )
+
+    let articles = filterArticles(data.articles || [])
 
     // Fall back to last 7 days if sparse
     if (articles.length < 3) {
@@ -34,9 +47,7 @@ export default async function handler(req: any, res: any) {
         `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${weekAgo}&apiKey=${newsKey}`
       )
       data = await response.json()
-      articles = (data.articles || []).filter((a: any) =>
-        a.title && !a.title.includes('[Removed]') && a.description
-      )
+      articles = filterArticles(data.articles || [])
     }
 
     const clean = articles.map((a: any) => ({
