@@ -297,12 +297,20 @@ function greeting() {
   return 'good evening'
 }
 
-const HEALTH_ITEM_META: Record<string, { icon: string; target: string; tip: string }> = {
-  'Savings rate':    { icon: '💰', target: 'Target: 20%+', tip: 'Increase savings by automating transfers on payday.' },
-  'Debt load':       { icon: '💳', target: 'Target: <10% of income', tip: 'Extra payments on high-rate debt free up cash fast.' },
-  'Emergency fund':  { icon: '🛡️', target: 'Target: 6 months', tip: 'Build to 3 months first, then stretch to 6.' },
-  'Diversification': { icon: '📊', target: 'Target: 4+ asset types', tip: 'Add a retirement or brokerage account to diversify.' },
-  'Goal progress':   { icon: '🎯', target: 'Target: 75%+ avg', tip: 'Review goal amounts — smaller targets stay motivating.' },
+const HEALTH_ITEM_ICONS: Record<string, JSX.Element> = {
+  'Savings rate':    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+  'Debt load':       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+  'Emergency fund':  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+  'Diversification': <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+  'Goal progress':   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+}
+
+const HEALTH_ITEM_META: Record<string, { target: string; tip: string }> = {
+  'Savings rate':    { target: 'Target: 20%+', tip: 'Increase savings by automating transfers on payday.' },
+  'Debt load':       { target: 'Target: <10% of income', tip: 'Extra payments on high-rate debt free up cash fast.' },
+  'Emergency fund':  { target: 'Target: 6 months', tip: 'Build to 3 months first, then stretch to 6.' },
+  'Diversification': { target: 'Target: 4+ asset types', tip: 'Add a retirement or brokerage account to diversify.' },
+  'Goal progress':   { target: 'Target: 75%+ avg', tip: 'Review goal amounts — smaller targets stay motivating.' },
 }
 
 function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
@@ -379,7 +387,7 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
           return (
             <div key={i}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
-                <span style={{ fontSize: '14px', flexShrink: 0 }}>{meta?.icon}</span>
+                <span style={{ flexShrink: 0, color: 'var(--sand-500)', display: 'flex', alignItems: 'center' }}>{HEALTH_ITEM_ICONS[item.label]}</span>
                 <span style={{ fontSize: '13px', color: 'var(--sand-800)', fontWeight: '500', flex: 1 }}>{item.label}</span>
                 <span style={{ fontSize: '11px', color: 'var(--sand-500)', marginRight: '6px' }}>{item.note}</span>
                 <span style={{
@@ -404,7 +412,7 @@ function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: a
         background: 'var(--sand-200)', borderRadius: 'var(--radius-sm)',
         padding: '10px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start',
       }}>
-        <span style={{ fontSize: '14px', flexShrink: 0 }}>{weakestMeta?.icon}</span>
+        <span style={{ flexShrink: 0, color: 'var(--sand-500)', display: 'flex', alignItems: 'center' }}>{weakest && HEALTH_ITEM_ICONS[weakest.label]}</span>
         <div>
           <p style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 2px' }}>
             Biggest opportunity — {weakest.label}
@@ -605,46 +613,6 @@ function InsightsStrip({ analysis, profile, refreshing }: { analysis: Analysis; 
   )
 }
 
-const CONFETTI_COLORS = ['#FFD700','#FF6B6B','#4FC3F7','#81C784','#CE93D8','#FFB74D','#F06292','#4DB6AC','#FFF176','#80DEEA']
-
-function Confetti() {
-  const particles = useMemo(() => Array.from({ length: 65 }, (_, i) => ({
-    id: i,
-    x: 10 + Math.random() * 80,
-    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-    w: 5 + Math.random() * 7,
-    h: Math.random() > 0.45 ? (5 + Math.random() * 7) : (10 + Math.random() * 14),
-    delay: Math.random() * 1.4,
-    dur: 2.2 + Math.random() * 2,
-    drift: (-70 + Math.random() * 140).toFixed(0),
-    rot: (200 + Math.random() * 560).toFixed(0),
-    round: Math.random() > 0.55,
-  })), [])
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 202 }}>
-      {particles.map(p => (
-        <div key={p.id} style={{
-          position: 'absolute',
-          left: `${p.x}%`,
-          top: '-14px',
-          width: `${p.w}px`,
-          height: `${p.h}px`,
-          background: p.color,
-          borderRadius: p.round ? '50%' : '2px',
-          animationName: 'confettiFall',
-          animationDuration: `${p.dur}s`,
-          animationDelay: `${p.delay}s`,
-          animationTimingFunction: 'cubic-bezier(0.23, 1, 0.32, 1)',
-          animationFillMode: 'both',
-          '--drift': `${p.drift}px`,
-          '--rot': `${p.rot}deg`,
-        } as any} />
-      ))}
-    </div>
-  )
-}
-
 function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => void }) {
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
   const [count, setCount] = useState(0)
@@ -654,7 +622,6 @@ function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => 
     return () => clearTimeout(t)
   }, [])
 
-  // Count-up animation for the amount
   useEffect(() => {
     let start: number | null = null
     const dur = 1400
@@ -669,58 +636,53 @@ function MilestoneOverlay({ amount, onClose }: { amount: number; onClose: () => 
     return () => cancelAnimationFrame(id)
   }, [amount])
 
-  const trophyEmoji = amount >= 1000000 ? '💎' : amount >= 500000 ? '🏆' : amount >= 100000 ? '⭐' : '🎯'
   const milestone_label = amount >= 1000000 ? 'Millionaire' : amount >= 500000 ? 'Half a million' : amount >= 250000 ? 'Quarter million' : amount >= 100000 ? 'Six figures' : amount >= 50000 ? 'Fifty thousand' : amount >= 25000 ? 'Twenty-five thousand' : 'Ten thousand'
 
   return (
-    <>
-      <Confetti />
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,4,0.65)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+      onClick={onClose}
+    >
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,4,0.75)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
-        onClick={onClose}
+        style={{ background: 'var(--sand-50)', borderRadius: 'var(--radius-xl)', padding: '40px 32px', textAlign: 'center', maxWidth: '340px', width: '100%', animationName: 'celebrateCardIn', animationDuration: '0.5s', animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)', animationFillMode: 'both', position: 'relative', borderTop: '3px solid var(--accent)' }}
+        onClick={e => e.stopPropagation()}
       >
-        <div
-          style={{ background: 'var(--sand-50)', borderRadius: 'var(--radius-xl)', padding: '40px 32px', textAlign: 'center', maxWidth: '340px', width: '100%', animationName: 'celebrateCardIn', animationDuration: '0.65s', animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)', animationFillMode: 'both', position: 'relative', overflow: 'hidden' }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Glow ring */}
-          <div style={{ position: 'absolute', inset: '-2px', borderRadius: 'calc(var(--radius-xl) + 2px)', background: 'linear-gradient(135deg, #FFD700, #FF6B6B, #4FC3F7, #81C784)', opacity: 0.25, zIndex: -1 }} />
-
-          {/* Trophy emoji with bounce */}
-          <div style={{ fontSize: '64px', marginBottom: '16px', display: 'inline-block', animationName: 'trophyBounce', animationDuration: '0.7s', animationDelay: '0.3s', animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)', animationFillMode: 'both' }}>
-            {trophyEmoji}
-          </div>
-
-          <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', letterSpacing: '0.12em', textTransform: 'uppercase', margin: '0 0 6px' }}>
-            Milestone reached
-          </p>
-          <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)', margin: '0 0 14px' }}>
-            {milestone_label}
-          </p>
-
-          {/* Animated amount */}
-          <div style={{ fontSize: '42px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-2px', lineHeight: '1', margin: '0 0 16px', animationName: 'shimmerGold', animationDuration: '2s', animationIterationCount: '3', animationTimingFunction: 'ease-in-out' }}>
-            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(count)}
-          </div>
-
-          <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 28px', lineHeight: '1.6' }}>
-            Your net worth just crossed {fmt(amount)}.<br />That's a real achievement — keep building.
-          </p>
-
-          <button
-            onClick={onClose}
-            className="btn-primary"
-            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: 'var(--radius-md)', letterSpacing: '0.01em' }}
-          >
-            Keep building →
-          </button>
-
-          <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '12px 0 0' }}>
-            Saved to your achievements ↗
-          </p>
+        {/* Badge icon */}
+        <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'var(--accent-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+            <polyline points="17 6 23 6 23 12"/>
+          </svg>
         </div>
+
+        <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', letterSpacing: '0.12em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+          Milestone reached
+        </p>
+        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)', margin: '0 0 14px' }}>
+          {milestone_label}
+        </p>
+
+        <div style={{ fontSize: '42px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-2px', lineHeight: '1', margin: '0 0 16px' }}>
+          {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(count)}
+        </div>
+
+        <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 28px', lineHeight: '1.6' }}>
+          Your net worth just crossed {fmt(amount)}.<br />That's a real achievement — keep building.
+        </p>
+
+        <button
+          onClick={onClose}
+          className="btn-primary"
+          style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: 'var(--radius-md)', letterSpacing: '0.01em' }}
+        >
+          Keep building
+        </button>
+
+        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '12px 0 0' }}>
+          Saved to your achievements
+        </p>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -736,14 +698,49 @@ function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
 
-  const milestoneMeta: Record<number, { icon: string; label: string }> = {
-    10000:   { icon: '🪙', label: '$10k club' },
-    25000:   { icon: '💫', label: '$25k reached' },
-    50000:   { icon: '🎯', label: 'Fifty thousand' },
-    100000:  { icon: '⭐', label: 'Six figures' },
-    250000:  { icon: '🔥', label: 'Quarter million' },
-    500000:  { icon: '🏆', label: 'Half million' },
-    1000000: { icon: '💎', label: 'Millionaire' },
+  // SVG icons for each milestone tier
+  const MilestoneIcon = ({ amount }: { amount: number }) => {
+    if (amount >= 1000000) return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    )
+    if (amount >= 500000) return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    )
+    if (amount >= 250000) return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+      </svg>
+    )
+    if (amount >= 100000) return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+      </svg>
+    )
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
+      </svg>
+    )
+  }
+
+  const GoalIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  )
+
+  const milestoneMeta: Record<number, { label: string }> = {
+    10000:   { label: '$10k' },
+    25000:   { label: '$25k' },
+    50000:   { label: '$50k' },
+    100000:  { label: 'Six figures' },
+    250000:  { label: '$250k' },
+    500000:  { label: 'Half million' },
+    1000000: { label: 'Millionaire' },
   }
 
   const milestones = MILESTONES.map(m => {
@@ -751,9 +748,9 @@ function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
     if (!raw) return null
     let date: string | null = null
     if (raw !== '1') { try { date = JSON.parse(raw).date } catch {} }
-    const meta = milestoneMeta[m] || { icon: '🏅', label: fmtAmt(m) }
-    return { key: `m_${m}`, icon: meta.icon, title: meta.label, sub: fmtAmt(m) + ' net worth', date }
-  }).filter(Boolean) as { key: string; icon: string; title: string; sub: string; date: string | null }[]
+    const meta = milestoneMeta[m] || { label: fmtAmt(m) }
+    return { key: `m_${m}`, type: 'milestone' as const, amount: m, title: meta.label, sub: fmtAmt(m) + ' net worth', date }
+  }).filter(Boolean) as { key: string; type: 'milestone'; amount: number; title: string; sub: string; date: string | null }[]
 
   const completedGoals = goals
     .filter(g => g.target_amount > 0 && g.current_amount >= g.target_amount)
@@ -761,7 +758,7 @@ function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
       let date: string | null = null
       const raw = localStorage.getItem(`${userId}_goal_done_${g.name}`)
       if (raw) { try { date = JSON.parse(raw).date } catch {} }
-      return { key: `g_${g.name}`, icon: '✅', title: g.name, sub: `${fmtAmt(g.target_amount)} goal`, date }
+      return { key: `g_${g.name}`, type: 'goal' as const, amount: 0, title: g.name, sub: `${fmtAmt(g.target_amount)} goal`, date }
     })
 
   const all = [...milestones, ...completedGoals]
@@ -793,7 +790,9 @@ function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
               animationTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}
           >
-            <div style={{ fontSize: '28px', marginBottom: '7px', lineHeight: 1 }}>{item.icon}</div>
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+              {item.type === 'goal' ? <GoalIcon /> : <MilestoneIcon amount={item.amount} />}
+            </div>
             <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)', margin: '0 0 2px', lineHeight: '1.2' }}>{item.title}</p>
             <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: '0 0 5px' }}>{item.sub}</p>
             {item.date && (
@@ -2189,6 +2188,7 @@ export default function Home() {
     const profileChangedSinceAnalysis = fp && storedFp && fp !== storedFp
     if (analysis && !profileChangedSinceAnalysis) {
       saveNetWorthHistory(userId!, analysis, profile)
+      checkMilestone(analysis.netWorth)
     } else if (profile) {
       // Either no analysis yet, or profile changed since last analysis ran
       runAnalysis(profile)

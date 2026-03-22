@@ -1,4 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 
 const TABS = [
   {
@@ -77,15 +78,28 @@ const SECONDARY = [
 export default function SideNav() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem('sideNavCollapsed') === 'true'
+  })
+
+  useEffect(() => {
+    localStorage.setItem('sideNavCollapsed', String(collapsed))
+    document.documentElement.setAttribute('data-sidenav', collapsed ? 'collapsed' : 'expanded')
+  }, [collapsed])
+
+  // Set initial attribute on mount
+  useEffect(() => {
+    document.documentElement.setAttribute('data-sidenav', collapsed ? 'collapsed' : 'expanded')
+  }, [])
 
   return (
-    <nav className="side-nav">
+    <nav className={`side-nav${collapsed ? ' side-nav--collapsed' : ''}`}>
       <div className="side-nav-brand" onClick={() => navigate('/dashboard')}>
         <div className="side-nav-logo">W</div>
-        <span>Wealth</span>
+        {!collapsed && <span>Wealth</span>}
       </div>
 
-      <div className="side-nav-section-label">Main</div>
+      {!collapsed && <div className="side-nav-section-label">Main</div>}
       <div className="side-nav-items">
         {TABS.map((tab) => {
           const active = location.pathname === tab.path
@@ -94,15 +108,17 @@ export default function SideNav() {
               key={tab.id}
               className={`side-nav-item ${active ? 'active' : ''}`}
               onClick={() => navigate(tab.path)}
+              title={collapsed ? tab.label : undefined}
             >
               {tab.icon(active)}
-              <span>{tab.label}</span>
+              {!collapsed && <span>{tab.label}</span>}
             </button>
           )
         })}
       </div>
 
-      <div className="side-nav-section-label" style={{ marginTop: '16px' }}>More</div>
+      {!collapsed && <div className="side-nav-section-label" style={{ marginTop: '16px' }}>More</div>}
+      {collapsed && <div style={{ marginTop: '16px' }} />}
       <div className="side-nav-items">
         {SECONDARY.map((item) => {
           const active = location.pathname === item.path
@@ -111,9 +127,10 @@ export default function SideNav() {
               key={item.id}
               className={`side-nav-item ${active ? 'active' : ''}`}
               onClick={() => navigate(item.path)}
+              title={collapsed ? item.label : undefined}
             >
               {item.icon()}
-              <span>{item.label}</span>
+              {!collapsed && <span>{item.label}</span>}
             </button>
           )
         })}
@@ -122,11 +139,29 @@ export default function SideNav() {
       <div className="side-nav-spacer" />
 
       <div className="side-nav-footer">
-        <button className="side-nav-ai-btn" onClick={() => navigate('/chats')}>
+        <button
+          className="side-nav-ai-btn"
+          onClick={() => navigate('/chats')}
+          title={collapsed ? 'Ask AI' : undefined}
+        >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
           </svg>
-          <span>Ask AI</span>
+          {!collapsed && <span>Ask AI</span>}
+        </button>
+
+        <button
+          className="side-nav-collapse-btn"
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {collapsed
+              ? <><polyline points="9 18 15 12 9 6"/></>
+              : <><polyline points="15 18 9 12 15 6"/></>
+            }
+          </svg>
+          {!collapsed && <span>Collapse</span>}
         </button>
       </div>
     </nav>
