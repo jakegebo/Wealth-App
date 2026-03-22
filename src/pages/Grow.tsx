@@ -52,10 +52,21 @@ interface IdeaTag {
   bg: string
 }
 
+interface GoalIdea {
+  name: string
+  ticker?: string
+  type: 'etf' | 'crypto' | 'reit' | 'savings' | 'bond' | 'platform' | 'stock'
+  reason: string
+  risk: 'Low' | 'Med' | 'High'
+  action?: string
+}
+
 interface GoalSuggestion {
   goal: string
   target?: number
-  suggestions: { ticker: string; reason: string }[]
+  strategy: string
+  timeline: string
+  ideas: GoalIdea[]
 }
 
 const PERIODS = ['1D', '1W', '1M', '1Y', '5Y', '10Y', 'ALL']
@@ -148,28 +159,130 @@ function getIdeaTags(idea: any): IdeaTag[] {
   return tags.slice(0, 2)
 }
 
-function getGoalSuggestions(goals: any[]): GoalSuggestion[] {
+const IDEA_TYPE_META: Record<GoalIdea['type'], { label: string; color: string; bg: string }> = {
+  etf:      { label: 'ETF',         color: '#1d4ed8', bg: 'rgba(29,78,216,0.1)' },
+  stock:    { label: 'Stock',       color: '#1d4ed8', bg: 'rgba(29,78,216,0.1)' },
+  crypto:   { label: 'Crypto',      color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
+  reit:     { label: 'Real Estate', color: '#2d6a4f', bg: 'rgba(45,106,79,0.1)' },
+  savings:  { label: 'Cash/Savings',color: '#0f766e', bg: 'rgba(15,118,110,0.1)' },
+  bond:     { label: 'Bond',        color: '#6d28d9', bg: 'rgba(109,40,217,0.1)' },
+  platform: { label: 'Platform',    color: '#7a6a5a', bg: 'rgba(122,106,90,0.12)' },
+}
+
+const RISK_META: Record<GoalIdea['risk'], { color: string; bg: string }> = {
+  Low:  { color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
+  Med:  { color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
+  High: { color: '#c0392b', bg: 'rgba(192,57,43,0.1)' },
+}
+
+const GOAL_DATA: Record<string, { strategy: string; timeline: string; ideas: GoalIdea[][] }> = {
+  emergency: {
+    strategy: 'Keep this 100% liquid and risk-free. This is insurance money — not an investment.',
+    timeline: 'Immediate access needed',
+    ideas: [
+      [
+        { name: 'High-Yield Savings', type: 'savings', risk: 'Low', reason: 'Best place for emergency funds. Earn 4–5% APY with instant, penalty-free access. Open at Marcus, SoFi, or Ally.', action: 'Open at Marcus, SoFi, or Ally' },
+        { name: 'Money Market Fund', type: 'savings', risk: 'Low', reason: 'Available inside any brokerage. SPAXX (Fidelity) or VMFXX (Vanguard) earn ~5% with same-day settlement.', action: 'Available at any brokerage' },
+        { name: 'SGOV', ticker: 'SGOV', type: 'etf', risk: 'Low', reason: '3-month T-bill ETF. Marginally higher yield than HYSA. Settles in 1–2 days — close enough to liquid.', action: 'Add to watchlist' },
+        { name: 'BIL', ticker: 'BIL', type: 'etf', risk: 'Low', reason: '1–3 month T-bills. Ultra-stable — designed to never lose value. Good second tranche.', action: 'Add to watchlist' },
+      ],
+    ],
+  },
+  house: {
+    strategy: 'Protect principal first. Add growth only if your timeline is 3+ years out.',
+    timeline: '2–7 years',
+    ideas: [
+      [
+        { name: 'High-Yield Savings', type: 'savings', risk: 'Low', reason: 'Park the bulk here. 4–5% APY, instant access, no risk. Best for timelines under 3 years.', action: 'Open at Marcus, SoFi, or Ally' },
+        { name: 'I-Bonds', type: 'bond', risk: 'Low', reason: 'US gov-backed, inflation-protected. $10k/year limit. Best for money you won\'t need for 12+ months.', action: 'Buy at TreasuryDirect.gov' },
+        { name: 'SCHP', ticker: 'SCHP', type: 'etf', risk: 'Low', reason: 'TIPS ETF — inflation-protected bonds. Helps your down payment keep up with rising home prices.', action: 'Add to watchlist' },
+        { name: 'BND', ticker: 'BND', type: 'etf', risk: 'Low', reason: 'Broad bond ETF for any portion 3+ years away. Reduce exposure as your purchase date nears.', action: 'Add to watchlist' },
+      ],
+    ],
+  },
+  retire: {
+    strategy: 'Maximize long-term compounding. Your time horizon absorbs short-term volatility.',
+    timeline: '10–30+ years',
+    ideas: [
+      [
+        { name: 'VTI', ticker: 'VTI', type: 'etf', risk: 'Med', reason: 'Total US market ETF. 0.03% expense ratio. Owns ~3,500 companies. Core holding for any retirement account.', action: 'Add to watchlist' },
+        { name: 'VT', ticker: 'VT', type: 'etf', risk: 'Med', reason: 'Total world market — adds the 40% of global market cap that VTI misses. One-fund diversification.', action: 'Add to watchlist' },
+        { name: 'VNQ', ticker: 'VNQ', type: 'reit', risk: 'Med', reason: 'Real estate exposure without buying property. Historically 5–8% dividends + appreciation. Tax-advantaged in a Roth IRA.', action: 'Add to watchlist' },
+        { name: 'SCHD', ticker: 'SCHD', type: 'etf', risk: 'Med', reason: 'Dividend growth ETF. Shifts value toward income as you near retirement. Has outperformed S&P in down markets.', action: 'Add to watchlist' },
+        { name: 'Bitcoin', ticker: 'BTC-USD', type: 'crypto', risk: 'High', reason: '1–5% allocation as an inflation hedge and uncorrelated asset. Many advisors now include it. Only with money you can hold through 60%+ drawdowns.', action: 'Buy on Coinbase or Kraken' },
+      ],
+    ],
+  },
+  college: {
+    strategy: 'Use a 529 for tax-free growth. Shift conservative as enrollment approaches.',
+    timeline: '5–18 years',
+    ideas: [
+      [
+        { name: '529 Plan', type: 'platform', risk: 'Low', reason: 'State-sponsored, tax-free growth for education. Contributions often state tax-deductible. Most offer target-date funds.', action: 'Open at your state\'s 529 portal' },
+        { name: 'VTI', ticker: 'VTI', type: 'etf', risk: 'Med', reason: 'Use for the growth phase (10+ years out). Switch to bonds automatically with a target-date 529 option.', action: 'Add to watchlist' },
+        { name: 'AGG', ticker: 'AGG', type: 'etf', risk: 'Low', reason: 'Core bond ETF — shift here for the last 3–5 years before enrollment to preserve what you\'ve built.', action: 'Add to watchlist' },
+        { name: 'I-Bonds', type: 'bond', risk: 'Low', reason: '$10k/year limit, inflation-protected. A good conservative layer for shorter college horizons.', action: 'Buy at TreasuryDirect.gov' },
+      ],
+    ],
+  },
+  travel: {
+    strategy: 'Short timeline means no risk to principal. Save in a dedicated account.',
+    timeline: '6–24 months',
+    ideas: [
+      [
+        { name: 'High-Yield Savings', type: 'savings', risk: 'Low', reason: 'Best for this goal. Open a dedicated HYSA and name it your destination. 4–5% APY, instant access.', action: 'Open at Marcus, SoFi, or Ally' },
+        { name: 'BIL', ticker: 'BIL', type: 'etf', risk: 'Low', reason: '1–3 month T-bills. Near-zero price risk. A marginal yield bump over HYSA for money 3+ months away.', action: 'Add to watchlist' },
+        { name: 'SHV', ticker: 'SHV', type: 'etf', risk: 'Low', reason: 'Ultra-short treasury ETF. Extremely stable — NAV barely moves. Good for money you need in 6–12 months.', action: 'Add to watchlist' },
+      ],
+    ],
+  },
+  business: {
+    strategy: 'Liquid reserves in cash, invest only what you won\'t need for 2+ years.',
+    timeline: '2–5 years',
+    ideas: [
+      [
+        { name: 'High-Yield Savings', type: 'savings', risk: 'Low', reason: 'Keep 6–12 months of operating costs here. Non-negotiable before investing anything else for the business.', action: 'Open a business HYSA' },
+        { name: 'VTI', ticker: 'VTI', type: 'etf', risk: 'Med', reason: 'Invest surplus you genuinely won\'t need for 2+ years. Simple, low-cost, broad market.', action: 'Add to watchlist' },
+        { name: 'QQQ', ticker: 'QQQ', type: 'etf', risk: 'Med', reason: 'Tech-weighted growth. Makes sense if your business is tech-adjacent and you want sector alignment.', action: 'Add to watchlist' },
+        { name: 'Bitcoin', ticker: 'BTC-USD', type: 'crypto', risk: 'High', reason: 'Some founders hold 1–5% as a hedge. Only with surplus you could afford to lose entirely. High reward, high risk.', action: 'Buy on Coinbase or Kraken' },
+      ],
+    ],
+  },
+  default: {
+    strategy: 'Diversify across asset classes for balanced long-term growth.',
+    timeline: '5–10+ years',
+    ideas: [
+      [
+        { name: 'VTI', ticker: 'VTI', type: 'etf', risk: 'Med', reason: 'Total US market. 0.03% ER. Historically ~10% annualized. Core of any long-term portfolio.', action: 'Add to watchlist' },
+        { name: 'VT', ticker: 'VT', type: 'etf', risk: 'Med', reason: 'Global diversification — adds Europe, Asia, and emerging markets. Reduces single-country risk.', action: 'Add to watchlist' },
+        { name: 'VNQ', ticker: 'VNQ', type: 'reit', risk: 'Med', reason: 'Real estate exposure without buying property. Dividends + appreciation. Historically low correlation to stocks.', action: 'Add to watchlist' },
+        { name: 'SCHD', ticker: 'SCHD', type: 'etf', risk: 'Med', reason: 'Dividend growth ETF. Tends to outperform in down markets. Good for income-focused portion of portfolio.', action: 'Add to watchlist' },
+        { name: 'Bitcoin', ticker: 'BTC-USD', type: 'crypto', risk: 'High', reason: '1–5% as an uncorrelated alternative asset. Has historically outperformed most assets over 5+ year windows.', action: 'Buy on Coinbase or Kraken' },
+        { name: 'BND', ticker: 'BND', type: 'etf', risk: 'Low', reason: 'Bond ballast — reduces overall volatility. Increase allocation as your timeline shortens.', action: 'Add to watchlist' },
+      ],
+    ],
+  },
+}
+
+function getGoalSuggestions(goals: any[], _rotation = 0, limit = 10): GoalSuggestion[] {
   if (!goals?.length) return []
-  return goals.slice(0, 3).map(goal => {
+  return goals.slice(0, limit).map(goal => {
     const name = (goal.name || goal.title || goal.description || '').toLowerCase()
-    let suggestions: { ticker: string; reason: string }[] = []
-
-    if (/emergency|safety|cushion/.test(name))
-      suggestions = [{ ticker: 'SGOV', reason: '3-month T-bills, minimal risk' }, { ticker: 'SHV', reason: 'Ultra short-term gov bonds' }]
-    else if (/house|home|down.?payment|property/.test(name))
-      suggestions = [{ ticker: 'BND', reason: 'Broad bond exposure, stable' }, { ticker: 'SGOV', reason: 'Capital preservation' }]
-    else if (/retire/.test(name))
-      suggestions = [{ ticker: 'VT', reason: 'Total world market, diversified' }, { ticker: 'VTI', reason: 'Total US market, low cost' }]
-    else if (/college|school|education/.test(name))
-      suggestions = [{ ticker: 'BND', reason: 'Conservative as deadline nears' }, { ticker: 'VTI', reason: 'Growth if 10+ years out' }]
-    else if (/travel|vacation|trip/.test(name))
-      suggestions = [{ ticker: 'SGOV', reason: 'Liquid, no risk to principal' }]
-    else if (/business|startup/.test(name))
-      suggestions = [{ ticker: 'VTI', reason: 'Grow reserves while building' }, { ticker: 'QQQ', reason: 'Tech-aligned growth' }]
-    else
-      suggestions = [{ ticker: 'VTI', reason: 'Solid all-market foundation' }, { ticker: 'QQQ', reason: 'Tech-weighted growth' }]
-
-    return { goal: goal.name || goal.title || 'Goal', target: goal.target_amount || goal.targetAmount, suggestions }
+    let key = 'default'
+    if (/emergency|safety|cushion/.test(name)) key = 'emergency'
+    else if (/house|home|down.?payment|property/.test(name)) key = 'house'
+    else if (/retire/.test(name)) key = 'retire'
+    else if (/college|school|education/.test(name)) key = 'college'
+    else if (/travel|vacation|trip/.test(name)) key = 'travel'
+    else if (/business|startup/.test(name)) key = 'business'
+    const data = GOAL_DATA[key]
+    return {
+      goal: goal.name || goal.title || 'Goal',
+      target: goal.target_amount || goal.targetAmount,
+      strategy: data.strategy,
+      timeline: data.timeline,
+      ideas: data.ideas[0],
+    }
   })
 }
 
@@ -848,28 +961,30 @@ function StockDetail({
 
   return (
     <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
-        </div>
-
-        <div style={{ padding: '16px 20px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{quote.symbol}</h2>
-              {quote.name && <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{quote.name}</span>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '4px' }}>
-              <span style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>${(quote.price ?? 0).toFixed(2)}</span>
-              <span style={{ fontSize: '14px', fontWeight: '500', color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
-                {isPositive ? '+' : ''}{(quote.change ?? 0).toFixed(2)} ({(parseFloat(quote.changePercent) || 0).toFixed(2)}%)
-              </span>
-            </div>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', height: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'sticky', top: 0, background: 'var(--sand-50)', zIndex: 1, borderRadius: '24px 24px 0 0' }}>
+          <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
           </div>
-          <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', color: 'var(--sand-700)' }}>×</button>
+
+          <div style={{ padding: '16px 20px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>{quote.symbol}</h2>
+                {quote.name && <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{quote.name}</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginTop: '4px' }}>
+                <span style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', letterSpacing: '-0.5px' }}>${(quote.price ?? 0).toFixed(2)}</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: isPositive ? 'var(--success)' : 'var(--danger)' }}>
+                  {isPositive ? '+' : ''}{(quote.change ?? 0).toFixed(2)} ({(parseFloat(quote.changePercent) || 0).toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', color: 'var(--sand-700)' }}>×</button>
+          </div>
         </div>
 
-        <div style={{ overflowY: 'auto', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
           {/* Period selector */}
           <div style={{ display: 'flex', gap: '4px', background: 'var(--sand-200)', borderRadius: '12px', padding: '3px' }}>
             {PERIODS.map(p => (
@@ -1029,7 +1144,7 @@ export default function Grow() {
 
   const [ideas, setIdeas] = useState<any[]>([])
   const [loadingIdeas, setLoadingIdeas] = useState(false)
-  const [activeGrowTab, setActiveGrowTab] = useState<'holdings' | 'ideas' | 'markets'>('holdings')
+  const [activeGrowTab, setActiveGrowTab] = useState<'holdings' | 'ideas' | 'news'>('holdings')
   const [articles, setArticles] = useState<Article[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
   const [activeSection, setActiveSection] = useState('portfolio')
@@ -1066,10 +1181,14 @@ export default function Grow() {
   const [shareCounts, setShareCounts] = useState<Record<string, number>>({})
   const [ideaProgress, setIdeaProgress] = useState<Record<string, string>>({})
   const [bookmarks, setBookmarks] = useState<Article[]>([])
+  const [ideaPrompt, setIdeaPrompt] = useState('')
+  const [likedIdeas, setLikedIdeas] = useState<Set<string>>(new Set())
+  const [refinementText, setRefinementText] = useState('')
+  const [showRefinement, setShowRefinement] = useState(false)
 
   const [goalSuggestions, setGoalSuggestions] = useState<GoalSuggestion[]>([])
   const [expandedGoal, setExpandedGoal] = useState<string | null>(null)
-  const [showGoals, setShowGoals] = useState(false)
+  const [goalRotation] = useState(0)
 
 
   const searchTimeout = useRef<any>(null)
@@ -1104,7 +1223,7 @@ export default function Grow() {
     else if (profile) generateIdeas(profile)
     if (profile?.goals || profile?.financial_goals) {
       const goals = profile.goals || profile.financial_goals || []
-      setGoalSuggestions(getGoalSuggestions(Array.isArray(goals) ? goals : []))
+      setGoalSuggestions(getGoalSuggestions(Array.isArray(goals) ? goals : [], goalRotation))
     }
   }, [profileLoading])
 
@@ -1147,7 +1266,7 @@ export default function Grow() {
   }
 
 
-  const generateIdeas = async (profileData?: any) => {
+  const generateIdeas = async (profileData?: any, opts?: { prompt?: string; selectedIdeas?: any[]; refinement?: string; excludedIdeas?: any[] }) => {
     const p = profileData || profile
     if (!p) return
     setLoadingIdeas(true)
@@ -1155,7 +1274,7 @@ export default function Grow() {
       const res = await fetch('/api/money', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate_ideas', profile: p })
+        body: JSON.stringify({ action: 'generate_ideas', profile: p, ...opts })
       })
       const data = await res.json()
       const newIdeas = data.ideas || []
@@ -1163,6 +1282,36 @@ export default function Grow() {
       await updateProfile({ income_ideas: newIdeas })
     } catch { }
     setLoadingIdeas(false)
+  }
+
+  const handleIdeaAsk = () => {
+    setLikedIdeas(new Set())
+    setShowRefinement(false)
+    generateIdeas(undefined, { prompt: ideaPrompt || undefined })
+  }
+
+  const handleRefinement = () => {
+    const selected = ideas.filter(idea => {
+      const t = typeof idea === 'string' ? idea : idea.title
+      return likedIdeas.has(t)
+    })
+    generateIdeas(undefined, {
+      selectedIdeas: selected.length > 0 ? selected : undefined,
+      refinement: refinementText || undefined,
+      excludedIdeas: ideas,
+    })
+    setRefinementText('')
+    setLikedIdeas(new Set())
+    setShowRefinement(false)
+  }
+
+  const toggleLikedIdea = (title: string) => {
+    setLikedIdeas(prev => {
+      const next = new Set(prev)
+      if (next.has(title)) next.delete(title)
+      else next.add(title)
+      return next
+    })
   }
 
   const fetchNews = async (category: string, pageNum: number, reset = false) => {
@@ -1490,7 +1639,7 @@ Please give me a thorough breakdown:
         {([
           { id: 'holdings' as const, label: 'Holdings' },
           { id: 'ideas' as const, label: 'Ideas' },
-          { id: 'markets' as const, label: 'Markets' },
+          { id: 'news' as const, label: 'News' },
         ] as const).map(t => (
           <button
             key={t.id}
@@ -1511,6 +1660,96 @@ Please give me a thorough breakdown:
       {/* ── HOLDINGS TAB ── */}
       {activeGrowTab === 'holdings' && (
       <div className="animate-fade">
+
+      {/* Goal-Aligned Investment Ideas */}
+      {goalSuggestions.length > 0 && isVisible('watchlist') && (
+        <div className="animate-fade" style={{ marginBottom: '28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <p className="label" style={{ marginBottom: '2px' }}>Goal-Aligned Strategy</p>
+              <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Tailored to each of your financial goals</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {goalSuggestions.map((gs, i) => {
+              const isOpen = expandedGoal === gs.goal
+              return (
+                <div key={i} className="card" style={{ padding: '0', overflow: 'hidden' }}>
+                  {/* Goal header — always visible */}
+                  <div
+                    onClick={() => setExpandedGoal(isOpen ? null : gs.goal)}
+                    style={{ padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{gs.goal}</p>
+                        <span style={{ fontSize: '10px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '1px 7px', borderRadius: '20px', fontWeight: '500', flexShrink: 0 }}>{gs.timeline}</span>
+                      </div>
+                      {gs.target && (
+                        <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '0 0 4px' }}>Target: ${gs.target.toLocaleString()}</p>
+                      )}
+                      <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.5', fontStyle: 'italic' }}>{gs.strategy}</p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {/* Asset type dots preview */}
+                      <div style={{ display: 'flex', gap: '3px' }}>
+                        {[...new Set(gs.ideas.map(i => i.type))].slice(0, 4).map(type => (
+                          <div key={type} style={{ width: '8px', height: '8px', borderRadius: '50%', background: IDEA_TYPE_META[type].color, opacity: 0.7 }} />
+                        ))}
+                      </div>
+                      <span style={{ fontSize: '10px', color: 'var(--sand-400)', transition: 'transform 0.2s', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none' }}>▾</span>
+                    </div>
+                  </div>
+
+                  {/* Expanded ideas */}
+                  {isOpen && (
+                    <div className="animate-fade" style={{ borderTop: '0.5px solid var(--sand-200)' }}>
+                      {gs.ideas.map((idea, j) => {
+                        const typeMeta = IDEA_TYPE_META[idea.type]
+                        const riskMeta = RISK_META[idea.risk]
+                        return (
+                          <div
+                            key={j}
+                            style={{
+                              padding: '12px 16px',
+                              borderBottom: j < gs.ideas.length - 1 ? '0.5px solid var(--sand-200)' : 'none',
+                              display: 'flex', flexDirection: 'column', gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--sand-900)' }}>{idea.name}</span>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: typeMeta.color, background: typeMeta.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>{typeMeta.label}</span>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: riskMeta.color, background: riskMeta.bg, padding: '2px 7px', borderRadius: '20px' }}>{idea.risk} risk</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                {idea.ticker && (
+                                  <button
+                                    onClick={() => addToWatchlist(idea.ticker!)}
+                                    style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                                    + Watch
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.55' }}>{idea.reason}</p>
+                            {idea.action && !idea.ticker && (
+                              <p style={{ fontSize: '11px', color: 'var(--accent)', margin: 0, fontWeight: '500' }}>→ {idea.action}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div style={{ padding: '8px 16px', borderTop: '0.5px solid var(--sand-200)' }}>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>Not financial advice. Consult a financial advisor for personalized guidance.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Growth Section */}
       <GrowthSection
@@ -1688,61 +1927,6 @@ Please give me a thorough breakdown:
         </div>
       )}
 
-      {/* Goal-linked Investment Suggestions */}
-      {goalSuggestions.length > 0 && isVisible('watchlist') && (
-        <div className="animate-fade stagger-1" style={{ marginBottom: '24px' }}>
-          {!showGoals ? (
-            <button
-              onClick={() => setShowGoals(true)}
-              style={{ background: 'none', border: 'none', padding: '2px 0 8px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--sand-500)', fontSize: '12px' }}>
-              <span style={{ fontSize: '10px' }}>▸</span> Goal-aligned investment ideas
-            </button>
-          ) : (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <p className="label">Goal-Aligned Investments</p>
-                <button className="btn-ghost" onClick={() => setShowGoals(false)} style={{ fontSize: '11px', padding: '3px 8px' }}>Hide</button>
-              </div>
-              <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {goalSuggestions.map((gs, i) => (
-                  <div key={i} className="card" style={{ padding: '14px', cursor: 'pointer' }} onClick={() => setExpandedGoal(expandedGoal === gs.goal ? null : gs.goal)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 2px' }}>{gs.goal}</p>
-                        {gs.target && <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>Target: ${gs.target.toLocaleString()}</p>}
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        {gs.suggestions.map(s => (
-                          <span key={s.ticker} style={{ fontSize: '10px', fontWeight: '700', background: 'var(--accent-light)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', padding: '2px 7px', borderRadius: '20px' }}>{s.ticker}</span>
-                        ))}
-                      </div>
-                    </div>
-                    {expandedGoal === gs.goal && (
-                      <div className="animate-fade" style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {gs.suggestions.map(s => (
-                          <div key={s.ticker} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--sand-900)' }}>{s.ticker}</span>
-                              <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{s.reason}</span>
-                            </div>
-                            <button
-                              onClick={e => { e.stopPropagation(); addToWatchlist(s.ticker) }}
-                              style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600' }}>
-                              + Watch
-                            </button>
-                          </div>
-                        ))}
-                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '4px 0 0' }}>Not financial advice.</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
       </div>
       )} {/* end holdings tab */}
 
@@ -1755,13 +1939,62 @@ Please give me a thorough breakdown:
         <div className="animate-fade stagger-2" style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <p className="label">Income Ideas</p>
+            <button className="btn-ghost" onClick={() => navigate('/money')} style={{ fontSize: '11px', padding: '3px 8px' }}>Saved ({savedIdeas.length})</button>
+          </div>
+
+          {/* Prompt input */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', marginBottom: '6px' }}>
+              {[
+                { label: 'Passive', value: 'passive income ideas that require minimal ongoing work' },
+                { label: 'Skill-based', value: 'ideas that leverage my professional skills and expertise' },
+                { label: 'Digital', value: 'online or digital income ideas I can run from anywhere' },
+                { label: 'Business', value: 'business or entrepreneurship ideas' },
+                { label: 'Low effort', value: 'low effort ideas under 5 hours per week' },
+                { label: 'High income', value: 'ideas with the highest income potential' },
+              ].map(chip => (
+                <button
+                  key={chip.label}
+                  onClick={() => setIdeaPrompt(ideaPrompt === chip.value ? '' : chip.value)}
+                  style={{
+                    flexShrink: 0, padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '500',
+                    cursor: 'pointer', fontFamily: 'inherit', border: '0.5px solid var(--sand-300)', transition: 'all 0.15s',
+                    background: ideaPrompt === chip.value ? 'var(--accent)' : 'var(--sand-100)',
+                    color: ideaPrompt === chip.value ? 'var(--sand-50)' : 'var(--sand-600)',
+                  }}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button className="btn-ghost" onClick={() => navigate('/money')} style={{ fontSize: '11px', padding: '3px 8px' }}>Saved ({savedIdeas.length})</button>
-              <button className="btn-ghost" onClick={() => generateIdeas()} disabled={loadingIdeas} style={{ fontSize: '11px', padding: '3px 8px' }}>
-                {loadingIdeas ? '...' : '↻ Refresh'}
+              <input
+                value={ideaPrompt}
+                onChange={e => setIdeaPrompt(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !loadingIdeas && handleIdeaAsk()}
+                placeholder="What kind of income ideas are you looking for?"
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px',
+                  border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-900)',
+                  fontFamily: 'inherit', outline: 'none',
+                }}
+              />
+              <button
+                onClick={handleIdeaAsk}
+                disabled={loadingIdeas}
+                style={{
+                  padding: '8px 14px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '600',
+                  cursor: 'pointer', fontFamily: 'inherit', border: 'none',
+                  background: 'var(--accent)', color: 'var(--sand-50)', flexShrink: 0,
+                  opacity: loadingIdeas ? 0.5 : 1,
+                }}
+              >
+                {loadingIdeas ? '...' : 'Generate'}
               </button>
             </div>
           </div>
+
+          {/* Ideas list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {loadingIdeas ? (
               [1, 2, 3].map(i => (
@@ -1776,12 +2009,13 @@ Please give me a thorough breakdown:
               const tags = getIdeaTags(idea)
               const progress = ideaProgress[ideaTitle]
               const progressOpt = PROGRESS_OPTIONS.find(p => p.key === progress)
+              const isLiked = likedIdeas.has(ideaTitle)
               return (
                 <div
                   key={i}
                   className="card"
                   onClick={() => setExpandedIdea(isExpanded ? null : ideaTitle)}
-                  style={{ padding: '14px', cursor: 'pointer', animationDelay: `${i * 0.05}s`, transition: 'all var(--transition)', userSelect: 'none' }}
+                  style={{ padding: '14px', cursor: 'pointer', animationDelay: `${i * 0.05}s`, transition: 'all var(--transition)', userSelect: 'none', border: isLiked ? '1px solid var(--accent-border)' : undefined, background: isLiked ? 'var(--accent-light)' : undefined }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: (tags.length > 0 || ideaRange) ? '6px' : '0' }}>
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', flex: 1 }}>
@@ -1796,11 +2030,27 @@ Please give me a thorough breakdown:
                         </span>
                       )}
                     </div>
-                    {progressOpt && (
-                      <span style={{ fontSize: '9px', fontWeight: '700', color: progressOpt.color, background: progressOpt.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em', flexShrink: 0, marginLeft: '4px' }}>
-                        {progressOpt.label}
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0, marginLeft: '4px' }}>
+                      {showRefinement && (
+                        <button
+                          onClick={e => { e.stopPropagation(); toggleLikedIdea(ideaTitle) }}
+                          style={{
+                            width: '20px', height: '20px', borderRadius: '50%', fontSize: '10px', fontWeight: '700',
+                            cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: `0.5px solid ${isLiked ? 'var(--accent)' : 'var(--sand-300)'}`,
+                            background: isLiked ? 'var(--accent)' : 'var(--sand-100)',
+                            color: isLiked ? 'var(--sand-50)' : 'var(--sand-400)', transition: 'all 0.15s',
+                          }}
+                        >
+                          ✓
+                        </button>
+                      )}
+                      {progressOpt && (
+                        <span style={{ fontSize: '9px', fontWeight: '700', color: progressOpt.color, background: progressOpt.bg, padding: '2px 7px', borderRadius: '20px', letterSpacing: '0.04em' }}>
+                          {progressOpt.label}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p style={{ fontSize: '13px', fontWeight: ideaDesc ? '600' : '400', color: 'var(--sand-900)', margin: '0', lineHeight: '1.4' }}>
                     {ideaTitle}
@@ -1864,6 +2114,65 @@ Please give me a thorough breakdown:
               {showAllIdeas ? '▲ Show less' : `▼ Show ${ideas.length - 4} more idea${ideas.length - 4 > 1 ? 's' : ''}`}
             </button>
           )}
+
+          {/* Refinement chat */}
+          {ideas.length > 0 && !loadingIdeas && (
+            <div style={{ marginTop: '10px' }}>
+              {!showRefinement ? (
+                <button
+                  className="btn-ghost"
+                  onClick={() => setShowRefinement(true)}
+                  style={{ width: '100%', fontSize: '12px', color: 'var(--sand-500)' }}
+                >
+                  ↺ Refine these ideas
+                </button>
+              ) : (
+                <div className="animate-fade" style={{ background: 'var(--sand-100)', borderRadius: 'var(--radius-md)', padding: '12px', border: '0.5px solid var(--sand-300)' }}>
+                  {likedIdeas.size > 0 && (
+                    <p style={{ fontSize: '11px', color: 'var(--accent)', margin: '0 0 8px', fontWeight: '600' }}>
+                      {likedIdeas.size} idea{likedIdeas.size > 1 ? 's' : ''} selected — AI will generate ideas in that direction
+                    </p>
+                  )}
+                  {likedIdeas.size === 0 && (
+                    <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: '0 0 8px' }}>
+                      Tap ✓ on ideas you like, or just describe what you want below
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      value={refinementText}
+                      onChange={e => setRefinementText(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && !loadingIdeas && handleRefinement()}
+                      placeholder='e.g. "more passive", "use my tech skills", "lower startup cost"'
+                      style={{
+                        flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px',
+                        border: '0.5px solid var(--sand-300)', background: 'var(--card)', color: 'var(--sand-900)',
+                        fontFamily: 'inherit', outline: 'none',
+                      }}
+                    />
+                    <button
+                      onClick={handleRefinement}
+                      disabled={loadingIdeas || (likedIdeas.size === 0 && !refinementText.trim())}
+                      style={{
+                        padding: '8px 14px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '600',
+                        cursor: 'pointer', fontFamily: 'inherit', border: 'none', flexShrink: 0,
+                        background: 'var(--accent)', color: 'var(--sand-50)',
+                        opacity: (loadingIdeas || (likedIdeas.size === 0 && !refinementText.trim())) ? 0.4 : 1,
+                      }}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setShowRefinement(false); setLikedIdeas(new Set()); setRefinementText('') }}
+                    style={{ background: 'none', border: 'none', fontSize: '11px', color: 'var(--sand-400)', cursor: 'pointer', marginTop: '6px', padding: 0, fontFamily: 'inherit' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1871,7 +2180,7 @@ Please give me a thorough breakdown:
       )} {/* end ideas tab */}
 
       {/* ── MARKETS TAB ── */}
-      {activeGrowTab === 'markets' && (
+      {activeGrowTab === 'news' && (
       <div className="animate-fade">
 
       {/* News */}
@@ -1950,7 +2259,7 @@ Please give me a thorough breakdown:
       </div>
 
       </div>
-      )} {/* end markets tab */}
+      )} {/* end news tab */}
 
       {/* Stock detail sheet */}
       {selectedStock && (
