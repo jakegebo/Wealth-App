@@ -306,7 +306,10 @@ const HEALTH_ITEM_META: Record<string, { icon: string; target: string; tip: stri
 }
 
 function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
-  const { score, label, color, breakdown } = computeHealthScore(analysis, profile)
+  const { score, label, color, breakdown } = useMemo(
+    () => computeHealthScore(analysis, profile),
+    [analysis?.savingsRate, analysis?.goals, profile?.monthly_income, profile?.monthly_expenses, profile?.debts, profile?.assets]
+  )
   const [detailsOpen, setDetailsOpen] = useState(false)
 
   // Find weakest item (lowest pct of max)
@@ -2398,7 +2401,8 @@ export default function Home() {
   }
 
   const isVisible = (id: string) => !preferences.hiddenSections.includes(id)
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
+  const currencyFormatter = useMemo(() => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), [])
+  const fmt = (n: number) => currencyFormatter.format(isFinite(n) ? n : 0)
 
   if (profileLoading || analyzing) {
     return (
@@ -2429,8 +2433,11 @@ export default function Home() {
   if (!analysis) return null
 
   const completedFocusItems: any[] = profile?.completed_focus_items || []
-  const completedTitles = new Set(completedFocusItems.map((c: any) => c.title?.toLowerCase().trim()))
-  const topAction = analysis.nextActions?.find((a: any) => !completedTitles.has(a.title?.toLowerCase().trim()))
+  const { completedTitles, topAction } = useMemo(() => {
+    const titles = new Set(completedFocusItems.map((c: any) => c.title?.toLowerCase().trim()))
+    const action = analysis.nextActions?.find((a: any) => !titles.has(a.title?.toLowerCase().trim()))
+    return { completedTitles: titles, topAction: action }
+  }, [completedFocusItems, analysis.nextActions])
 
   const completeFocusItem = async (action: { title: string; description: string }) => {
     const newItem = { title: action.title, description: action.description, completedAt: new Date().toISOString() }

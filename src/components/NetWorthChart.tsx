@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -28,6 +28,9 @@ function formatDate(dateStr: string, period: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+const currencyFmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+const fmt = (n: number) => currencyFmt.format(n)
+
 export default function NetWorthChart({ userId }: { userId: string }) {
   const [history, setHistory] = useState<HistoryPoint[]>([])
   const [period, setPeriod] = useState('1M')
@@ -47,8 +50,8 @@ export default function NetWorthChart({ userId }: { userId: string }) {
     setLoading(false)
   }
 
-  const filterByPeriod = (data: HistoryPoint[]) => {
-    if (data.length === 0) return data
+  const filtered = useMemo(() => {
+    if (history.length === 0) return history
     const now = Date.now()
     const cutoffs: Record<string, number> = {
       '1W': 7 * 86400000,
@@ -57,10 +60,9 @@ export default function NetWorthChart({ userId }: { userId: string }) {
       'ALL': Infinity
     }
     const cutoff = now - cutoffs[period]
-    return data.filter(p => new Date(p.recorded_at).getTime() >= cutoff)
-  }
+    return history.filter(p => new Date(p.recorded_at).getTime() >= cutoff)
+  }, [history, period])
 
-  const filtered = filterByPeriod(history)
   const hasData = filtered.length > 1
 
   const change = hasData ? filtered[filtered.length - 1].net_worth - filtered[0].net_worth : 0
@@ -69,11 +71,7 @@ export default function NetWorthChart({ userId }: { userId: string }) {
     : '0.0'
   const isPositive = change >= 0
 
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD', maximumFractionDigits: 0
-  }).format(n)
-
-  const chartData = {
+  const chartData = useMemo(() => ({
     labels: filtered.map(p => formatDate(p.recorded_at, period)),
     datasets: [{
       data: filtered.map(p => p.net_worth),
@@ -86,9 +84,9 @@ export default function NetWorthChart({ userId }: { userId: string }) {
       borderWidth: 2,
       pointBackgroundColor: isPositive ? 'var(--success)' : 'var(--danger)'
     }]
-  }
+  }), [filtered, isPositive, period])
 
-  const chartOptions = {
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
@@ -121,7 +119,7 @@ export default function NetWorthChart({ userId }: { userId: string }) {
         position: 'right' as const
       }
     }
-  }
+  }), [isPositive])
 
   if (loading) {
     return (
@@ -160,8 +158,6 @@ export default function NetWorthChart({ userId }: { userId: string }) {
           ))}
         </div>
       </div>
-
-      {/* Chart */}
       <div style={{ height: '160px' }}>
         <Line data={chartData} options={chartOptions} />
       </div>

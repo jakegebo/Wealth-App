@@ -71,6 +71,7 @@ interface GoalSuggestion {
 
 const PERIODS = ['1D', '1W', '1M', '1Y', '5Y', '10Y', 'ALL']
 const SNAP_SYMBOLS = ['SPY', 'QQQ', 'BTC-USD', 'GLD']
+const _currencyFmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 
 const NEWS_SECTIONS = [
   { key: 'portfolio', label: 'Portfolio' },
@@ -295,6 +296,7 @@ function GrowthSection({
   liveQuotesLoading,
   refreshLiveQuotes,
   updateProfile,
+  onSelectStock,
 }: {
   profile: any
   analysis: any
@@ -304,6 +306,7 @@ function GrowthSection({
   liveQuotesLoading: boolean
   refreshLiveQuotes: () => Promise<void>
   updateProfile: (updates: Record<string, any>) => Promise<void>
+  onSelectStock: (stock: StockQuote) => void
 }) {
   const [tab, setTab] = useState<'portfolio' | 'income'>('portfolio')
 
@@ -347,8 +350,7 @@ function GrowthSection({
     setNewPosCost('')
   }
 
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
+  const fmt = (n: number) => _currencyFmt.format(isFinite(n) ? n : 0)
   const fmtDelta = (n: number) => {
     const abs = Math.abs(n)
     const prefix = n >= 0 ? '+' : '-'
@@ -671,7 +673,7 @@ function GrowthSection({
                         const isUp = q ? q.change >= 0 : null
 
                         return (
-                          <div key={pi} onClick={() => { if (q) setSelectedStock(q) }} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none', cursor: q ? 'pointer' : 'default' }}>
+                          <div key={pi} onClick={() => { if (q) onSelectStock(q) }} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none', cursor: q ? 'pointer' : 'default' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
@@ -960,7 +962,7 @@ function StockDetail({
     : null
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div style={{ position: 'sticky', top: 0, background: 'var(--sand-50)', zIndex: 1, borderRadius: '24px 24px 0 0', flexShrink: 0 }}>
           <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
@@ -1213,12 +1215,19 @@ export default function Grow() {
     } catch { /* ignore */ }
   }, [userId])
 
+  // Track whether we've done the initial watchlist fetch so the watchlist
+  // effect doesn't duplicate it on mount.
+  const initialFetchDoneRef = useRef(false)
+
   useEffect(() => {
     if (profileLoading) return
+    initialFetchDoneRef.current = true
     fetchStocks(watchlist)
     fetchSnap()
     fetchTrending()
-    refreshLiveQuotes()
+    // Live quotes are auto-fetched by ProfileContext on load; only refresh
+    // here if they haven't come in yet.
+    if (Object.keys(liveQuotes).length === 0) refreshLiveQuotes()
     if (incomeIdeas.length > 0) setIdeas(incomeIdeas)
     else if (profile) generateIdeas(profile)
     if (profile?.goals || profile?.financial_goals) {
@@ -1227,8 +1236,9 @@ export default function Grow() {
     }
   }, [profileLoading])
 
+  // Poll market snap every 5 minutes instead of every 60 seconds
   useEffect(() => {
-    const id = setInterval(fetchSnap, 60_000)
+    const id = setInterval(fetchSnap, 5 * 60_000)
     return () => clearInterval(id)
   }, [])
 
@@ -1237,6 +1247,8 @@ export default function Grow() {
   }, [snapLoaded])
 
   useEffect(() => {
+    // Skip the initial mount — the profileLoading effect already fetches.
+    if (!initialFetchDoneRef.current) return
     if (!profileLoading && watchlist.length > 0) fetchStocks(watchlist)
   }, [watchlist])
 
@@ -1693,6 +1705,7 @@ Please give me a thorough breakdown:
         liveQuotesLoading={liveQuotesLoading}
         refreshLiveQuotes={refreshLiveQuotes}
         updateProfile={updateProfile}
+        onSelectStock={setSelectedStock}
       />
 
       {/* Watchlist */}

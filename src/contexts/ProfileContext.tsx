@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 interface LiveQuote {
@@ -58,6 +58,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({})
   const [liveQuotesLoading, setLiveQuotesLoading] = useState(false)
 
+  // Track the last set of symbols fetched to avoid redundant calls
+  const lastFetchedSymbolsRef = useRef<string>('')
+
   useEffect(() => {
     load()
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -66,6 +69,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         setUserId(null); setUserEmail(''); setProfileData(null); setAnalysis(null)
         setChatRefs({}); setWatchlist(['SPY', 'QQQ', 'AAPL']); setSavedIdeas([])
         setIncomeIdeas([]); setGoalAdvice({}); setHasProfile(false); setLoading(false)
+        lastFetchedSymbolsRef.current = ''
+        setLiveQuotes({})
       }
     })
     return () => subscription.unsubscribe()
@@ -81,6 +86,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (!symbols.length) return
+
+    // Skip if we already have fresh quotes for the exact same symbol set
+    const symbolKey = symbols.slice().sort().join(',')
+    if (symbolKey === lastFetchedSymbolsRef.current) return
+    lastFetchedSymbolsRef.current = symbolKey
+
     setLiveQuotesLoading(true)
     try {
       const res = await fetch(`/api/stocks?symbols=${symbols.join(',')}`)
@@ -101,19 +112,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setUserEmail(user.email || '')
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (data) {
+      const pd = data.profile_data || null
       setHasProfile(true)
-      setProfileData(data.profile_data || null)
+      setProfileData(pd)
       setAnalysis(data.analysis || null)
       setChatRefs(data.chat_refs || {})
       setWatchlist(data.watchlist || ['SPY', 'QQQ', 'AAPL'])
       setSavedIdeas(data.saved_income_ideas || [])
       setIncomeIdeas(data.income_ideas || [])
       setGoalAdvice(data.goal_advice || {})
+      // Auto-fetch live quotes so pages don't each trigger it separately
+      fetchLiveQuotes(pd)
     }
     setLoading(false)
   }
 
-  const refreshLiveQuotes = async () => fetchLiveQuotes(profileData)
+  const refreshLiveQuotes = async () => {
+    // Force refresh by clearing the cache key
+    lastFetchedSymbolsRef.current = ''
+    return fetchLiveQuotes(profileData)
+  }
 
   const updateProfile = async (updates: Record<string, any>) => {
     // Optimistic local updates
