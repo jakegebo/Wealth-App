@@ -2147,6 +2147,14 @@ function financialFingerprint(p: any): string {
   })
 }
 
+function assetFingerprint(p: any): string {
+  if (!p) return ''
+  return JSON.stringify({
+    assets: (p.assets || []).map((a: any) => ({ n: a.name, v: a.value })),
+    debts: (p.debts || []).map((d: any) => ({ n: d.name, b: d.balance })),
+  })
+}
+
 export default function Home() {
   const navigate = useNavigate()
   const { preferences } = useTheme()
@@ -2161,6 +2169,8 @@ export default function Home() {
   const [milestone, setMilestone] = useState<number | null>(null)
   const [lastAnalyzedAt, setLastAnalyzedAt] = useState<string | null>(null)
   const [staleBannerDismissed, setStaleBannerDismissed] = useState(false)
+  const [lastAssetsUpdatedAt, setLastAssetsUpdatedAt] = useState<string | null>(null)
+  const [assetsBannerDismissed, setAssetsBannerDismissed] = useState(false)
   const [editingGoalIdx, setEditingGoalIdx] = useState<number | null>(null)
   const [goalInputVal, setGoalInputVal] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
@@ -2188,6 +2198,16 @@ export default function Home() {
     // Load last analyzed timestamp
     const stored = localStorage.getItem(`lastAnalyzed_${userId}`)
     if (stored) setLastAnalyzedAt(stored)
+    // Load last assets-updated timestamp; seed it now if missing
+    const storedAssets = localStorage.getItem(`lastAssetsUpdated_${userId}`)
+    if (storedAssets) {
+      setLastAssetsUpdatedAt(storedAssets)
+    } else if (userId && fp) {
+      const now = new Date().toISOString()
+      localStorage.setItem(`lastAssetsUpdated_${userId}`, now)
+      localStorage.setItem(`lastAssetsFp_${userId}`, assetFingerprint(profile))
+      setLastAssetsUpdatedAt(now)
+    }
   }, [profileLoading])
 
   // Auto-refresh insights when financial data changes
@@ -2199,6 +2219,18 @@ export default function Home() {
       runAnalysis(profile, !analysis) // full refresh if no analysis, silent if updating existing
     } else if (!prevFingerprintRef.current) {
       prevFingerprintRef.current = fp
+    }
+    // Track when assets/debts specifically were last changed
+    if (userId) {
+      const afp = assetFingerprint(profile)
+      const storedAfp = localStorage.getItem(`lastAssetsFp_${userId}`)
+      if (storedAfp && afp !== storedAfp) {
+        const now = new Date().toISOString()
+        localStorage.setItem(`lastAssetsUpdated_${userId}`, now)
+        localStorage.setItem(`lastAssetsFp_${userId}`, afp)
+        setLastAssetsUpdatedAt(now)
+        setAssetsBannerDismissed(false)
+      }
     }
   }, [profile])
 
@@ -2449,8 +2481,8 @@ export default function Home() {
   const HOME_TABS = [
     { id: 'overview' as const, label: 'Overview' },
     { id: 'portfolio' as const, label: 'Portfolio' },
-    { id: 'cashflow' as const, label: 'Cash Flow' },
     { id: 'insights' as const, label: 'Insights' },
+    { id: 'cashflow' as const, label: 'Cash Flow' },
   ]
 
   return (
@@ -2500,6 +2532,19 @@ export default function Home() {
           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
             <button onClick={() => navigate('/onboarding')} style={{ fontSize: '11px', fontWeight: '600', color: '#9a6a20', background: 'rgba(200,148,58,0.15)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Update</button>
             <button onClick={() => setStaleBannerDismissed(true)} style={{ fontSize: '13px', color: '#9a6a20', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>×</button>
+          </div>
+        </div>
+      )}
+
+      {/* Asset staleness nudge — fires when assets/debts haven't changed in 30 days, even if income was updated */}
+      {!assetsBannerDismissed && !staleBannerDismissed && lastAssetsUpdatedAt && (Date.now() - new Date(lastAssetsUpdatedAt).getTime()) > 30 * 24 * 60 * 60 * 1000 && (Date.now() - new Date(lastAnalyzedAt || 0).getTime()) <= 30 * 24 * 60 * 60 * 1000 && (
+        <div className="animate-fade" style={{ margin: '12px 16px 0', padding: '10px 14px', background: 'rgba(100,120,180,0.08)', border: '0.5px solid rgba(100,120,180,0.3)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <p style={{ fontSize: '12px', color: 'var(--sand-700)', margin: 0, lineHeight: '1.4' }}>
+            Your assets & debts haven't been updated in {Math.floor((Date.now() - new Date(lastAssetsUpdatedAt).getTime()) / (24 * 60 * 60 * 1000))} days — still accurate?
+          </p>
+          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+            <button onClick={() => navigate('/onboarding')} style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-700)', background: 'rgba(100,120,180,0.12)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Update</button>
+            <button onClick={() => setAssetsBannerDismissed(true)} style={{ fontSize: '13px', color: 'var(--sand-500)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>×</button>
           </div>
         </div>
       )}

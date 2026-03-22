@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
+import { getContributionStatus } from '../lib/retirementLimits'
 
 interface Goal {
   name: string
@@ -41,6 +42,9 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
   const emergencyMonths = expenses > 0 ? liquidSavings / expenses : 0
   const highDebt = (profile?.debts || []).filter((d: any) => (d.interest_rate || 0) > 10)
   const hasRetirement = (profile?.assets || []).some((a: any) => a.category === 'retirement')
+  const hasIRA = (profile?.assets || []).some((a: any) => /roth|ira/i.test(a.name))
+  const contribStatuses = getContributionStatus(profile?.assets || [], profile?.age)
+  const iraMaxed = contribStatuses.some(s => /ira/i.test(s.account) && s.maxed)
   const hasRealEstate = (profile?.assets || []).some((a: any) => a.category === 'real_estate')
 
   // 1. Emergency fund
@@ -76,16 +80,34 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     }
   }
 
-  // 3. Roth IRA — if no retirement account
-  if (!hasRetirement && !existingCategories.includes('retirement') && !dismissed.includes('roth_ira')) {
+  // 3. Roth IRA — open if none exists; suggest maxing if not yet maxed; skip if already maxed
+  if (!iraMaxed && !existingCategories.includes('retirement') && !dismissed.includes('roth_ira')) {
     const future = Math.round(500 * 12 * ((Math.pow(1.07, 30) - 1) / 0.07))
-    suggestions.push({
-      id: 'roth_ira', name: 'Open and fund a Roth IRA', category: 'investment', icon: '📈',
-      priority: 'high',
-      why: `You have no retirement account. Money in a Roth IRA grows completely tax-free. ${fmt(500)}/mo invested at 7% for 30 years becomes ${fmt(future)} — all tax-free at withdrawal.`,
-      how: `Open at Fidelity (no minimums, no fees). Invest in VTI or a target-date fund. Contribute $583/mo to hit the $7,000/yr IRS limit.`,
-      targetAmount: 7000, monthlyNeeded: 583, timeline: '12 months (annual)',
-    })
+    const iraStatus = contribStatuses.find(s => /ira/i.test(s.account))
+    const contributed = iraStatus?.contributed || 0
+    const remaining = Math.max(0, 7000 - contributed)
+    const monthlyNeeded = contributed > 0 ? Math.ceil(remaining / Math.max(1, 12 - new Date().getMonth())) : 583
+    if (!hasRetirement && !hasIRA) {
+      // No IRA at all — suggest opening one
+      suggestions.push({
+        id: 'roth_ira', name: 'Open and fund a Roth IRA', category: 'investment', icon: '📈',
+        priority: 'high',
+        why: `You have no retirement account. Money in a Roth IRA grows completely tax-free. ${fmt(500)}/mo invested at 7% for 30 years becomes ${fmt(future)} — all tax-free at withdrawal.`,
+        how: `Open at Fidelity (no minimums, no fees). Invest in VTI or a target-date fund. Contribute $583/mo to hit the $7,000/yr IRS limit.`,
+        targetAmount: 7000, monthlyNeeded: 583, timeline: '12 months (annual)',
+      })
+    } else if (hasIRA || hasRetirement) {
+      // Has IRA but not maxed — suggest maxing it
+      suggestions.push({
+        id: 'roth_ira', name: 'Max out your Roth IRA', category: 'investment', icon: '📈',
+        priority: 'high',
+        why: contributed > 0
+          ? `You've contributed ${fmt(contributed)} toward the $7,000 IRA limit this year — ${fmt(remaining)} left. Maxing it secures the full tax-free compounding benefit for the year.`
+          : `You have a Roth IRA but haven't hit the $7,000/yr limit. Maxing it means every dollar grows and withdraws completely tax-free.`,
+        how: `Contribute ${fmt(monthlyNeeded)}/mo for the rest of the year to hit the $7,000 limit before the April tax deadline.`,
+        targetAmount: 7000, monthlyNeeded, timeline: '12 months (annual)',
+      })
+    }
   }
 
   // 4. Home down payment — if no real estate
@@ -1139,19 +1161,31 @@ export default function Plan() {
   const addSuggestedGoal = async (suggestion: SuggestedGoal) => {
     if (!profile) return
     setAddingGoalId(suggestion.id)
-    const newGoal = {
-      name: suggestion.name,
-      category: suggestion.category,
-      target_amount: suggestion.targetAmount,
-      current_amount: 0,
-      timeline: suggestion.timeline,
-      priority: suggestion.priority,
-      monthly_contribution: suggestion.monthlyNeeded,
+    try {
+      const newGoal = {
+        name: suggestion.name,
+        category: suggestion.category,
+        target_amount: suggestion.targetAmount,
+        current_amount: 0,
+        timeline: suggestion.timeline,
+        priority: suggestion.priority,
+        monthly_contribution: suggestion.monthlyNeeded,
+      }
+      // Add goal + dismiss suggestion in one write so it never reappears
+      const updatedProfile = {
+        ...profile,
+        goals: [...(profile.goals || []), newGoal],
+        dismissed_suggestions: [...(profile.dismissed_suggestions || []), suggestion.id],
+      }
+      await updateProfile({ profile_data: updatedProfile })
+      // Remove from AI suggestions immediately if active
+      if (aiSuggestions) {
+        setAiSuggestions(prev => (prev ?? []).filter(s => s.id !== suggestion.id))
+      }
+      rerunAnalysis(updatedProfile) // fire-and-forget, don't block UI
+    } finally {
+      setAddingGoalId(null)
     }
-    const updatedProfile = { ...profile, goals: [...(profile.goals || []), newGoal] }
-    await updateProfile({ profile_data: updatedProfile })
-    await rerunAnalysis(updatedProfile)
-    setAddingGoalId(null)
   }
 
   const dismissSuggestion = async (id: string) => {
