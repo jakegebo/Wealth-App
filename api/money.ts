@@ -6,7 +6,7 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { action, profile, messages, topic } = req.body
+    const { action, profile, messages, topic, prompt, selectedIdeas, refinement, excludedIdeas } = req.body
 
     if (action === 'generate_ideas') {
       const p = profile || {}
@@ -37,6 +37,22 @@ export default async function handler(req: any, res: any) {
         ? p.income_sources.map((s: any) => `${s.type}: $${s.amount}/${s.frequency}`).join(', ')
         : 'none besides primary income'
 
+      const excludedContext = excludedIdeas?.length
+        ? `\nDO NOT REPEAT OR CLOSELY RESEMBLE THESE PREVIOUS IDEAS — generate completely different ones:\n${excludedIdeas.map((s: any) => `- ${typeof s === 'string' ? s : s.title}`).join('\n')}`
+        : ''
+
+      const selectedContext = selectedIdeas?.length
+        ? `\nUSER SELECTED THESE IDEAS THEY LIKED:\n${selectedIdeas.map((s: any) => `- ${s.title}: ${s.description || ''}`).join('\n')}\nGenerate 6 new ideas that are similar in spirit, effort level, or type to the ones they selected.`
+        : ''
+
+      const promptContext = prompt
+        ? `\nUSER PREFERENCE: ${prompt}`
+        : ''
+
+      const refinementContext = refinement
+        ? `\nADDITIONAL CONTEXT: ${refinement}`
+        : ''
+
       const completion = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [{
@@ -60,7 +76,7 @@ monthly_range: CONSERVATIVE — what a typical person earns in months 1–6, not
 timeline: must be specific. Never say "quickly" or "soon".`
         }, {
           role: 'user',
-          content: `Generate 6 personalized income ideas for this person.
+          content: `Generate 6 personalized income ideas for this person.${promptContext}${excludedContext}${selectedContext}${refinementContext}
 
 PROFILE:
 - Age: ${p.age || 'not specified'}
@@ -88,9 +104,10 @@ RULES:
 - If they have heavy debt relative to income, prioritize high-ROI-per-hour ideas over capital-intensive ones.
 - NO generic ideas (surveys, Uber/DoorDash, Amazon reviews, etc.).
 - monthly_range must be conservative and realistic for the first 6 months — not theoretical maximums.
-- Mix at least: 2 skill-based, 1 passive/investing, 1 digital/scalable.`
+- Mix at least: 2 skill-based, 1 passive/investing, 1 digital/scalable.
+${excludedIdeas?.length ? `- CRITICAL: Every idea must be completely different from the excluded list above — different industry, different mechanism, different effort type. Do not produce variations or rewordings of those ideas.` : ''}`
         }],
-        temperature: 0.85,
+        temperature: excludedIdeas?.length ? 1.05 : 0.85,
         max_tokens: 1400,
         response_format: { type: 'json_object' }
       })

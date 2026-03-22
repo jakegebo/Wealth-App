@@ -45,31 +45,13 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
   // Phase boundaries
   const p1End = currentAge + Math.round(yearsLeft * 0.35)
   const p2End = currentAge + Math.round(yearsLeft * 0.70)
-  const currentPhase = currentAge <= p1End ? 0 : currentAge <= p2End ? 1 : 2
 
-  const phases = [
-    {
-      name: 'Foundation',
-      ageRange: `${currentAge}–${p1End}`,
-      focus: ['Build 3–6 month emergency fund', 'Capture full employer 401k match', 'Open and fund Roth IRA ($583/mo)', 'Eliminate high-interest debt (>7%)'],
-    },
-    {
-      name: 'Acceleration',
-      ageRange: `${p1End}–${p2End}`,
-      focus: ['Max all tax-advantaged accounts', 'Increase contribution % with every raise', 'Keep 90%+ equity allocation — time is on your side', 'Open taxable brokerage once accounts are maxed'],
-    },
-    {
-      name: 'Final push',
-      ageRange: `${p2End}–${targetAge}`,
-      focus: ['Use catch-up contributions if age 50+', 'Gradually shift toward bonds (reduce sequence risk)', 'Plan withdrawal order: taxable → traditional → Roth', 'Arrange healthcare bridge before Medicare at 65'],
-    },
-  ]
-
-  // Account status checks
+  // === Account status checks (all data-driven) ===
   const liquidSavings = (profile?.assets || []).filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0)
   const monthlyExp = profile?.monthly_expenses || 0
   const emergencyMonths = monthlyExp > 0 ? liquidSavings / monthlyExp : 0
   const emergencyDone = emergencyMonths >= 3
+  const emergencyGap = Math.max(0, monthlyExp * 6 - liquidSavings)
 
   const k401Asset = (profile?.assets || []).find((a: any) => a.category === 'retirement' && /401|403|457/i.test(a.name))
   const has401k = !!k401Asset
@@ -77,9 +59,12 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
   const contribPct = k401Asset?.contribution_pct || 0
   const matchCaptured = matchCap ? contribPct >= matchCap : has401k
 
-  const hasHighDebt = (profile?.debts || []).some((d: any) => (d.interest_rate || 0) > 7)
+  const highInterestDebts = (profile?.debts || []).filter((d: any) => (d.interest_rate || 0) > 7)
+  const hasHighDebt = highInterestDebts.length > 0
   const debtFree = (profile?.debts || []).length === 0
   const debtOk = debtFree || !hasHighDebt
+  const highDebtTotal = highInterestDebts.reduce((s: number, d: any) => s + (d.balance || 0), 0)
+  const highDebtTopRate = highInterestDebts.length > 0 ? Math.max(...highInterestDebts.map((d: any) => d.interest_rate || 0)) : 0
 
   const contribStatuses = getContributionStatus(profile?.assets || [], profile?.age)
   const iraMaxed = contribStatuses.some(s => /ira/i.test(s.account) && s.maxed)
@@ -88,74 +73,203 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
   const hasHSA = (profile?.assets || []).some((a: any) => /hsa/i.test(a.name))
   const hsaStatus = contribStatuses.find(s => /hsa/i.test(s.account))
   const hsaMaxed = hsaStatus?.maxed || false
+  const hasTaxableBrokerage = (profile?.assets || []).some((a: any) => a.category === 'brokerage')
 
+  // === Dynamically generated phase focus items ===
+  const foundationItems: { text: string; done: boolean }[] = [
+    {
+      text: emergencyDone
+        ? `Emergency fund: ${emergencyMonths.toFixed(1)} months covered ✓`
+        : emergencyMonths > 0
+          ? `Grow emergency fund to ${fmt(monthlyExp * 6)} — you have ${emergencyMonths.toFixed(1)} months, still need ${fmt(emergencyGap)}`
+          : `Build a 6-month emergency fund (${fmt(monthlyExp * 6)}) in a high-yield savings account`,
+      done: emergencyDone,
+    },
+    {
+      text: has401k && matchCaptured
+        ? matchCap
+          ? `401k employer match fully captured at ${contribPct}% ✓`
+          : `Contributing to 401k and capturing employer match ✓`
+        : has401k && matchCap
+          ? `Raise 401k contribution from ${contribPct}% → ${matchCap}% to capture full employer match — it's a guaranteed return`
+          : has401k
+            ? 'Confirm you\'re capturing your full 401k employer match'
+            : 'Ask HR if a 401k is available — employer matching is free money',
+      done: has401k && matchCaptured,
+    },
+    {
+      text: debtFree
+        ? 'No debt ✓'
+        : hasHighDebt
+          ? `Pay off ${highInterestDebts.length > 1 ? `${highInterestDebts.length} high-interest debts` : highInterestDebts[0]?.name} — ${fmt(highDebtTotal)} at up to ${highDebtTopRate}% is costing more than investments return`
+          : `Only low-rate debt — minimums are fine, this isn't blocking your investing ✓`,
+      done: debtOk,
+    },
+    {
+      text: iraMaxed
+        ? 'Roth IRA maxed at $7,000/yr ✓'
+        : hasIRA
+          ? 'Increase Roth IRA contributions to $583/mo to hit the $7,000/yr limit'
+          : 'Open a Roth IRA at Fidelity or Vanguard — invest in VTI or a target-date fund, contribute $583/mo',
+      done: iraMaxed,
+    },
+  ]
+
+  const foundationComplete = foundationItems.every(i => i.done)
+
+  const accelerationItems: { text: string; done: boolean }[] = [
+    {
+      text: iraMaxed
+        ? 'Roth IRA maxed at $7,000/yr ✓'
+        : 'Push Roth IRA to $583/mo — max the $7,000/yr limit for tax-free compounding',
+      done: iraMaxed,
+    },
+    {
+      text: k401Maxed
+        ? '401k maxed at $23,500/yr ✓'
+        : has401k
+          ? `Max 401k to $23,500/yr — pre-tax contributions reduce your taxable income now`
+          : 'Open a Solo 401k or SEP-IRA if self-employed and max contributions',
+      done: k401Maxed,
+    },
+    {
+      text: hasHSA
+        ? hsaMaxed
+          ? 'HSA maxed at $4,300/yr — triple tax advantage secured ✓'
+          : 'Max your HSA at $4,300/yr ($358/mo) — invest the funds, don\'t spend them'
+        : surplus > 2000
+          ? 'Consider switching to a HDHP to unlock an HSA — triple tax advantage (deductible, grows tax-free, withdraws tax-free for medical)'
+          : 'HSA not applicable — focus on maxing 401k and IRA first',
+      done: hsaMaxed,
+    },
+    {
+      text: hasTaxableBrokerage
+        ? `Taxable brokerage open — invest all remaining surplus in VTI + VXUS`
+        : surplus > 0
+          ? `Open a taxable brokerage and invest leftover surplus in VTI + VXUS — no annual limit, fully flexible`
+          : 'Once tax-advantaged accounts are maxed, open a taxable brokerage for the rest',
+      done: hasTaxableBrokerage,
+    },
+    {
+      text: 'Automate contribution increases with every raise — keep lifestyle inflation below income growth',
+      done: false,
+    },
+  ]
+
+  const finalPushItems: { text: string; done: boolean }[] = [
+    {
+      text: currentAge >= 50
+        ? `Use catch-up contributions (you're ${currentAge}) — 401k allows $31,000/yr, IRA allows $8,000/yr`
+        : `At age 50, unlock catch-up contributions — 401k jumps from $23,500 → $31,000/yr, IRA from $7,000 → $8,000/yr`,
+      done: false,
+    },
+    {
+      text: `Shift toward bonds gradually — target roughly ${Math.max(40, 110 - currentAge - 10)}% stocks at retirement to reduce sequence-of-returns risk`,
+      done: false,
+    },
+    {
+      text: 'Plan withdrawal order: taxable accounts first → traditional 401k/IRA → Roth IRA last (tax-free growth preserved longest)',
+      done: false,
+    },
+    {
+      text: currentAge >= 55
+        ? 'Healthcare is critical — arrange coverage now to bridge the gap before Medicare at 65'
+        : 'Plan healthcare before Medicare at 65 — a gap in coverage is one of the biggest retirement risks',
+      done: false,
+    },
+  ]
+
+  // Determine current phase — advance past Foundation if user has completed all its items
+  const currentPhase = foundationComplete
+    ? currentAge <= p2End ? 1 : 2
+    : currentAge <= p1End ? 0 : currentAge <= p2End ? 1 : 2
+
+  const phases = [
+    { name: 'Foundation', ageRange: `Now–${p1End}`, items: foundationItems },
+    { name: 'Acceleration', ageRange: `${p1End}–${p2End}`, items: accelerationItems },
+    { name: 'Final push', ageRange: `${p2End}–${targetAge}`, items: finalPushItems },
+  ]
+
+  // Next actions — only incomplete items from the current phase, max 3
+  const nextActions = phases[currentPhase].items.filter(i => !i.done).slice(0, 3)
+
+  // Account priority stack — all steps with done status
   const priorities = [
     {
       label: 'Emergency fund (3–6 months)',
       detail: emergencyDone
         ? `${emergencyMonths.toFixed(1)} months covered ✓`
-        : `${emergencyMonths.toFixed(1)} months — need ${fmt(Math.max(0, monthlyExp * 3 - liquidSavings))} more`,
+        : `${emergencyMonths.toFixed(1)} months now — need ${fmt(emergencyGap)} more to reach 6 months`,
       done: emergencyDone,
       tag: null,
     },
     {
       label: 'Capture full 401k employer match',
-      detail: has401k
-        ? matchCap
-          ? matchCaptured
-            ? `Contributing ${contribPct}% — full match captured ✓`
-            : `Increase to ${matchCap}% — you're leaving free money on the table`
-          : 'Have 401k — verify you\'re capturing full match'
-        : 'No 401k found — ask HR if one is available',
+      detail: has401k && matchCaptured
+        ? matchCap ? `Contributing ${contribPct}% — full match captured ✓` : 'Full match captured ✓'
+        : has401k && matchCap
+          ? `Currently at ${contribPct}% — increase to ${matchCap}% to stop leaving money behind`
+          : has401k
+            ? 'Verify contribution rate covers full employer match'
+            : 'No 401k on file — check with HR',
       done: has401k && matchCaptured,
       tag: 'Free return',
     },
     {
       label: 'Pay off high-interest debt (>7%)',
-      detail: debtFree ? 'Debt-free ✓' : hasHighDebt ? 'High-rate debt found — paying this beats most investments' : 'Only low-rate debt — minimums are fine',
+      detail: debtFree
+        ? 'Debt-free ✓'
+        : hasHighDebt
+          ? `${fmt(highDebtTotal)} at up to ${highDebtTopRate}% — clear this before investing more`
+          : 'Only low-rate debt — minimums are fine ✓',
       done: debtOk,
       tag: null,
     },
     {
       label: 'Max Roth IRA ($7,000/yr · $583/mo)',
-      detail: hasIRA
-        ? iraMaxed ? 'Maxed ✓' : 'Contributing — push to $583/mo to hit annual limit'
-        : 'Open at Fidelity/Vanguard — invest in VTI or a target-date fund',
+      detail: iraMaxed
+        ? 'Maxed ✓'
+        : hasIRA
+          ? 'Contributing — push to $583/mo to hit the annual limit'
+          : 'Open at Fidelity or Vanguard — invest in VTI or a target-date fund',
       done: iraMaxed,
       tag: 'Tax-free growth',
     },
     {
       label: 'Max HSA — triple tax advantage',
       detail: hasHSA
-        ? hsaMaxed ? 'Maxed ✓' : 'Have HSA — max is $4,300/yr individual ($358/mo)'
-        : 'Requires HDHP — invest like a retirement account, pay medical costs out of pocket',
+        ? hsaMaxed ? 'Maxed ✓' : 'Have HSA — max is $4,300/yr individual ($358/mo), invest don\'t spend'
+        : 'Requires HDHP — invest funds like a retirement account, pay medical expenses out of pocket',
       done: hsaMaxed,
       tag: 'If eligible',
     },
     {
       label: 'Max 401k ($23,500/yr · $1,958/mo)',
-      detail: has401k
-        ? k401Maxed ? 'Maxed ✓' : 'Increase contributions — pre-tax dollars reduce your tax bill now'
-        : 'After IRA, if employer offers 401k, max it before taxable investing',
+      detail: k401Maxed
+        ? 'Maxed ✓'
+        : has401k
+          ? 'Increase beyond the match — pre-tax dollars lower your tax bill now'
+          : 'After IRA, ask HR if a 401k is available to max',
       done: k401Maxed,
       tag: 'Tax-deferred',
     },
     {
       label: 'Taxable brokerage — invest the rest',
-      detail: 'VTI + VXUS in a simple two-fund portfolio. No annual limits, fully flexible.',
-      done: false,
+      detail: hasTaxableBrokerage
+        ? 'Open and investing — VTI + VXUS, no annual limits ✓'
+        : 'VTI + VXUS in a simple two-fund portfolio. No annual limits, fully flexible.',
+      done: hasTaxableBrokerage,
       tag: 'No limit',
     },
   ]
 
-  // Monthly allocation — waterfall from surplus
+  // Monthly allocation — waterfall from surplus, skipping already-done items
   const iraMonthly = 583
   const allocations: { label: string; amount: number; colorIdx: number }[] = []
   let remaining = surplus
 
   if (!emergencyDone && remaining > 0) {
-    const needed = Math.max(0, monthlyExp * 6 - liquidSavings)
-    const amt = Math.min(remaining, Math.ceil(needed / 12))
+    const amt = Math.min(remaining, Math.ceil(emergencyGap / 12))
     if (amt > 0) { allocations.push({ label: 'Emergency fund', amount: amt, colorIdx: 0 }); remaining -= amt }
   }
   if (!iraMaxed && remaining > 0) {
@@ -168,7 +282,11 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
     const amt = Math.min(remaining, toMax)
     if (amt > 0) { allocations.push({ label: '401k boost', amount: amt, colorIdx: 1 }); remaining -= amt }
   }
-  if (remaining > 50) { allocations.push({ label: 'Brokerage', amount: remaining, colorIdx: 2 }); remaining = 0 }
+  if (!hsaMaxed && hasHSA && remaining > 0) {
+    const amt = Math.min(remaining, 358)
+    if (amt > 0) { allocations.push({ label: 'HSA', amount: amt, colorIdx: 1 }); remaining -= amt }
+  }
+  if (remaining > 50) { allocations.push({ label: 'Brokerage / invest', amount: remaining, colorIdx: 2 }); remaining = 0 }
 
   const allocationTotal = allocations.reduce((s, a) => s + a.amount, 0)
   const ALLOC_COLORS = ['var(--warning)', 'var(--accent)', '#6a8aae']
@@ -188,6 +306,23 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
 
   return (
     <div className="animate-fade">
+
+      {/* What to do right now */}
+      {nextActions.length > 0 && (
+        <div style={{ background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius-lg)', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>Your next moves</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {nextActions.map((action, i) => (
+              <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                  <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>{i + 1}</span>
+                </div>
+                <p style={{ fontSize: '13px', color: 'var(--sand-800)', margin: 0, lineHeight: '1.5' }}>{action.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Phase Timeline */}
       <div className="card" style={{ marginBottom: '16px' }}>
@@ -223,9 +358,11 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
           {phases.map((phase, i) => {
             const isCurrent = i === currentPhase
             const isDone = i < currentPhase
+            const pendingItems = phase.items.filter(item => !item.done)
+            const doneItems = phase.items.filter(item => item.done)
             return (
-              <div key={i} style={{ padding: '12px 14px', borderRadius: '12px', background: isCurrent ? 'var(--accent-light)' : isDone ? 'var(--sand-100)' : 'var(--sand-50)', border: `0.5px solid ${isCurrent ? 'var(--accent-border)' : 'var(--sand-200)'}`, opacity: isDone ? 0.6 : 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div key={i} style={{ padding: '12px 14px', borderRadius: '12px', background: isCurrent ? 'var(--accent-light)' : isDone ? 'var(--sand-100)' : 'var(--sand-50)', border: `0.5px solid ${isCurrent ? 'var(--accent-border)' : 'var(--sand-200)'}`, opacity: isDone ? 0.65 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: (isCurrent || isDone) ? '10px' : '6px' }}>
                   <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: isDone ? 'var(--accent)' : isCurrent ? 'var(--accent)' : 'var(--sand-300)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <span style={{ color: 'var(--sand-50)', fontSize: '9px', fontWeight: '700' }}>{isDone ? '✓' : i + 1}</span>
                   </div>
@@ -234,12 +371,21 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
                     <p style={{ fontSize: '10px', color: 'var(--sand-500)', margin: 0 }}>Ages {phase.ageRange}</p>
                   </div>
                   {isCurrent && <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--accent)', background: 'rgba(122,158,110,0.18)', padding: '2px 8px', borderRadius: '20px', flexShrink: 0 }}>YOU ARE HERE</span>}
+                  {isDone && <span style={{ fontSize: '9px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.12)', padding: '2px 8px', borderRadius: '20px', flexShrink: 0 }}>COMPLETE</span>}
                 </div>
-                <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {phase.focus.map((item, j) => (
-                    <div key={j} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
-                      <span style={{ color: isCurrent ? 'var(--accent)' : 'var(--sand-400)', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>→</span>
-                      <p style={{ fontSize: '12px', color: isCurrent ? 'var(--sand-800)' : 'var(--sand-600)', margin: 0, lineHeight: '1.4' }}>{item}</p>
+                <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  {/* Show completed items with checkmarks */}
+                  {doneItems.map((item, j) => (
+                    <div key={`done-${j}`} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                      <span style={{ color: 'var(--success)', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>✓</span>
+                      <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>{item.text}</p>
+                    </div>
+                  ))}
+                  {/* Show pending items with arrows — only for current/future phases */}
+                  {!isDone && pendingItems.map((item, j) => (
+                    <div key={`pending-${j}`} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                      <span style={{ color: isCurrent ? 'var(--accent)' : 'var(--sand-300)', fontSize: '11px', marginTop: '2px', flexShrink: 0 }}>→</span>
+                      <p style={{ fontSize: '12px', color: isCurrent ? 'var(--sand-800)' : 'var(--sand-500)', margin: 0, lineHeight: '1.4' }}>{item.text}</p>
                     </div>
                   ))}
                 </div>
@@ -262,7 +408,7 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
-                <p style={{ fontSize: '13px', fontWeight: '600', margin: 0, color: p.done ? 'var(--sand-500)' : 'var(--sand-900)', textDecoration: p.done ? 'line-through' : 'none' }}>{p.label}</p>
+                <p style={{ fontSize: '13px', fontWeight: '600', margin: 0, color: p.done ? 'var(--sand-400)' : 'var(--sand-900)', textDecoration: p.done ? 'line-through' : 'none' }}>{p.label}</p>
                 {p.tag && <span style={{ fontSize: '9px', color: 'var(--accent)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700' }}>{p.tag}</span>}
               </div>
               <p style={{ fontSize: '11px', color: p.done ? 'var(--success)' : 'var(--sand-500)', margin: 0, lineHeight: '1.45' }}>{p.detail}</p>

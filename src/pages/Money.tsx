@@ -15,6 +15,15 @@ const TOPICS = [
   { id: 'passive', label: 'Passive Income', description: 'Build income while you sleep' },
 ]
 
+const QUICK_CHIPS = [
+  { label: 'Passive', value: 'passive income that requires minimal ongoing effort' },
+  { label: 'Skill-based', value: 'ideas that leverage my professional skills' },
+  { label: 'Digital/Online', value: 'online or digital income streams' },
+  { label: 'Low effort', value: 'low time commitment, under 5 hours per week' },
+  { label: 'Quick start', value: 'ideas I can start earning from within 2-4 weeks' },
+  { label: 'High income', value: 'highest earning potential, willing to put in more work' },
+]
+
 function formatContent(content: string) {
   return content.split('\n').map((line, i) => {
     if (line.match(/^\d+\./)) {
@@ -49,6 +58,9 @@ export default function Money() {
   const [chatMessages, setChatMessages] = useState<Message[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [ideaPrompt, setIdeaPrompt] = useState('')
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [refineInput, setRefineInput] = useState('')
 
   useEffect(() => {
     if (profileLoading) return
@@ -56,15 +68,23 @@ export default function Money() {
     else if (profile) generateIdeas(profile)
   }, [profileLoading])
 
-  const generateIdeas = async (profileData?: any) => {
+  const generateIdeas = async (profileData?: any, opts?: { prompt?: string; selectedIdeas?: any[]; refinement?: string; excludedIdeas?: any[] }) => {
     const p = profileData || profile
     if (!p) return
     setLoadingIdeas(true)
+    setSelectedIds([])
     try {
       const res = await fetch('/api/money', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate_ideas', profile: p })
+        body: JSON.stringify({
+          action: 'generate_ideas',
+          profile: p,
+          prompt: opts?.prompt ?? ideaPrompt ?? undefined,
+          selectedIdeas: opts?.selectedIdeas ?? undefined,
+          refinement: opts?.refinement ?? undefined,
+          excludedIdeas: opts?.excludedIdeas ?? undefined,
+        })
       })
       const data = await res.json()
       const newIdeas = data.ideas || []
@@ -72,6 +92,29 @@ export default function Money() {
       await updateProfile({ income_ideas: newIdeas })
     } catch { }
     setLoadingIdeas(false)
+  }
+
+  const handleChip = (value: string) => {
+    setIdeaPrompt(value)
+    generateIdeas(undefined, { prompt: value, excludedIdeas: ideas.length > 0 ? ideas : undefined })
+  }
+
+  const toggleSelect = (i: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedIds(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])
+  }
+
+  const refineIdeas = () => {
+    const selected = selectedIds.map(i => ideas[i])
+    const refinement = refineInput.trim()
+      ? refineInput.trim()
+      : `More ideas similar to: ${selected.map(s => s.title).join(', ')}`
+    generateIdeas(undefined, {
+      prompt: ideaPrompt || undefined,
+      selectedIdeas: selected,
+      refinement,
+    })
+    setRefineInput('')
   }
 
   const toggleSaved = async (idea: any) => {
@@ -172,14 +215,48 @@ Please give me a thorough breakdown:
         {/* Ideas */}
         {activeTab === 'ideas' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Personalized for your situation</p>
-              <button onClick={() => generateIdeas()} disabled={loadingIdeas} className="btn-ghost"
-                style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ display: 'inline-block', animation: loadingIdeas ? 'spin 0.8s linear infinite' : 'none' }}>↻</span>
-                {loadingIdeas ? 'Generating...' : 'Refresh'}
-              </button>
+            {/* Prompt area */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                {QUICK_CHIPS.map(chip => (
+                  <button key={chip.value} onClick={() => handleChip(chip.value)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      border: ideaPrompt === chip.value ? '1.5px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                      background: ideaPrompt === chip.value ? 'var(--accent-light)' : 'var(--sand-50)',
+                      color: ideaPrompt === chip.value ? 'var(--accent)' : 'var(--sand-700)',
+                      fontSize: '12px',
+                      fontWeight: ideaPrompt === chip.value ? '600' : '400',
+                      cursor: loadingIdeas ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                      transition: 'all 0.15s',
+                    }}>
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  value={ideaPrompt}
+                  onChange={e => setIdeaPrompt(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && generateIdeas(undefined, { excludedIdeas: ideas.length > 0 ? ideas : undefined })}
+                  placeholder="What kind of income ideas are you looking for?"
+                  style={{ flex: 1, borderRadius: '20px', fontSize: '13px' }}
+                />
+                <button onClick={() => generateIdeas(undefined, { excludedIdeas: ideas.length > 0 ? ideas : undefined })} disabled={loadingIdeas}
+                  style={{ height: '38px', borderRadius: '20px', background: 'var(--accent)', border: 'none', color: 'var(--sand-50)', cursor: loadingIdeas ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: loadingIdeas ? 0.6 : 1, padding: '0 14px', fontSize: '12px', fontWeight: '600', fontFamily: 'inherit', gap: '5px' }}>
+                  <span style={{ display: 'inline-block', animation: loadingIdeas ? 'spin 0.8s linear infinite' : 'none' }}>↻</span>
+                  {loadingIdeas ? 'Generating...' : 'New Ideas'}
+                </button>
+              </div>
             </div>
+
+            {selectedIds.length === 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--sand-400)', margin: '0 0 12px', textAlign: 'center' }}>
+                Tap a card to select ideas and refine
+              </p>
+            )}
 
             {loadingIdeas ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -188,7 +265,7 @@ Please give me a thorough breakdown:
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: selectedIds.length > 0 ? '100px' : '0' }}>
                 {ideas.map((idea, i) => {
                   const title = typeof idea === 'string' ? idea : idea.title
                   const description = typeof idea === 'string' ? '' : idea.description
@@ -196,6 +273,7 @@ Please give me a thorough breakdown:
                   const timeline = typeof idea === 'string' ? '' : idea.timeline
                   const effort = typeof idea === 'string' ? '' : idea.effort
                   const isSaved = savedIdeas.includes(title)
+                  const isSelected = selectedIds.includes(i)
                   const effortColors: Record<string, { color: string; bg: string }> = {
                     low: { color: '#7a9e6e', bg: 'rgba(122,158,110,0.12)' },
                     medium: { color: '#c8943a', bg: 'rgba(200,148,58,0.12)' },
@@ -203,10 +281,23 @@ Please give me a thorough breakdown:
                   }
                   const effortStyle = effort ? effortColors[effort] : null
                   return (
-                    <div key={i} className="card" style={{ padding: '16px' }}>
+                    <div key={i} className="card" onClick={e => toggleSelect(i, e)}
+                      style={{
+                        padding: '16px',
+                        cursor: 'pointer',
+                        border: isSelected ? '1.5px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                        background: isSelected ? 'var(--accent-light)' : 'var(--sand-50)',
+                        transition: 'all 0.15s',
+                        position: 'relative',
+                      }}>
+                      {isSelected && (
+                        <div style={{ position: 'absolute', top: '10px', right: '10px', width: '18px', height: '18px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ color: 'var(--sand-50)', fontSize: '10px', fontWeight: '700' }}>✓</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                        <div style={{ width: '28px', height: '28px', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)' }}>{i + 1}</span>
+                        <div style={{ width: '28px', height: '28px', background: isSelected ? 'var(--accent)' : 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: isSelected ? 'var(--sand-50)' : 'var(--accent)' }}>{i + 1}</span>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ fontSize: '14px', fontWeight: description ? '600' : '400', color: 'var(--sand-900)', margin: '0 0 4px', lineHeight: '1.4' }}>{title}</p>
@@ -227,12 +318,12 @@ Please give me a thorough breakdown:
                             </div>
                           )}
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                          <button onClick={() => toggleSaved(idea)}
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginTop: isSelected ? '0' : '0' }}>
+                          <button onClick={e => { e.stopPropagation(); toggleSaved(idea) }}
                             style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: isSaved ? 'rgba(200,148,58,0.1)' : 'var(--sand-200)', border: 'none', cursor: 'pointer', fontSize: '15px' }}>
                             {isSaved ? '⭐' : '☆'}
                           </button>
-                          <button onClick={() => openIdeaChat(idea)}
+                          <button onClick={e => { e.stopPropagation(); openIdeaChat(idea) }}
                             style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             →
                           </button>
@@ -241,6 +332,46 @@ Please give me a thorough breakdown:
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Refine bar */}
+            {selectedIds.length > 0 && !loadingIdeas && (
+              <div style={{
+                position: 'fixed',
+                bottom: '80px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'calc(100% - 40px)',
+                maxWidth: '640px',
+                background: 'var(--sand-50)',
+                border: '0.5px solid var(--sand-300)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '12px',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                zIndex: 100,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: 'var(--sand-50)', fontSize: '10px', fontWeight: '700' }}>{selectedIds.length}</span>
+                  </div>
+                  <button onClick={() => setSelectedIds([])}
+                    style={{ background: 'none', border: 'none', color: 'var(--sand-400)', fontSize: '13px', cursor: 'pointer', padding: '0', lineHeight: 1 }}>✕</button>
+                </div>
+                <input
+                  value={refineInput}
+                  onChange={e => setRefineInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && refineIdeas()}
+                  placeholder="More like these, but…"
+                  style={{ flex: 1, borderRadius: '20px', fontSize: '13px', padding: '8px 14px' }}
+                />
+                <button onClick={refineIdeas}
+                  style={{ padding: '8px 14px', borderRadius: '20px', background: 'var(--accent)', border: 'none', color: 'var(--sand-50)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                  Regenerate
+                </button>
               </div>
             )}
           </div>

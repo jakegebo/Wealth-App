@@ -307,7 +307,7 @@ const HEALTH_ITEM_META: Record<string, { icon: string; target: string; tip: stri
 
 function HealthScoreCard({ analysis, profile }: { analysis: Analysis; profile: any }) {
   const { score, label, color, breakdown } = computeHealthScore(analysis, profile)
-  const [detailsOpen, setDetailsOpen] = useState(true)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   // Find weakest item (lowest pct of max)
   const weakest = [...breakdown].sort((a, b) => (a.score / a.max) - (b.score / b.max))[0]

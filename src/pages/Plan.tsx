@@ -366,9 +366,30 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
     return 'avalanche'
   })()
 
-  const recommendReason = recommended === 'avalanche'
-    ? `Your ${highestRateDebt.name} at ${highestRateDebt.interestRate}% APR costs ${fmt(highestRateDebt.balance * highestRateDebt.interestRate / 100 / 12)}/mo in interest alone. Hit it hardest first — Avalanche saves you ${fmt(interestGap)} more than Snowball.`
-    : `You have ${smallDebtCount} debts under $3,500. Snowball knocks them out fast, giving you real wins early — and costs only ${fmt(-interestGap)} more in interest than Avalanche. Worth it.`
+  const recommendReason = (() => {
+    const monthlyCost = Math.round(highestRateDebt.balance * (highestRateDebt.interestRate / 100 / 12))
+
+    // Single debt — both strategies are identical, no comparison makes sense
+    if (debts.length === 1) {
+      if (highestRateDebt.interestRate <= 5) {
+        return `Your only debt is ${highestRateDebt.name} at ${highestRateDebt.interestRate}% — a low rate. Extra payments help, but at this rate investing extra cash often outperforms paying it down faster.`
+      }
+      return `You have one debt — both strategies are the same here. Put extra money toward ${highestRateDebt.name} at ${highestRateDebt.interestRate}% and you're done.`
+    }
+
+    if (recommended === 'snowball') {
+      const extraCost = Math.round(-interestGap)
+      return extraCost < 50
+        ? `You have ${smallDebtCount} small debts — Snowball clears them fast and costs virtually the same as Avalanche. The quick wins are worth it.`
+        : `You have ${smallDebtCount} debts under $3,500. Snowball knocks them out fast, giving you real wins early — and costs only ${fmt(extraCost)} more in interest than Avalanche.`
+    }
+
+    // Avalanche, multiple debts
+    if (interestGap < 50) {
+      return `Both strategies cost nearly the same with your debt mix. Avalanche targets ${highestRateDebt.name} at ${highestRateDebt.interestRate}% first — your highest-rate debt.`
+    }
+    return `Your ${highestRateDebt.name} at ${highestRateDebt.interestRate}% costs ${fmt(monthlyCost)}/mo in interest. Hit it first — Avalanche saves you ${fmt(interestGap)} vs. Snowball over the full payoff period.`
+  })()
 
   const displayStrategy = activePlan && !changingPlan ? activePlan : strategy
 
