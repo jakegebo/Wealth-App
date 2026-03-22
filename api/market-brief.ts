@@ -5,7 +5,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { snapshot, news, period, fromDate, toDate, messages } = req.body
+  const { snapshot, news, period, fromDate, toDate, messages, holdings } = req.body
 
   try {
     const periodLabel =
@@ -31,7 +31,11 @@ export default async function handler(req: any, res: any) {
         ).join('\n')
       : 'No headlines available'
 
-    const systemPrompt = `You are a sharp, accurate, and unbiased market analyst writing concise recaps for everyday retail investors. Today is ${today}.
+    const holdingsLine = holdings?.length
+      ? `\nThis user's holdings: ${holdings.join(', ')} — prioritize news and analysis relevant to these positions.`
+      : ''
+
+    const systemPrompt = `You are a sharp, accurate, and unbiased market analyst writing concise recaps for a specific investor. Today is ${today}.
 
 Period being analyzed: ${periodLabel}
 
@@ -40,10 +44,12 @@ ${snapText}
 
 Recent relevant headlines:
 ${headlineText}
+${holdingsLine}
 
 Guidelines:
 - Be accurate and unbiased — report what happened, not what should have happened
 - Use the real numbers from the data above. Be specific: say "SPY fell 2.1%" not "markets declined"
+- When the user holds specific tickers, call them out directly (e.g. "Your FXAIX position…")
 - Cover what actually moved and why, based on the headlines and data
 - Keep language clear and accessible — no jargon without explanation
 - No disclaimers, no "please consult a financial advisor"
@@ -67,21 +73,21 @@ Guidelines:
       system: systemPrompt,
       messages: [{
         role: 'user',
-        content: `Write a structured market recap for ${periodLabel}. Use this exact format:
+        content: `Write a structured market recap for ${periodLabel} focused on what matters to this specific investor's portfolio. Use this exact format:
 
 **Market Overview**
 One clear sentence on the overall market direction and tone for this period.
 
-**Key Moves**
-- [Asset/Sector]: specific % move and brief reason
-- [Asset/Sector]: specific % move and brief reason
-- [Asset/Sector]: specific % move and brief reason
+**What Moved (and Why)**
+- [Asset or holding]: specific % move and brief reason — call out the user's own tickers where relevant
+- [Asset or holding]: specific % move and brief reason
+- [Asset or holding]: specific % move and brief reason
 
 **What's Driving It**
 2 sentences on the macro forces, catalysts, or news themes behind the moves.
 
-**Investor Takeaway**
-1-2 sentences on what this means for a typical long-term retail investor.
+**What It Means for Your Portfolio**
+1-2 sentences specifically about how these moves affect the user's holdings. Reference their actual positions by ticker.
 
 Keep the total response under 220 words. Use the actual numbers from the data provided.`
       }]

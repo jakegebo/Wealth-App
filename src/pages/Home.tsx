@@ -806,7 +806,43 @@ function TrophySection({ userId, goals }: { userId: string; goals: any[] }) {
 const RECAP_PERIODS = ['1D', '1W', '1M'] as const
 type RecapPeriod = typeof RECAP_PERIODS[number] | 'custom'
 
-function MarketRecap() {
+function buildPortfolioNewsQuery(profile: any): string {
+  const terms: string[] = []
+
+  // Specific ticker symbols from all positions
+  const symbols: string[] = []
+  for (const asset of profile?.assets || []) {
+    for (const pos of asset.positions || []) {
+      if (pos.symbol && !symbols.includes(pos.symbol)) symbols.push(pos.symbol)
+    }
+  }
+  if (symbols.length) terms.push(...symbols.slice(0, 6))
+
+  // Asset categories → relevant financial topics
+  const categories = [...new Set((profile?.assets || []).map((a: any) => a.category))]
+  if (categories.includes('crypto')) terms.push('cryptocurrency bitcoin')
+  if (categories.includes('real_estate')) terms.push('real estate housing market')
+  if (categories.includes('retirement')) terms.push('401k IRA retirement investing')
+  if (categories.includes('brokerage')) terms.push('stock market investing')
+
+  // Debt types → relevant news
+  const debtTypes = (profile?.debts || []).map((d: any) => d.type?.toLowerCase())
+  if (debtTypes.some((t: string) => t?.includes('mortgage'))) terms.push('mortgage rates')
+  if (debtTypes.some((t: string) => t?.includes('student'))) terms.push('student loan')
+
+  // Concerns from onboarding
+  const concerns: string[] = profile?.concerns || []
+  if (concerns.includes('Reduce taxes')) terms.push('tax strategy')
+  if (concerns.includes('Retire early (FIRE)')) terms.push('FIRE financial independence')
+  if (concerns.includes('Buy a home')) terms.push('housing market mortgage')
+
+  // Fallback if nothing specific
+  if (terms.length === 0) terms.push('stock market investing personal finance')
+
+  return [...new Set(terms)].slice(0, 8).join(' ')
+}
+
+function MarketRecap({ profile }: { profile?: any }) {
   const [period, setPeriod] = useState<RecapPeriod>('1W')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -853,8 +889,9 @@ function MarketRecap() {
 
     try {
       // Fetch news + period-specific historical prices for key symbols in parallel
+      const newsQuery = encodeURIComponent(buildPortfolioNewsQuery(profile))
       const [newsRes, ...histResponses] = await Promise.all([
-        fetch(`/api/news?category=markets&from=${fromStr}&to=${toStr}`).catch(() => null),
+        fetch(`/api/news?q=${newsQuery}&from=${fromStr}&to=${toStr}`).catch(() => null),
         ...KEY_SYMBOLS.map(sym => fetch(`/api/stocks?symbol=${sym}&period=${apiPeriod}`).catch(() => null)),
       ])
       const newsData = newsRes ? await newsRes.json().catch(() => ({})) : {}
@@ -873,7 +910,11 @@ function MarketRecap() {
 
       const newsArticles = (newsData.articles || []).slice(0, 10).map((a: any) => ({ title: a.title, description: a.description }))
 
-      const ctx = { snapshot: periodSnapshot, news: newsArticles, period: p, fromDate: fromStr, toDate: toStr }
+      // Summarise user holdings for the AI recap
+      const holdings = (profile?.assets || []).flatMap((a: any) =>
+        (a.positions || []).map((pos: any) => pos.symbol).filter(Boolean)
+      )
+      const ctx = { snapshot: periodSnapshot, news: newsArticles, period: p, fromDate: fromStr, toDate: toStr, holdings }
       setLastContext(ctx)
 
       const res = await fetch('/api/market-brief', {
@@ -2304,7 +2345,10 @@ export default function Home() {
     const goals = profile?.goals?.map((g: any) => `${g.name}: $${(g.current_amount || 0).toLocaleString()} / $${(g.target_amount || 0).toLocaleString()} (${g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0}%)`).join(', ') || 'none set'
     const debts = profile?.debts?.sort((a: any, b: any) => b.interest_rate - a.interest_rate).map((d: any) => `${d.name}: $${(d.balance || 0).toLocaleString()} @ ${d.interest_rate}%`).join(', ') || 'none'
     const avail = (profile?.monthly_income || 0) - (profile?.monthly_expenses || 0)
-    const prompt = `Priority: "${action.title}" (${action.impact} impact, ${action.timeframe}). ${action.description} Surplus $${avail.toLocaleString()}/mo. Goals: ${goals}. Debts: ${debts}. Give: why this is my best move now using my actual numbers, step-by-step execution plan this week with exact amounts, how it advances my goals, progress at 30/60/90 days with real numbers.`
+    const priorWins = completedFocusItems.length
+      ? ` Previously completed: ${completedFocusItems.slice(-5).map((c: any) => `"${c.title}"`).join(', ')} — acknowledge this progress and build on it.`
+      : ''
+    const prompt = `Priority: "${action.title}" (${action.impact} impact, ${action.timeframe}). ${action.description} Surplus $${avail.toLocaleString()}/mo. Goals: ${goals}. Debts: ${debts}.${priorWins} Give: why this is my best move now using my actual numbers, step-by-step execution plan this week with exact amounts, how it advances my goals, progress at 30/60/90 days with real numbers.`
 
     try {
       const res = await fetch('/api/chat', {
@@ -2384,7 +2428,15 @@ export default function Home() {
 
   if (!analysis) return null
 
-  const topAction = analysis.nextActions?.[0]
+  const completedFocusItems: any[] = profile?.completed_focus_items || []
+  const completedTitles = new Set(completedFocusItems.map((c: any) => c.title?.toLowerCase().trim()))
+  const topAction = analysis.nextActions?.find((a: any) => !completedTitles.has(a.title?.toLowerCase().trim()))
+
+  const completeFocusItem = async (action: { title: string; description: string }) => {
+    const newItem = { title: action.title, description: action.description, completedAt: new Date().toISOString() }
+    const updated = [...completedFocusItems, newItem]
+    await updateProfile({ profile_data: { ...profile, completed_focus_items: updated } })
+  }
 
   const HOME_TABS = [
     { id: 'overview' as const, label: 'Overview' },
@@ -2524,11 +2576,18 @@ export default function Home() {
             <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.timeframe}</span>
             <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', padding: '3px 8px', borderRadius: '20px' }}>{topAction.impact} impact</span>
           </div>
-          <button
-            onClick={() => openFocusPlan(topAction)}
-            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', width: '100%', textAlign: 'center' }}>
-            Attack this →
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => openFocusPlan(topAction)}
+              style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.9)', border: '0.5px solid rgba(255,255,255,0.2)', borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', flex: 1, textAlign: 'center' }}>
+              Attack this →
+            </button>
+            <button
+              onClick={() => completeFocusItem(topAction)}
+              style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: '0.5px solid rgba(255,255,255,0.15)', borderRadius: 'var(--radius-sm)', padding: '9px 14px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              ✓ Done
+            </button>
+          </div>
         </div>
       )}
 
@@ -2812,122 +2871,208 @@ export default function Home() {
       </>)}
 
       {/* ── CASH FLOW TAB ── */}
-      {activeTab === 'cashflow' && (<>
+      {activeTab === 'cashflow' && (() => {
+        const totalDebtPayments = (profile?.debts || []).reduce((s: number, d: any) => s + (d.monthly_payment || d.minimum_payment || 0), 0)
+        const totalGoalContributions = (profile?.goals || []).reduce((s: number, g: any) => s + (g.monthly_contribution || 0), 0)
+        const efMonths = profile?.emergency_fund_months || 0
+        const efTarget = 6
+        const efPct = Math.min(100, (efMonths / efTarget) * 100)
+        const surplus = analysis.availableToSave
+        const income = analysis.monthlyIncome
+        const expenses = analysis.monthlyExpenses
+        const incomeSources = (profile?.income_sources || []).filter((s: any) => s.amount > 0)
+        const budgetHealth = analysis.budgetHealth
 
-      {/* Quick Stats */}
-      {isVisible('stats') && (
-        <div className="animate-fade stagger-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-          <div className="card card-interactive" style={{ padding: '16px' }} onClick={() => navigate('/retirement')}>
-            <p className="label" style={{ marginBottom: '4px' }}>Retire at</p>
-            <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>
-              {profile?.retirement_plan?.targetAge || '—'}
-            </p>
-            <p style={{ fontSize: '11px', color: profile?.retirement_plan?.onTrack ? 'var(--success)' : 'var(--sand-500)', margin: 0 }}>
-              {profile?.retirement_plan ? (profile.retirement_plan.onTrack ? 'on track ✓' : 'needs attention') : 'set up plan →'}
-            </p>
+        return (<>
+
+        {/* Hero: monthly snapshot */}
+        <div className="card animate-fade" style={{ padding: '20px 20px 16px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div>
+              <p className="label" style={{ marginBottom: '4px' }}>Monthly surplus</p>
+              <p style={{ fontSize: '34px', fontWeight: '300', letterSpacing: '-1px', color: surplus >= 0 ? 'var(--sand-900)' : 'var(--danger)', margin: 0, lineHeight: 1 }}>
+                {surplus >= 0 ? '+' : ''}{fmt(surplus)}
+              </p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{
+                fontSize: '11px', fontWeight: '600', padding: '4px 10px', borderRadius: '20px',
+                background: budgetHealth === 'healthy' ? 'rgba(122,158,110,0.12)' : budgetHealth === 'tight' ? 'rgba(210,160,60,0.12)' : 'rgba(192,57,43,0.1)',
+                color: budgetHealth === 'healthy' ? 'var(--success)' : budgetHealth === 'tight' ? '#b8860b' : 'var(--danger)',
+              }}>
+                {budgetHealth === 'healthy' ? 'Healthy ✓' : budgetHealth === 'tight' ? 'Tight' : 'Over budget'}
+              </span>
+              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '6px 0 0' }}>
+                {income > 0 ? `${Math.round(analysis.savingsRate)}% savings rate` : ''}
+              </p>
+            </div>
           </div>
-          <div className="card" style={{ padding: '16px' }}>
-            <p className="label" style={{ marginBottom: '4px' }}>Savings rate</p>
-            <p style={{ fontSize: '34px', fontWeight: '300', color: 'var(--sand-900)', margin: '0 0 2px', letterSpacing: '-1px' }}>{Math.round(analysis.savingsRate)}%</p>
-            <p style={{ fontSize: '11px', color: analysis.savingsRate >= 20 ? 'var(--success)' : 'var(--sand-500)', margin: 0 }}>
-              {analysis.savingsRate >= 20 ? 'excellent ✓' : `${fmt(analysis.availableToSave)}/mo`}
-            </p>
-          </div>
+
+          {/* Income / Expenses / Left stacked bars */}
+          {income > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {[
+                { label: 'Income', value: income, color: 'var(--success)', pct: 100 },
+                { label: 'Expenses', value: expenses, color: 'var(--danger)', pct: income > 0 ? (expenses / income) * 100 : 0 },
+                { label: 'Left over', value: surplus, color: 'var(--accent)', pct: income > 0 ? Math.max(0, (surplus / income) * 100) : 0 },
+              ].map(row => (
+                <div key={row.label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{row.label}</span>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-800)' }}>{fmt(row.value)}</span>
+                  </div>
+                  <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, row.pct))}%`, background: row.color, borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22,1,0.36,1)' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button className="btn-ghost" onClick={openCashFlowSheet} style={{ fontSize: '11px', padding: '3px 8px', marginTop: '14px', width: '100%', textAlign: 'center' }}>
+            Get AI analysis →
+          </button>
         </div>
-      )}
 
-      {/* Cash Flow */}
-      {isVisible('cashflow') && analysis.monthlyIncome > 0 && (
-        <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p className="label">Monthly Cash Flow</p>
-            <button className="btn-ghost" onClick={openCashFlowSheet} style={{ fontSize: '11px', padding: '3px 8px' }}>Details →</button>
-          </div>
-          <div className="card" style={{ padding: '18px' }}>
-            {[
-              { label: 'Income', value: analysis.monthlyIncome, color: 'var(--success)', pct: 100 },
-              { label: 'Expenses', value: analysis.monthlyExpenses, color: 'var(--danger)', pct: (analysis.monthlyExpenses / analysis.monthlyIncome) * 100 },
-              { label: 'Saves', value: analysis.availableToSave, color: 'var(--accent)', pct: Math.max(0, (analysis.availableToSave / analysis.monthlyIncome) * 100) },
-            ].map((row, i) => (
-              <div key={row.label} style={{ marginBottom: i < 2 ? '14px' : 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--sand-500)' }}>{row.label}</span>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(row.value)}</span>
-                </div>
-                <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(100, row.pct)}%`, background: row.color, borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
-                </div>
+        {/* Income sources */}
+        {incomeSources.length > 0 && (
+          <div className="animate-fade stagger-2" style={{ marginBottom: '12px' }}>
+            <p className="label" style={{ marginBottom: '8px' }}>Income sources</p>
+            <div className="card" style={{ padding: '4px 0' }}>
+              <div style={{ padding: '12px 18px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Primary</span>
+                <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(income)}/mo</span>
               </div>
-            ))}
+              {incomeSources.map((src: any, i: number) => {
+                const monthly = src.frequency === 'annual' ? src.amount / 12 : src.amount
+                return (
+                  <div key={i} style={{ padding: '12px 18px', borderBottom: i < incomeSources.length - 1 ? '0.5px solid var(--sand-200)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', color: 'var(--sand-700)', textTransform: 'capitalize' }}>{src.type.replace(/_/g, ' ')}</span>
+                      {src.description && <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{src.description}</p>}
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{fmt(monthly)}/mo</span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Goals */}
-      {isVisible('goals') && (profile?.goals?.length || 0) > 0 && (
-        <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p className="label">Goals</p>
-            <button className="btn-ghost" onClick={() => navigate('/onboarding?step=4')} style={{ fontSize: '11px', padding: '3px 8px' }}>Edit</button>
-          </div>
-          <div className="card" style={{ padding: '4px 0' }}>
-            {profile.goals.map((goal: any, i: number) => {
-              const pct = Math.min(100, goal.target_amount > 0 ? Math.round((goal.current_amount / goal.target_amount) * 100) : 0)
-              const isEditing = editingGoalIdx === i
-              return (
-                <div key={i} style={{ padding: '14px 18px', borderBottom: i < profile.goals.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 1px' }}>{goal.name}</p>
-                      <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>{goal.timeline}</p>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                      <p style={{ fontSize: '13px', fontWeight: '600', color: pct >= 100 ? 'var(--success)' : 'var(--sand-900)', margin: '0 0 1px' }}>{pct}%</p>
-                      <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>
-                        {fmt(goal.current_amount)} / {fmt(goal.target_amount)}
-                      </p>
-                    </div>
+        {/* Where surplus goes */}
+        {(totalDebtPayments > 0 || totalGoalContributions > 0) && (
+          <div className="animate-fade stagger-3" style={{ marginBottom: '12px' }}>
+            <p className="label" style={{ marginBottom: '8px' }}>Where it goes</p>
+            <div className="card" style={{ padding: '4px 0' }}>
+              {totalDebtPayments > 0 && (
+                <div style={{ padding: '12px 18px', borderBottom: totalGoalContributions > 0 ? '0.5px solid var(--sand-200)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Debt payments</span>
+                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{(profile?.debts || []).length} account{(profile?.debts || []).length !== 1 ? 's' : ''}</p>
                   </div>
-                  <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: '10px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22, 1, 0.36, 1)' }} />
-                  </div>
-                  {isEditing ? (
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--sand-600)' }}>$</span>
-                        <input
-                          autoFocus
-                          type="number"
-                          value={goalInputVal}
-                          onChange={e => setGoalInputVal(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') saveGoalProgress(i); if (e.key === 'Escape') setEditingGoalIdx(null) }}
-                          placeholder={goal.current_amount.toString()}
-                          style={{ width: '100%', paddingLeft: '22px', paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', fontSize: '13px', background: 'var(--sand-200)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', color: 'var(--sand-900)', outline: 'none', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                      <button onClick={() => saveGoalProgress(i)} disabled={savingGoal} className="btn-primary" style={{ padding: '7px 14px', fontSize: '12px', flexShrink: 0 }}>
-                        {savingGoal ? '...' : 'Save'}
-                      </button>
-                      <button onClick={() => setEditingGoalIdx(null)} className="btn-ghost" style={{ padding: '7px 10px', fontSize: '12px', flexShrink: 0 }}>
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setEditingGoalIdx(i); setGoalInputVal(goal.current_amount?.toString() || '0') }}
-                      className="btn-ghost"
-                      style={{ fontSize: '11px', padding: '4px 10px', width: '100%', textAlign: 'center' }}>
-                      Update progress
-                    </button>
-                  )}
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>−{fmt(totalDebtPayments)}/mo</span>
                 </div>
-              )
-            })}
+              )}
+              {totalGoalContributions > 0 && (
+                <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Goal savings</span>
+                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{(profile?.goals || []).filter((g: any) => g.monthly_contribution > 0).length} active goal{(profile?.goals || []).filter((g: any) => g.monthly_contribution > 0).length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>{fmt(totalGoalContributions)}/mo</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      </>)}
+        {/* Emergency fund */}
+        {efMonths > 0 && (
+          <div className="animate-fade stagger-4" style={{ marginBottom: '12px' }}>
+            <p className="label" style={{ marginBottom: '8px' }}>Emergency fund</p>
+            <div className="card" style={{ padding: '16px 18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '10px' }}>
+                <div>
+                  <p style={{ fontSize: '26px', fontWeight: '300', color: 'var(--sand-900)', margin: 0, letterSpacing: '-0.5px', lineHeight: 1 }}>{efMonths} <span style={{ fontSize: '14px', color: 'var(--sand-500)', fontWeight: '400' }}>months</span></p>
+                  <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '3px 0 0' }}>of expenses covered</p>
+                </div>
+                <span style={{
+                  fontSize: '11px', fontWeight: '600', padding: '3px 9px', borderRadius: '20px',
+                  background: efMonths >= 6 ? 'rgba(122,158,110,0.12)' : efMonths >= 3 ? 'rgba(210,160,60,0.1)' : 'rgba(192,57,43,0.08)',
+                  color: efMonths >= 6 ? 'var(--success)' : efMonths >= 3 ? '#b8860b' : 'var(--danger)',
+                }}>
+                  {efMonths >= 6 ? 'Fully funded ✓' : efMonths >= 3 ? 'Partially funded' : 'Build this up'}
+                </span>
+              </div>
+              <div style={{ height: '5px', background: 'var(--sand-200)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${efPct}%`, background: efMonths >= 6 ? 'var(--success)' : efMonths >= 3 ? '#d4a017' : 'var(--danger)', borderRadius: '3px', transition: 'width 1.1s cubic-bezier(0.22,1,0.36,1)' }} />
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '8px 0 0' }}>Target: 6 months{efMonths < 6 ? ` — ${6 - efMonths} more to go` : ''}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Savings goals */}
+        {isVisible('goals') && (profile?.goals?.length || 0) > 0 && (
+          <div className="animate-fade stagger-5" style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <p className="label">Savings goals</p>
+              <button className="btn-ghost" onClick={() => navigate('/onboarding?step=4')} style={{ fontSize: '11px', padding: '3px 8px' }}>Edit</button>
+            </div>
+            <div className="card" style={{ padding: '4px 0' }}>
+              {profile.goals.map((goal: any, i: number) => {
+                const pct = Math.min(100, goal.target_amount > 0 ? Math.round((goal.current_amount / goal.target_amount) * 100) : 0)
+                const isEditing = editingGoalIdx === i
+                return (
+                  <div key={i} style={{ padding: '14px 18px', borderBottom: i < profile.goals.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 1px' }}>{goal.name}</p>
+                        <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: 0 }}>
+                          {goal.timeline && <span>{goal.timeline}</span>}
+                          {goal.monthly_contribution > 0 && <span>{goal.timeline ? ' · ' : ''}{fmt(goal.monthly_contribution)}/mo</span>}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
+                        <p style={{ fontSize: '13px', fontWeight: '600', color: pct >= 100 ? 'var(--success)' : 'var(--sand-900)', margin: '0 0 1px' }}>{pct}%</p>
+                        <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{fmt(goal.current_amount)} / {fmt(goal.target_amount)}</p>
+                      </div>
+                    </div>
+                    <div style={{ height: '4px', background: 'var(--sand-200)', borderRadius: '2px', marginBottom: '10px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '2px', transition: 'width 1.1s cubic-bezier(0.22,1,0.36,1)' }} />
+                    </div>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: 'var(--sand-600)' }}>$</span>
+                          <input
+                            autoFocus type="number" value={goalInputVal}
+                            onChange={e => setGoalInputVal(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveGoalProgress(i); if (e.key === 'Escape') setEditingGoalIdx(null) }}
+                            placeholder={goal.current_amount.toString()}
+                            style={{ width: '100%', paddingLeft: '22px', paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', fontSize: '13px', background: 'var(--sand-200)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', color: 'var(--sand-900)', outline: 'none', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <button onClick={() => saveGoalProgress(i)} disabled={savingGoal} className="btn-primary" style={{ padding: '7px 14px', fontSize: '12px', flexShrink: 0 }}>{savingGoal ? '...' : 'Save'}</button>
+                        <button onClick={() => setEditingGoalIdx(null)} className="btn-ghost" style={{ padding: '7px 10px', fontSize: '12px', flexShrink: 0 }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setEditingGoalIdx(i); setGoalInputVal(goal.current_amount?.toString() || '0') }}
+                        className="btn-ghost"
+                        style={{ fontSize: '11px', padding: '4px 10px', width: '100%', textAlign: 'center' }}>
+                        Update progress
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        </>)
+      })()}
 
       {/* ── INSIGHTS TAB ── */}
       {activeTab === 'insights' && (<>
@@ -2938,7 +3083,7 @@ export default function Home() {
       )}
 
       {/* Market Recap */}
-      <MarketRecap />
+      <MarketRecap profile={profile} />
 
       {/* Achievements / Trophy collection */}
       {userId && (

@@ -505,6 +505,96 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
         ))}
       </div>
 
+      {/* ── Suggested monthly payment ── */}
+      {(() => {
+        const highestRate = highestRateDebt.interestRate
+        // Compute optimal extra based on rate vs opportunity cost of investing
+        const rawExtra = highestRate >= 20 ? availableToSave * 0.8
+          : highestRate >= 15 ? availableToSave * 0.65
+          : highestRate >= 10 ? availableToSave * 0.5
+          : highestRate >= 7  ? availableToSave * 0.25
+          : 0
+        const suggestedExtra = Math.max(0, Math.round(rawExtra / 25) * 25)
+        const suggestedTotal = totalMinimums + suggestedExtra
+        const remaining = Math.max(0, availableToSave - suggestedExtra)
+        const sugResult = simulatePayoff(debts, suggestedExtra, recommended)
+        const iSaved = Math.max(0, minResult.totalInterest - sugResult.totalInterest)
+        const mSaved = Math.max(0, minResult.months - sugResult.months)
+
+        const urgency = highestRate >= 20 ? 'critical'
+          : highestRate >= 10 ? 'high'
+          : highestRate >= 7  ? 'moderate'
+          : 'low'
+
+        const whyText = urgency === 'critical'
+          ? `${highestRateDebt.name} at ${highestRateDebt.interestRate}% is costing you ${fmt(highestRateDebt.balance * highestRateDebt.interestRate / 100 / 12)}/mo in pure interest — money that builds no equity. At this rate, every dollar of extra payment beats nearly any investment. Paying ${fmt(suggestedTotal)}/mo wipes it out ${formatMonths(mSaved)} faster and saves ${fmt(iSaved)} in interest.${remaining > 0 ? ` The remaining ${fmt(remaining)}/mo can go toward investing.` : ''}`
+          : urgency === 'high'
+          ? `${highestRateDebt.name} at ${highestRateDebt.interestRate}% costs more after tax than what most index funds return in a bad year. Paying ${fmt(suggestedTotal)}/mo saves ${fmt(iSaved)} in interest and frees you up ${formatMonths(mSaved)} sooner.${remaining > 0 ? ` You'd still have ${fmt(remaining)}/mo for investing.` : ''}`
+          : urgency === 'moderate'
+          ? `At ${highestRateDebt.interestRate}%, the math is close between paying extra and investing. A split approach makes sense: ${fmt(suggestedTotal)}/mo toward debt saves ${fmt(iSaved)} in interest while leaving ${fmt(remaining)}/mo to invest and compound.`
+          : `At ${highestRateDebt.interestRate}%, your debt rate is below what diversified index funds have historically returned (~7–10%). Paying just minimums (${fmt(totalMinimums)}/mo) and investing the difference is often the better long-term move.`
+
+        const borderColor = urgency === 'critical' ? 'rgba(192,57,43,0.3)'
+          : urgency === 'high' ? 'rgba(210,140,50,0.3)'
+          : urgency === 'moderate' ? 'rgba(122,158,110,0.25)'
+          : 'var(--sand-300)'
+        const bgColor = urgency === 'critical' ? 'rgba(192,57,43,0.05)'
+          : urgency === 'high' ? 'rgba(210,140,50,0.05)'
+          : urgency === 'moderate' ? 'rgba(122,158,110,0.06)'
+          : 'var(--sand-100)'
+        const labelColor = urgency === 'critical' ? 'var(--danger)'
+          : urgency === 'high' ? '#c47a20'
+          : 'var(--accent)'
+
+        return (
+          <div style={{ padding: '14px 16px', marginBottom: '16px', background: bgColor, border: `0.5px solid ${borderColor}`, borderRadius: 'var(--radius-md)' }}>
+            <p style={{ fontSize: '10px', fontWeight: '700', color: labelColor, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }}>
+              Suggested monthly payment
+            </p>
+
+            {/* Payment breakdown */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                <span style={{ fontSize: '30px', fontWeight: '300', letterSpacing: '-1px', color: 'var(--sand-900)', lineHeight: 1 }}>
+                  {urgency === 'low' ? fmt(totalMinimums) : fmt(suggestedTotal)}
+                </span>
+                <span style={{ fontSize: '13px', color: 'var(--sand-500)' }}>/mo</span>
+              </div>
+              {urgency !== 'low' && suggestedExtra > 0 && (
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap', paddingBottom: '3px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--sand-500)', background: 'var(--sand-200)', padding: '2px 8px', borderRadius: '20px' }}>
+                    {fmt(totalMinimums)} minimums
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--sand-400)' }}>+</span>
+                  <span style={{ fontSize: '11px', color: labelColor, fontWeight: '600', background: bgColor, border: `0.5px solid ${borderColor}`, padding: '2px 8px', borderRadius: '20px' }}>
+                    {fmt(suggestedExtra)} extra
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Savings impact */}
+            {urgency !== 'low' && iSaved > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+                <div style={{ background: 'rgba(122,158,110,0.08)', border: '0.5px solid rgba(122,158,110,0.2)', borderRadius: '8px', padding: '8px 10px' }}>
+                  <p style={{ fontSize: '9px', fontWeight: '700', color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 2px' }}>Interest saved</p>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: 'var(--success)', margin: 0 }}>{fmt(iSaved)}</p>
+                </div>
+                <div style={{ background: 'rgba(122,158,110,0.08)', border: '0.5px solid rgba(122,158,110,0.2)', borderRadius: '8px', padding: '8px 10px' }}>
+                  <p style={{ fontSize: '9px', fontWeight: '700', color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 2px' }}>Time saved</p>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: 'var(--success)', margin: 0 }}>{formatMonths(mSaved)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Why explanation */}
+            <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.6' }}>
+              {whyText}
+            </p>
+          </div>
+        )
+      })()}
+
       {/* ── Recommendation banner — always visible ── */}
       <div style={{
         padding: '12px 14px', marginBottom: '16px',
@@ -780,6 +870,210 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
   )
 }
 
+const GOAL_CATEGORIES = [
+  { id: 'emergency_fund', label: 'Emergency Fund',  icon: '🛡️', desc: 'Cover 3–6 months of expenses' },
+  { id: 'retirement',     label: 'Retirement',       icon: '🌅', desc: 'Long-term financial freedom' },
+  { id: 'home_purchase',  label: 'Buy a Home',       icon: '🏠', desc: 'Down payment & closing costs' },
+  { id: 'investment',     label: 'Investing',        icon: '📈', desc: 'Grow wealth outside retirement' },
+  { id: 'education',      label: 'Education',        icon: '🎓', desc: 'College, courses, or skills' },
+  { id: 'vehicle',        label: 'Vehicle',          icon: '🚗', desc: 'Car, truck, or other transport' },
+  { id: 'vacation',       label: 'Travel',           icon: '✈️', desc: 'Trips and adventures' },
+  { id: 'business',       label: 'Business',         icon: '💼', desc: 'Start or grow a business' },
+  { id: 'wedding',        label: 'Wedding',          icon: '💍', desc: 'Your special day' },
+  { id: 'debt_payoff',    label: 'Pay Off Debt',     icon: '🔥', desc: 'Become debt-free faster' },
+  { id: 'savings',        label: 'General Savings',  icon: '🏦', desc: 'Build a savings cushion' },
+  { id: 'other',          label: 'Other',            icon: '⭐', desc: 'Something unique to you' },
+]
+
+const DEFAULT_NAMES: Record<string, string> = {
+  emergency_fund: 'Emergency Fund',
+  retirement:     'Retirement',
+  home_purchase:  'Buy a Home',
+  investment:     'Investment Portfolio',
+  education:      'Education Fund',
+  vehicle:        'New Vehicle',
+  vacation:       'Travel Fund',
+  business:       'Business Startup',
+  wedding:        'Wedding',
+  debt_payoff:    'Pay Off Debt',
+  savings:        'Savings Goal',
+  other:          '',
+}
+
+function AddGoalSheet({ onClose, onSave }: {
+  onClose: () => void
+  onSave: (goal: { name: string; category: string; target_amount: number; current_amount: number; timeline: string; priority: string; monthly_contribution: number }) => Promise<void>
+}) {
+  const [step, setStep] = useState<'category' | 'details'>('category')
+  const [category, setCategory] = useState('')
+  const [name, setName] = useState('')
+  const [target, setTarget] = useState('')
+  const [saved, setSaved] = useState('')
+  const [timeline, setTimeline] = useState('')
+  const [priority, setPriority] = useState('medium')
+  const [monthly, setMonthly] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+
+  const selectCategory = (id: string) => {
+    setCategory(id)
+    setName(DEFAULT_NAMES[id] || '')
+    setStep('details')
+  }
+
+  const handleSave = async () => {
+    if (!name || !target) return
+    setSaving(true)
+    await onSave({
+      name,
+      category,
+      target_amount: parseFloat(target) || 0,
+      current_amount: parseFloat(saved) || 0,
+      timeline,
+      priority,
+      monthly_contribution: parseFloat(monthly) || 0,
+    })
+    setSaving(false)
+    onClose()
+  }
+
+  const cat = GOAL_CATEGORIES.find(c => c.id === category)
+  const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', fontSize: '14px', background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', color: 'var(--sand-900)', outline: 'none', boxSizing: 'border-box' }
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }
+
+  return (
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+
+        {/* Handle */}
+        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '14px 20px 12px', borderBottom: '0.5px solid var(--sand-200)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {step === 'details' && (
+              <button onClick={() => setStep('category')} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px', color: 'var(--sand-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
+            )}
+            <div>
+              <p style={{ fontSize: '10px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>
+                {step === 'category' ? 'New goal' : `New goal · ${cat?.icon} ${cat?.label}`}
+              </p>
+              <h2 style={{ fontSize: '17px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>
+                {step === 'category' ? 'What are you saving for?' : 'Set your target'}
+              </h2>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '20px' }}>
+
+          {/* Step 1: Category picker */}
+          {step === 'category' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              {GOAL_CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => selectCategory(cat.id)}
+                  style={{
+                    padding: '14px 14px 12px',
+                    borderRadius: '14px',
+                    border: '0.5px solid var(--sand-200)',
+                    background: 'var(--sand-100)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    textAlign: 'left',
+                    transition: 'all 0.15s',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.border = '0.5px solid var(--accent)'; (e.currentTarget as HTMLElement).style.background = 'var(--accent-light)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.border = '0.5px solid var(--sand-200)'; (e.currentTarget as HTMLElement).style.background = 'var(--sand-100)' }}
+                >
+                  <span style={{ fontSize: '22px', lineHeight: 1, marginBottom: '2px' }}>{cat.icon}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{cat.label}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--sand-400)', lineHeight: '1.3' }}>{cat.desc}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Step 2: Details form */}
+          {step === 'details' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={labelStyle}>Goal name</label>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder={`e.g. ${DEFAULT_NAMES[category] || 'My goal'}`} style={inputStyle} autoFocus />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Target amount</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '14px' }}>$</span>
+                    <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0" style={{ ...inputStyle, paddingLeft: '24px' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>Saved so far</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '14px' }}>$</span>
+                    <input type="number" value={saved} onChange={e => setSaved(e.target.value)} placeholder="0" style={{ ...inputStyle, paddingLeft: '24px' }} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Timeline</label>
+                  <input value={timeline} onChange={e => setTimeline(e.target.value)} placeholder="e.g. 3 years, 2027" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Monthly contribution</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-500)', fontSize: '14px' }}>$</span>
+                    <input type="number" value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0" style={{ ...inputStyle, paddingLeft: '24px' }} />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Priority</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  {(['high', 'medium', 'low'] as const).map(p => (
+                    <button key={p} onClick={() => setPriority(p)} style={{
+                      padding: '9px', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '13px', cursor: 'pointer', textTransform: 'capitalize', fontWeight: priority === p ? '600' : '400',
+                      border: priority === p ? '1.5px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                      background: 'var(--sand-200)', color: priority === p ? 'var(--accent)' : 'var(--sand-600)',
+                    }}>{p}</button>
+                  ))}
+                </div>
+              </div>
+
+              {target && saved && parseFloat(target) > 0 && (
+                <div style={{ padding: '12px 14px', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius-sm)' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--accent)', margin: 0, fontWeight: '500' }}>
+                    {fmt(Math.max(0, parseFloat(target) - parseFloat(saved || '0')))} remaining
+                    {monthly && parseFloat(monthly) > 0 && ` · ${Math.ceil(Math.max(0, parseFloat(target) - parseFloat(saved || '0')) / parseFloat(monthly))} months at ${fmt(parseFloat(monthly))}/mo`}
+                  </p>
+                </div>
+              )}
+
+              <button onClick={handleSave} disabled={saving || !name || !target} className="btn-primary" style={{ padding: '13px', fontSize: '14px', fontWeight: '600', width: '100%', opacity: !name || !target ? 0.5 : 1 }}>
+                {saving ? 'Saving…' : 'Add goal'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Plan() {
   const navigate = useNavigate()
   const { userId, profileData: profile, analysis, chatRefs, loading, updateProfile } = useProfile()
@@ -787,6 +1081,7 @@ export default function Plan() {
   const [addingGoalId, setAddingGoalId] = useState<string | null>(null)
   const [confirmRemoveGoal, setConfirmRemoveGoal] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'goals' | 'debt' | 'retire'>('goals')
+  const [showAddGoal, setShowAddGoal] = useState(false)
   const [aiSuggestions, setAiSuggestions] = useState<SuggestedGoal[] | null>(null)
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [seenGoalNames, setSeenGoalNames] = useState<string[]>([])
@@ -821,10 +1116,23 @@ export default function Plan() {
 
   const removeGoal = async (goalIndex: number) => {
     if (!profile) return
+    const goalToRemove = (profile.goals || [])[goalIndex]
     const updatedGoals = (profile.goals || []).filter((_: any, i: number) => i !== goalIndex)
     const updatedProfile = { ...profile, goals: updatedGoals }
-    await updateProfile({ profile_data: updatedProfile })
+    // Optimistically strip the goal from analysis.goals so the UI updates immediately
+    const updatedAnalysisGoals = (analysis?.goals || []).filter((g: any) => g.name !== goalToRemove?.name)
+    await updateProfile({
+      profile_data: updatedProfile,
+      analysis: { ...analysis, goals: updatedAnalysisGoals },
+    })
     setConfirmRemoveGoal(null)
+    rerunAnalysis(updatedProfile)
+  }
+
+  const saveNewGoal = async (goal: any) => {
+    if (!profile) return
+    const updatedProfile = { ...profile, goals: [...(profile.goals || []), goal] }
+    await updateProfile({ profile_data: updatedProfile })
     rerunAnalysis(updatedProfile)
   }
 
@@ -962,7 +1270,7 @@ export default function Plan() {
           {analysis.goals.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px 20px' }}>
               <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: '0 0 16px' }}>No goals yet.</p>
-              <button className="btn-primary" onClick={() => navigate('/onboarding?step=4')} style={{ padding: '11px 24px', fontSize: '14px' }}>
+              <button className="btn-primary" onClick={() => setShowAddGoal(true)} style={{ padding: '11px 24px', fontSize: '14px' }}>
                 + Add your first goal
               </button>
             </div>
@@ -1038,7 +1346,7 @@ export default function Plan() {
           {/* Add goal */}
           <button
             className="btn-ghost"
-            onClick={() => navigate('/onboarding?step=4')}
+            onClick={() => setShowAddGoal(true)}
             style={{ width: '100%', padding: '12px', fontSize: '13px', marginBottom: suggestions.length > 0 ? '28px' : '0' }}>
             + Add goal
           </button>
@@ -1171,6 +1479,13 @@ export default function Plan() {
           goal={updatingGoal}
           onClose={() => setUpdatingGoal(null)}
           onSave={(newAmount) => saveGoalProgress(updatingGoal, newAmount)}
+        />
+      )}
+
+      {showAddGoal && (
+        <AddGoalSheet
+          onClose={() => setShowAddGoal(false)}
+          onSave={saveNewGoal}
         />
       )}
     </div>

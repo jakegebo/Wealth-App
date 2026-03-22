@@ -274,6 +274,7 @@ export default function Onboarding() {
   const [userState, setUserState] = useState('')
   const [riskTolerance, setRiskTolerance] = useState('')
   const [lifeStage, setLifeStage] = useState('')
+  const [financialExperience, setFinancialExperience] = useState('')
 
   // Income & Cash Flow
   const [grossIncome, setGrossIncome] = useState('')
@@ -320,6 +321,7 @@ export default function Onboarding() {
       setUserState(p.state || '')
       setRiskTolerance(p.risk_tolerance || '')
       setLifeStage(p.life_stage || '')
+      setFinancialExperience(p.financial_experience || '')
       setGrossIncome(p.annual_gross_income?.toString() || '')
       setIncome(p.monthly_income?.toString() || '')
       setExpenses(p.monthly_expenses?.toString() || '')
@@ -404,6 +406,7 @@ export default function Onboarding() {
     state: userState,
     risk_tolerance: riskTolerance,
     life_stage: lifeStage,
+    financial_experience: financialExperience,
     annual_gross_income: parseFloat(grossIncome) || null,
     monthly_income: parseFloat(income) || 0,
     monthly_expenses: parseFloat(expenses) || 0,
@@ -660,6 +663,44 @@ export default function Onboarding() {
                 </div>
                 <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '5px 0 0', lineHeight: '1.4' }}>
                   Conservative: preserve capital. Moderate: balanced growth. Aggressive: maximize long-term returns.
+                </p>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Financial experience</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {([
+                    { value: 'beginner', label: 'Beginner', desc: "New to personal finance — I'm still learning the basics" },
+                    { value: 'intermediate', label: 'Intermediate', desc: 'I know the basics and have started investing or budgeting' },
+                    { value: 'advanced', label: 'Advanced', desc: 'Comfortable with investing, tax strategy, and financial planning' },
+                    { value: 'expert', label: 'Expert', desc: 'Deep knowledge — I want full technical depth, no hand-holding' },
+                  ]).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      onClick={() => setFinancialExperience(value)}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: financialExperience === value ? '1.5px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                        background: 'var(--sand-200)',
+                        color: financialExperience === value ? 'var(--accent)' : 'var(--sand-600)',
+                        fontFamily: 'inherit',
+                        fontSize: '13px',
+                        fontWeight: financialExperience === value ? '600' : '400',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                      }}
+                    >
+                      <span>{label}</span>
+                      <span style={{ fontSize: '11px', fontWeight: '400', color: financialExperience === value ? 'var(--accent)' : 'var(--sand-400)', opacity: 0.85 }}>{desc}</span>
+                    </button>
+                  ))}
+                </div>
+                <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '5px 0 0', lineHeight: '1.4' }}>
+                  This shapes how advice is explained — no judgment either way.
                 </p>
               </div>
             </div>

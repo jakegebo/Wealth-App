@@ -671,7 +671,7 @@ function GrowthSection({
                         const isUp = q ? q.change >= 0 : null
 
                         return (
-                          <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
+                          <div key={pi} onClick={() => { if (q) setSelectedStock(q) }} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none', cursor: q ? 'pointer' : 'default' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
@@ -960,9 +960,9 @@ function StockDetail({
     : null
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', height: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ position: 'sticky', top: 0, background: 'var(--sand-50)', zIndex: 1, borderRadius: '24px 24px 0 0' }}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'sticky', top: 0, background: 'var(--sand-50)', zIndex: 1, borderRadius: '24px 24px 0 0', flexShrink: 0 }}>
           <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
             <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
           </div>

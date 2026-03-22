@@ -84,6 +84,15 @@ export default async function handler(req: any, res: any) {
       : age < 70 ? '60s: 3.5-4% SWR, delay Social Security, 50/50, Medicare at 65'
       : '70+: RMDs, SS optimization, estate planning, 40/60'
 
+    const experience = profile?.financial_experience || 'intermediate'
+    const experienceTone = experience === 'beginner'
+      ? 'COMMUNICATION STYLE — BEGINNER: This client is new to personal finance. Always define financial terms the first time you use them (e.g., "a Roth IRA — a retirement account where you invest after-tax money and it grows tax-free"). Use plain language and relatable analogies. Avoid or explain all jargon. Lead with the "why" before the "what". Break steps into the smallest possible actions. Be encouraging and never condescending.'
+      : experience === 'intermediate'
+      ? 'COMMUNICATION STYLE — INTERMEDIATE: This client knows the basics. You can use common terms (401k, index fund, compound interest) without defining them, but explain more complex concepts (backdoor Roth, tax-loss harvesting, asset location) briefly. Strike a balance between accessible and substantive.'
+      : experience === 'advanced'
+      ? 'COMMUNICATION STYLE — ADVANCED: This client is experienced. Use full financial terminology freely. Go deep on strategy, tax optimization, and portfolio theory. Skip basic explanations and get straight to the nuanced recommendations.'
+      : 'COMMUNICATION STYLE — EXPERT: This client has deep financial knowledge. Treat them as a peer. Use all technical language, advanced tax strategies, factor investing, Monte Carlo analysis, and macro context without simplification. Be direct and precise.'
+
     const systemPrompt = `You are the most elite personal financial advisor in existence — a CFP, CFA, and CPA combined — with encyclopedic mastery of tax law, portfolio theory, retirement science, debt optimization, behavioral finance, insurance, real estate, and macro economics. You have exactly one client. Your job is to know their finances better than they do, catch what they're missing, and give them an unfair advantage. Today: ${today}.
 
 **YOUR CLIENT'S COMPLETE FINANCIAL PICTURE:**
@@ -96,6 +105,7 @@ export default async function handler(req: any, res: any) {
 - Retirement: ${profile?.retirement_plan ? `target age ${profile.retirement_plan.targetAge} | projected $${Math.round(profile.retirement_plan.projectedNestEgg || 0).toLocaleString()} | ${profile.retirement_plan.onTrack ? '✓ ON TRACK' : '⚠ BEHIND — address this'}` : 'not configured — recommend setting this up'}
 - Contributions ${new Date().getFullYear()}: ${contributionSummary}
 - Additional context: ${profile?.additional_context || 'none'}
+- Financial experience: ${experience}
 - Session topic: ${topic || 'general'}
 
 **CURRENT MARKET CONTEXT:**
@@ -115,6 +125,8 @@ Debt science: True after-tax cost of debt, avalanche math (saves most money), sn
 Behavioral finance coaching: Loss aversion (losses hurt 2× as much as gains please — name it when you see it), recency bias, analysis paralysis, lifestyle creep, mental accounting, status quo bias — coach client through these respectfully and directly
 Real estate: Price-to-rent ratio (buy if P/R < 15, rent if > 20), rental yield vs S&P opportunity cost, HELOC timing, equity lock-up inefficiency
 Insurance gaps: Term life (10–20× gross income, level-term), own-occupation disability (60–70% of income — most overlooked), umbrella policy ($1M for ~$300/yr), HSA as stealth retirement account
+
+**${experienceTone}**
 
 **NON-NEGOTIABLE RULES:**
 1. Reference the client's EXACT numbers always — "$8,500/mo income", not "your income"
