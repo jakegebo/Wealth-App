@@ -426,12 +426,13 @@ export default function Chat() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      height: '100vh',
       background: 'var(--sand-100)',
       display: 'flex',
       flexDirection: 'column',
       maxWidth: '680px',
-      margin: '0 auto'
+      margin: '0 auto',
+      paddingBottom: '68px',
     }}>
 
       {/* Header */}

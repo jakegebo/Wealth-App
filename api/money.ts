@@ -150,6 +150,101 @@ ${excludedIdeas?.length ? `- CRITICAL: Every idea must be completely different f
       }
     }
 
+    if (action === 'generate_goal_suggestions') {
+      const p = profile || {}
+      const { excludedGoals } = req.body
+      const surplus = (p.monthly_income || 0) - (p.monthly_expenses || 0)
+      const netWorth = (p.assets || []).reduce((s: number, a: any) => s + (a.value || 0), 0)
+        - (p.debts || []).reduce((s: number, d: any) => s + (d.balance || 0), 0)
+
+      const existingGoalNames = (p.goals || []).map((g: any) => g.name).join(', ') || 'none'
+      const debtSummary = p.debts?.length
+        ? p.debts.map((d: any) => `${d.name} $${(d.balance || 0).toLocaleString()} at ${d.interest_rate}%`).join('; ')
+        : 'no debts'
+      const assetSummary = p.assets?.length
+        ? p.assets.map((a: any) => `${a.category} "${a.name}" $${(a.value || 0).toLocaleString()}`).join('; ')
+        : 'no assets'
+
+      const excludedContext = excludedGoals?.length
+        ? `\nDO NOT SUGGEST GOALS WITH THESE NAMES OR CLOSELY SIMILAR ONES (already shown to the user):\n${excludedGoals.map((g: string) => `- ${g}`).join('\n')}\nEvery suggestion must be meaningfully different.`
+        : ''
+
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{
+          role: 'system',
+          content: `You generate personalized financial goal suggestions. Return ONLY valid JSON:
+{
+  "suggestions": [
+    {
+      "name": "Short goal name (4-6 words)",
+      "category": "emergency_fund|debt_payoff|investment|home_purchase|retirement|education|business|travel|other",
+      "emoji": "single relevant emoji",
+      "why": "2 sentences: why this goal matters specifically for this person's situation — cite their actual numbers",
+      "how": "2 sentences: concrete first steps and what account/vehicle to use",
+      "targetAmount": 0,
+      "monthlyNeeded": 0,
+      "timeline": "e.g. '8 months' or '2 years'",
+      "priority": "high|medium|low"
+    }
+  ]
+}
+
+Rules:
+- targetAmount and monthlyNeeded must be realistic numbers based on their income/surplus
+- Be specific — reference their actual financial numbers (income, surplus, balances)
+- Prioritize high-impact goals that move the needle on their net worth or financial security
+- Mix priorities: include 1-2 high priority, rest medium/low
+- Suggest goals they don't already have${excludedContext}`
+        }, {
+          role: 'user',
+          content: `Generate 4 personalized financial goal suggestions for this person.
+
+PROFILE:
+- Age: ${p.age || 'not specified'} | State: ${p.state || 'not specified'}
+- Employment: ${p.employment_type?.replace(/_/g, ' ') || 'not specified'}
+- Life stage: ${p.life_stage?.replace(/_/g, ' ') || 'not specified'}
+- Risk tolerance: ${p.risk_tolerance || 'moderate'}
+- Annual gross income: $${(p.annual_gross_income || 0).toLocaleString()}
+- Monthly take-home: $${(p.monthly_income || 0).toLocaleString()}
+- Monthly expenses: $${(p.monthly_expenses || 0).toLocaleString()}
+- Monthly surplus: $${surplus.toLocaleString()}
+- Net worth: $${netWorth.toLocaleString()}
+- Assets: ${assetSummary}
+- Debts: ${debtSummary}
+- Existing goals: ${existingGoalNames}
+- Concerns: ${p.concerns?.join(', ') || 'not specified'}
+- Interests: ${p.interests?.join(', ') || ''} ${p.custom_interests || ''}
+- About them: ${p.additional_context || 'not specified'}
+
+Generate goals that are fresh, specific to their situation, and NOT already in their existing goals list.`
+        }],
+        temperature: excludedGoals?.length ? 1.1 : 0.9,
+        max_tokens: 1200,
+        response_format: { type: 'json_object' }
+      })
+
+      const raw = completion.choices[0]?.message?.content ?? '{"suggestions":[]}'
+      try {
+        const parsed = JSON.parse(raw)
+        const suggestions = (parsed.suggestions || []).map((s: any, i: number) => ({
+          id: `ai_${Date.now()}_${i}`,
+          name: s.name || 'Financial goal',
+          category: s.category || 'other',
+          icon: s.emoji || '🎯',
+          why: s.why || '',
+          how: s.how || '',
+          targetAmount: Number(s.targetAmount) || 0,
+          monthlyNeeded: Number(s.monthlyNeeded) || 0,
+          timeline: s.timeline || '',
+          priority: (['high', 'medium', 'low'].includes(s.priority) ? s.priority : 'medium') as 'high' | 'medium' | 'low',
+        }))
+        return res.json({ suggestions })
+      } catch {
+        return res.json({ suggestions: [] })
+      }
+    }
+
     if (action === 'chat') {
       const p = profile || {}
       const surplus = (p.monthly_income || 0) - (p.monthly_expenses || 0)

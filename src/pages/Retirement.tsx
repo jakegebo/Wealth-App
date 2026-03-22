@@ -50,14 +50,30 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
   const liquidSavings = (profile?.assets || []).filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0)
   const monthlyExp = profile?.monthly_expenses || 0
   const emergencyMonths = monthlyExp > 0 ? liquidSavings / monthlyExp : 0
-  const emergencyDone = emergencyMonths >= 3
+  const emergencyDone = emergencyMonths >= 6
   const emergencyGap = Math.max(0, monthlyExp * 6 - liquidSavings)
+
+  // Risk tolerance and income context — used to align advice with rest of app
+  const riskTolerance = profile?.risk_tolerance || 'moderate'
+  const grossIncome = profile?.annual_gross_income || 0
+  const filingStatus = profile?.filing_status || 'single'
+  const isSelfEmployed = ['self_employed', 'business_owner'].includes(profile?.employment_type)
+
+  // Roth IRA income phase-out (2025): single $146k–$161k, MFJ $230k–$240k
+  const rothPhaseoutStart = filingStatus === 'married_jointly' ? 230000 : 146000
+  const rothHardLimit = filingStatus === 'married_jointly' ? 240000 : 161000
+  const rothOverLimit = grossIncome > rothHardLimit
+  const rothInPhaseout = !rothOverLimit && grossIncome > rothPhaseoutStart
 
   const k401Asset = (profile?.assets || []).find((a: any) => a.category === 'retirement' && /401|403|457/i.test(a.name))
   const has401k = !!k401Asset
   const matchCap = k401Asset?.employer_match_cap
   const contribPct = k401Asset?.contribution_pct || 0
   const matchCaptured = matchCap ? contribPct >= matchCap : has401k
+
+  // Self-employed retirement account label
+  const selfEmpAcctLabel = isSelfEmployed ? 'Solo 401k or SEP-IRA' : '401k'
+  const selfEmpAcctDetail = isSelfEmployed ? 'Solo 401k (up to $69,500/yr) or SEP-IRA (25% of net self-employment income, up to $70,000)' : null
 
   const highInterestDebts = (profile?.debts || []).filter((d: any) => (d.interest_rate || 0) > 7)
   const hasHighDebt = highInterestDebts.length > 0
@@ -86,15 +102,19 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
       done: emergencyDone,
     },
     {
-      text: has401k && matchCaptured
-        ? matchCap
-          ? `401k employer match fully captured at ${contribPct}% ✓`
-          : `Contributing to 401k and capturing employer match ✓`
-        : has401k && matchCap
-          ? `Raise 401k contribution from ${contribPct}% → ${matchCap}% to capture full employer match — it's a guaranteed return`
-          : has401k
-            ? 'Confirm you\'re capturing your full 401k employer match'
-            : 'Ask HR if a 401k is available — employer matching is free money',
+      text: isSelfEmployed
+        ? has401k && matchCaptured
+          ? `${selfEmpAcctLabel} in use and contributing ✓`
+          : `Open a ${selfEmpAcctLabel} — ${selfEmpAcctDetail}`
+        : has401k && matchCaptured
+          ? matchCap
+            ? `401k employer match fully captured at ${contribPct}% ✓`
+            : `Contributing to 401k and capturing employer match ✓`
+          : has401k && matchCap
+            ? `Raise 401k contribution from ${contribPct}% → ${matchCap}% to capture full employer match — it's a guaranteed return`
+            : has401k
+              ? 'Confirm you\'re capturing your full 401k employer match'
+              : 'Ask HR if a 401k is available — employer matching is free money',
       done: has401k && matchCaptured,
     },
     {
@@ -107,10 +127,14 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
     },
     {
       text: iraMaxed
-        ? 'Roth IRA maxed at $7,000/yr ✓'
-        : hasIRA
-          ? 'Increase Roth IRA contributions to $583/mo to hit the $7,000/yr limit'
-          : 'Open a Roth IRA at Fidelity or Vanguard — invest in VTI or a target-date fund, contribute $583/mo',
+        ? `${rothOverLimit ? 'Backdoor Roth IRA' : 'Roth IRA'} maxed at $7,000/yr ✓`
+        : rothOverLimit
+          ? `Your income (~$${Math.round(grossIncome / 1000)}k) exceeds the Roth IRA limit — use the Backdoor Roth: contribute $7,000 to a traditional IRA then convert to Roth`
+          : rothInPhaseout
+            ? `Your income puts you in the Roth IRA phase-out range — contribute a reduced amount or use Backdoor Roth for the full $7,000`
+            : hasIRA
+              ? 'Increase Roth IRA contributions to $583/mo to hit the $7,000/yr limit'
+              : 'Open a Roth IRA at Fidelity or Vanguard — invest in VTI or a target-date fund, contribute $583/mo',
       done: iraMaxed,
     },
   ]
@@ -126,10 +150,14 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
     },
     {
       text: k401Maxed
-        ? '401k maxed at $23,500/yr ✓'
-        : has401k
-          ? `Max 401k to $23,500/yr — pre-tax contributions reduce your taxable income now`
-          : 'Open a Solo 401k or SEP-IRA if self-employed and max contributions',
+        ? `${selfEmpAcctLabel} maxed ✓`
+        : isSelfEmployed
+          ? has401k
+            ? `Max your ${selfEmpAcctLabel} — contributions reduce self-employment taxable income significantly`
+            : `Open a ${selfEmpAcctLabel} — ${selfEmpAcctDetail}`
+          : has401k
+            ? `Max 401k to $23,500/yr — pre-tax contributions reduce your taxable income now`
+            : 'Open a Solo 401k or SEP-IRA if self-employed and max contributions',
       done: k401Maxed,
     },
     {
@@ -199,21 +227,27 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
       label: 'Emergency fund (3–6 months)',
       detail: emergencyDone
         ? `${emergencyMonths.toFixed(1)} months covered ✓`
-        : `${emergencyMonths.toFixed(1)} months now — need ${fmt(emergencyGap)} more to reach 6 months`,
+        : emergencyMonths > 0
+          ? `${emergencyMonths.toFixed(1)} months now — need ${fmt(emergencyGap)} more to reach 6 months`
+          : `Build ${fmt(monthlyExp * 6)} in a high-yield savings account`,
       done: emergencyDone,
       tag: null,
     },
     {
-      label: 'Capture full 401k employer match',
-      detail: has401k && matchCaptured
-        ? matchCap ? `Contributing ${contribPct}% — full match captured ✓` : 'Full match captured ✓'
-        : has401k && matchCap
-          ? `Currently at ${contribPct}% — increase to ${matchCap}% to stop leaving money behind`
-          : has401k
-            ? 'Verify contribution rate covers full employer match'
-            : 'No 401k on file — check with HR',
+      label: isSelfEmployed ? `Open ${selfEmpAcctLabel}` : 'Capture full 401k employer match',
+      detail: isSelfEmployed
+        ? has401k && matchCaptured
+          ? `${selfEmpAcctLabel} active and contributing ✓`
+          : selfEmpAcctDetail || `Open a ${selfEmpAcctLabel}`
+        : has401k && matchCaptured
+          ? matchCap ? `Contributing ${contribPct}% — full match captured ✓` : 'Full match captured ✓'
+          : has401k && matchCap
+            ? `Currently at ${contribPct}% — increase to ${matchCap}% to stop leaving money behind`
+            : has401k
+              ? 'Verify contribution rate covers full employer match'
+              : 'No 401k on file — check with HR',
       done: has401k && matchCaptured,
-      tag: 'Free return',
+      tag: isSelfEmployed ? 'High limit' : 'Free return',
     },
     {
       label: 'Pay off high-interest debt (>7%)',
@@ -226,12 +260,16 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
       tag: null,
     },
     {
-      label: 'Max Roth IRA ($7,000/yr · $583/mo)',
+      label: rothOverLimit ? 'Backdoor Roth IRA ($7,000/yr)' : 'Max Roth IRA ($7,000/yr · $583/mo)',
       detail: iraMaxed
         ? 'Maxed ✓'
-        : hasIRA
-          ? 'Contributing — push to $583/mo to hit the annual limit'
-          : 'Open at Fidelity or Vanguard — invest in VTI or a target-date fund',
+        : rothOverLimit
+          ? `Income too high for direct Roth — contribute $7,000 to a traditional IRA then convert (Backdoor Roth)`
+          : rothInPhaseout
+            ? `Partial Roth contribution allowed at your income — or use Backdoor Roth for the full $7,000`
+            : hasIRA
+              ? 'Contributing — push to $583/mo to hit the annual limit'
+              : 'Open at Fidelity or Vanguard — invest in VTI or a target-date fund',
       done: iraMaxed,
       tag: 'Tax-free growth',
     },
@@ -244,12 +282,14 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
       tag: 'If eligible',
     },
     {
-      label: 'Max 401k ($23,500/yr · $1,958/mo)',
+      label: isSelfEmployed ? `Max ${selfEmpAcctLabel}` : 'Max 401k ($23,500/yr · $1,958/mo)',
       detail: k401Maxed
         ? 'Maxed ✓'
-        : has401k
-          ? 'Increase beyond the match — pre-tax dollars lower your tax bill now'
-          : 'After IRA, ask HR if a 401k is available to max',
+        : isSelfEmployed
+          ? selfEmpAcctDetail || `Max your ${selfEmpAcctLabel}`
+          : has401k
+            ? 'Increase beyond the match — pre-tax dollars lower your tax bill now'
+            : 'After IRA, ask HR if a 401k is available to max',
       done: k401Maxed,
       tag: 'Tax-deferred',
     },
@@ -291,8 +331,9 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
   const allocationTotal = allocations.reduce((s, a) => s + a.amount, 0)
   const ALLOC_COLORS = ['var(--warning)', 'var(--accent)', '#6a8aae']
 
-  // Asset allocation recommendation
-  const stockPct = Math.min(95, Math.max(50, 110 - currentAge))
+  // Asset allocation — adjusted for age AND risk tolerance, matching chat.ts life stage guidance
+  const baseRule = riskTolerance === 'conservative' ? 100 : riskTolerance === 'aggressive' ? 120 : 110
+  const stockPct = Math.min(riskTolerance === 'aggressive' ? 100 : 95, Math.max(riskTolerance === 'conservative' ? 40 : 50, baseRule - currentAge))
   const bondPct = 100 - stockPct
   const intlPct = Math.round(stockPct * 0.25)
   const usPct = stockPct - intlPct
@@ -450,7 +491,7 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div>
             <p className="label" style={{ margin: 0 }}>Portfolio blueprint</p>
-            <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '2px 0 0' }}>Recommended mix for age {currentAge} · {yearsLeft}yr runway</p>
+            <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '2px 0 0' }}>Recommended mix for age {currentAge} · {yearsLeft}yr runway · {riskTolerance} risk</p>
           </div>
           <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent)', background: 'var(--accent-light)', padding: '4px 10px', borderRadius: '20px', border: '0.5px solid var(--accent-border)', flexShrink: 0 }}>
             {stockPct}% stocks · {bondPct}% bonds

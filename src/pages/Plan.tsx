@@ -325,15 +325,15 @@ function CashFlowCard({ income, expenses, availableToSave, savingsRate }: {
   )
 }
 
-function DebtOptimizerCard({ profileDebts, availableToSave }: {
+function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanChange }: {
   profileDebts: { name: string; balance: number; interest_rate: number; minimum_payment?: number }[]
   availableToSave: number
+  initialPlan?: 'avalanche' | 'snowball' | 'minimum' | null
+  onPlanChange?: (plan: 'avalanche' | 'snowball' | 'minimum') => void
 }) {
   const [strategy, setStrategy] = useState<'minimum' | 'avalanche' | 'snowball'>('avalanche')
   const [extraPayment, setExtraPayment] = useState(100)
-  const [activePlan, setActivePlan] = useState<'avalanche' | 'snowball' | 'minimum' | null>(() => {
-    return (localStorage.getItem('debt_active_plan') as any) || null
-  })
+  const [activePlan, setActivePlan] = useState<'avalanche' | 'snowball' | 'minimum' | null>(initialPlan ?? null)
   const [changingPlan, setChangingPlan] = useState(false)
 
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(isFinite(n) ? n : 0)
@@ -449,7 +449,7 @@ function DebtOptimizerCard({ profileDebts, availableToSave }: {
     setActivePlan(plan)
     setStrategy(plan)
     setChangingPlan(false)
-    localStorage.setItem('debt_active_plan', plan)
+    onPlanChange?.(plan)
   }
 
   const isSelectionMode = !activePlan || changingPlan
@@ -787,6 +787,9 @@ export default function Plan() {
   const [addingGoalId, setAddingGoalId] = useState<string | null>(null)
   const [confirmRemoveGoal, setConfirmRemoveGoal] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'goals' | 'debt' | 'retire'>('goals')
+  const [aiSuggestions, setAiSuggestions] = useState<SuggestedGoal[] | null>(null)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [seenGoalNames, setSeenGoalNames] = useState<string[]>([])
 
   const saveGoalProgress = async (goal: Goal, newAmount: number) => {
     if (!profile || !userId) return
@@ -847,6 +850,26 @@ export default function Plan() {
     if (!profile) return
     const dismissed = [...(profile.dismissed_suggestions || []), id]
     await updateProfile({ profile_data: { ...profile, dismissed_suggestions: dismissed } })
+  }
+
+  const fetchNewSuggestions = async () => {
+    if (!profile || loadingSuggestions) return
+    setLoadingSuggestions(true)
+    // Track all goal names seen so far (static + previous AI rounds) so the API avoids repeating them
+    const currentNames = (aiSuggestions ?? generateGoalSuggestions(profile, analysis)).map(s => s.name)
+    const allSeen = [...new Set([...seenGoalNames, ...currentNames])]
+    setSeenGoalNames(allSeen)
+    try {
+      const res = await fetch('/api/money', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate_goal_suggestions', profile, excludedGoals: allSeen }),
+      })
+      const data = await res.json()
+      if (data.suggestions?.length) setAiSuggestions(data.suggestions)
+    } finally {
+      setLoadingSuggestions(false)
+    }
   }
 
   const openChat = async (key: string, prompt: string, title: string) => {
@@ -1021,11 +1044,37 @@ export default function Plan() {
           </button>
 
           {/* Suggestions — always shown if available */}
-          {suggestions.length > 0 && (
+          {(aiSuggestions ?? suggestions).length > 0 && (
             <div>
-              <p className="label" style={{ marginBottom: '10px' }}>💡 Suggested for you</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <p className="label" style={{ margin: 0 }}>💡 Suggested for you</p>
+                <button
+                  onClick={fetchNewSuggestions}
+                  disabled={loadingSuggestions}
+                  style={{
+                    background: 'none',
+                    border: '0.5px solid var(--sand-300)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: loadingSuggestions ? 'var(--sand-400)' : 'var(--sand-600)',
+                    fontSize: '12px',
+                    padding: '5px 10px',
+                    cursor: loadingSuggestions ? 'default' : 'pointer',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  {loadingSuggestions ? (
+                    <>
+                      <div style={{ width: '10px', height: '10px', border: '1.5px solid var(--sand-300)', borderTopColor: 'var(--sand-500)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      Loading…
+                    </>
+                  ) : '↻ New suggestions'}
+                </button>
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {suggestions.map(s => (
+                {(aiSuggestions ?? suggestions).map(s => (
                   <div key={s.id} style={{ background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', borderRadius: 'var(--radius)', padding: '14px' }}>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                       <span style={{ fontSize: '22px', flexShrink: 0, lineHeight: '1' }}>{s.icon}</span>
@@ -1068,7 +1117,12 @@ export default function Plan() {
       {activeTab === 'debt' && (
         <div className="animate-fade">
           {hasDebt ? (
-            <DebtOptimizerCard profileDebts={profile.debts} availableToSave={analysis.availableToSave} />
+            <DebtOptimizerCard
+              profileDebts={profile.debts}
+              availableToSave={analysis.availableToSave}
+              initialPlan={profile.debt_plan ?? null}
+              onPlanChange={plan => updateProfile({ profile_data: { ...profile, debt_plan: plan } })}
+            />
           ) : (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
               <p style={{ fontSize: '36px', margin: '0 0 12px' }}>🎉</p>

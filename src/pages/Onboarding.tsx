@@ -227,6 +227,29 @@ const CONCERNS = [
   'Increase income',
 ]
 
+const INTERESTS = [
+  'Technology & Coding',
+  'Writing & Content',
+  'Design & Art',
+  'Photography & Video',
+  'Music & Audio',
+  'Fitness & Health',
+  'Cooking & Food',
+  'Travel & Adventure',
+  'Finance & Investing',
+  'Real Estate',
+  'Teaching & Coaching',
+  'Gaming',
+  'Beauty & Fashion',
+  'Sports',
+  'Nature & Outdoors',
+  'Business & Entrepreneurship',
+  'Social Media & Marketing',
+  'Cars & Vehicles',
+  'Pets & Animals',
+  'Home & DIY',
+]
+
 export default function Onboarding() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -238,7 +261,7 @@ export default function Onboarding() {
   })
   const [step, setStep] = useState(() => {
     const s = parseInt(searchParams.get('step') || '0')
-    return isNaN(s) ? 0 : Math.max(0, Math.min(s, 5))
+    return isNaN(s) ? 0 : Math.max(0, Math.min(s, 6))
   })
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
@@ -273,6 +296,10 @@ export default function Onboarding() {
   const [concerns, setConcerns] = useState<string[]>([])
   const [context, setContext] = useState('')
 
+  // Interests
+  const [interests, setInterests] = useState<string[]>([])
+  const [customInterests, setCustomInterests] = useState('')
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -301,6 +328,8 @@ export default function Onboarding() {
       if (p.income_sources?.length) setIncomeSources(p.income_sources)
       setContext(p.additional_context || '')
       if (p.concerns?.length) setConcerns(p.concerns)
+      if (p.interests?.length) setInterests(p.interests)
+      setCustomInterests(p.custom_interests || '')
       if (p.assets?.length) setAssets(p.assets)
       if (p.debts?.length) setDebts(p.debts)
       if (p.goals?.length) setGoals(p.goals)
@@ -366,6 +395,7 @@ export default function Onboarding() {
   }
 
   const toggleConcern = (c: string) => setConcerns(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  const toggleInterest = (i: string) => setInterests(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])
 
   const buildProfileData = () => ({
     age: parseInt(age) || null,
@@ -382,6 +412,8 @@ export default function Onboarding() {
     income_sources: incomeSources.filter(s => s.amount > 0),
     additional_context: context,
     concerns,
+    interests,
+    custom_interests: customInterests,
     assets: assets.filter(a => a.name && a.value),
     debts: debts.filter(d => d.name && d.balance),
     goals: goals.filter(g => g.name && g.target_amount),
@@ -442,6 +474,7 @@ export default function Onboarding() {
     { title: 'Debts', subtitle: 'What you owe', complete: debts.length > 0 },
     { title: 'Goals', subtitle: "What you're working toward", complete: goals.some(g => g.name && g.target_amount) },
     { title: 'Context', subtitle: 'Concerns & anything else', complete: context.length > 0 || concerns.length > 0 },
+    { title: 'Interests', subtitle: 'What you enjoy — for income ideas & goal advice', complete: interests.length > 0 || customInterests.length > 0 },
   ]
 
   const inputStyle = {
@@ -1377,6 +1410,53 @@ export default function Onboarding() {
               <button onClick={addGoal} className="btn-ghost" style={{ width: '100%', padding: '12px', border: '1px dashed var(--sand-400)', borderRadius: 'var(--radius-md)', fontSize: '13px', color: 'var(--sand-600)' }}>
                 + Add another goal
               </button>
+            </div>
+          )}
+
+          {/* Step 6: Interests */}
+          {view === 'section' && step === 6 && (
+            <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)', margin: '0 0 4px' }}>What are you interested in?</p>
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 12px', lineHeight: '1.5' }}>
+                  Select everything that applies. This helps tailor income ideas and goal advice to things you'd actually enjoy.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {INTERESTS.map(interest => (
+                    <button
+                      key={interest}
+                      onClick={() => toggleInterest(interest)}
+                      style={{
+                        padding: '7px 13px',
+                        borderRadius: '20px',
+                        border: interests.includes(interest) ? '1.5px solid var(--accent)' : '0.5px solid var(--sand-300)',
+                        background: interests.includes(interest) ? 'var(--sand-200)' : 'var(--sand-50)',
+                        color: interests.includes(interest) ? 'var(--accent)' : 'var(--sand-600)',
+                        fontFamily: 'inherit',
+                        fontSize: '12px',
+                        fontWeight: interests.includes(interest) ? '600' : '400',
+                        cursor: 'pointer',
+                      }}
+                    >{interest}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={dividerStyle} />
+
+              <div>
+                <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)', margin: '0 0 4px' }}>Anything else?</p>
+                <p style={{ fontSize: '12px', color: 'var(--sand-500)', margin: '0 0 10px', lineHeight: '1.5' }}>
+                  Skills, hobbies, or areas of expertise not listed above.
+                </p>
+                <textarea
+                  value={customInterests}
+                  onChange={e => setCustomInterests(e.target.value)}
+                  placeholder="E.g. woodworking, 3D printing, Spanish fluency, piano, yoga instruction..."
+                  rows={4}
+                  style={{ ...inputStyle, resize: 'none', lineHeight: '1.6' }}
+                />
+              </div>
             </div>
           )}
 
