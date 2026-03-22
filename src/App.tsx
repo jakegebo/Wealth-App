@@ -40,7 +40,7 @@ function Layout({ user, children }: { user: any; children: React.ReactNode }) {
   return (
     <div className="app-shell">
       {showShell && <SideNav />}
-      <div className={showShell ? 'app-content' : undefined}>
+      <div className={showShell ? 'app-content' : undefined} style={!showShell ? { flex: 1, minWidth: 0, overflow: 'hidden' } : undefined}>
         <div key={location.pathname} className="page-enter">
           {children}
         </div>
