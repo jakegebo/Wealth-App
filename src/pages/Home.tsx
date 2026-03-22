@@ -2893,17 +2893,17 @@ export default function Home() {
 
       {/* ── CASH FLOW TAB ── */}
       {activeTab === 'cashflow' && (() => {
+        const surplus = analysis.availableToSave
+        const income = analysis.monthlyIncome
+        const expenses = analysis.monthlyExpenses
+        const budgetHealth = analysis.budgetHealth
+        const incomeSources = (profile?.income_sources || []).filter((s: any) => s.amount > 0)
         const totalDebtPayments = (profile?.debts || []).reduce((s: number, d: any) => s + (d.monthly_payment || d.minimum_payment || 0), 0)
         const totalGoalContributions = (profile?.goals || []).reduce((s: number, g: any) => s + (g.monthly_contribution || 0), 0)
         const liquid = (profile?.assets || []).filter((a: any) => a.category === 'savings').reduce((s: number, a: any) => s + (a.value || 0), 0)
         const efMonths = expenses > 0 ? liquid / expenses : 0
         const efTarget = 6
         const efPct = Math.min(100, (efMonths / efTarget) * 100)
-        const surplus = analysis.availableToSave
-        const income = analysis.monthlyIncome
-        const expenses = analysis.monthlyExpenses
-        const incomeSources = (profile?.income_sources || []).filter((s: any) => s.amount > 0)
-        const budgetHealth = analysis.budgetHealth
 
         return (<>
 
