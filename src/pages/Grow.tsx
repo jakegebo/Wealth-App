@@ -1428,6 +1428,19 @@ export default function Grow() {
     await updateProfile({ watchlist: newList })
   }
 
+  const openTickerDetail = async (symbol: string) => {
+    const upper = symbol.toUpperCase().trim()
+    // Check if already in watchlist stocks
+    const existing = stocks.find(s => s.symbol === upper)
+    if (existing) { setSelectedStock(existing); return }
+    try {
+      const res = await fetch(`/api/stocks?symbols=${upper}`)
+      const data = await res.json()
+      const quote = data.quotes?.[0]
+      if (quote) setSelectedStock(quote)
+    } catch { }
+  }
+
   const removeFromWatchlist = async (symbol: string) => {
     const newList = watchlist.filter(s => s !== symbol)
     setStocks(prev => prev.filter(s => s.symbol !== symbol))
@@ -1923,11 +1936,18 @@ Please give me a thorough breakdown:
                                 <span style={{ fontSize: '9px', fontWeight: '700', color: riskMeta.color, background: riskMeta.bg, padding: '2px 7px', borderRadius: '20px' }}>{idea.risk} risk</span>
                               </div>
                               {idea.ticker && (
-                                <button
-                                  onClick={() => addToWatchlist(idea.ticker!)}
-                                  style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                                  + Watch
-                                </button>
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                                  <button
+                                    onClick={() => openTickerDetail(idea.ticker!)}
+                                    style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-900)', color: 'var(--sand-50)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                                    {idea.ticker}
+                                  </button>
+                                  <button
+                                    onClick={() => addToWatchlist(idea.ticker!)}
+                                    style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', border: '0.5px solid var(--sand-300)', background: 'var(--sand-100)', color: 'var(--sand-700)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                                    + Watch
+                                  </button>
+                                </div>
                               )}
                             </div>
                             <p style={{ fontSize: '12px', color: 'var(--sand-600)', margin: 0, lineHeight: '1.55' }}>{idea.reason}</p>

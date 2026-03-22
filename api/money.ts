@@ -57,14 +57,14 @@ export default async function handler(req: any, res: any) {
         model: 'llama-3.3-70b-versatile',
         messages: [{
           role: 'system',
-          content: `You generate highly personalized income ideas. Return ONLY valid JSON:
+          content: `You generate modern, creative income ideas for people who want to build wealth outside their day job. Return ONLY valid JSON:
 {
   "ideas": [
     {
       "title": "3-5 word name",
-      "description": "2 sentences: what this is AND why it specifically fits this person's background, assets, skills, or situation. Be concrete — reference their actual job, assets, or context.",
+      "description": "2 sentences: what this is AND why it fits this person's life stage, financial position, free time, or goals — NOT their career. Be specific and exciting.",
       "monthly_range": "$X – $Y/mo",
-      "timeline": "specific timeframe, e.g. 'First client in 3–5 weeks' or 'Profitable in 4–6 months'",
+      "timeline": "specific timeframe, e.g. 'First sale in 2–3 weeks' or 'Cash flowing in 3–4 months'",
       "effort": "low" | "medium" | "high",
       "category": "skill" | "passive" | "digital" | "investing" | "business"
     }
@@ -76,7 +76,7 @@ monthly_range: CONSERVATIVE — what a typical person earns in months 1–6, not
 timeline: must be specific. Never say "quickly" or "soon".`
         }, {
           role: 'user',
-          content: `Generate 6 personalized income ideas for this person.${promptContext}${excludedContext}${selectedContext}${refinementContext}
+          content: `Generate 6 income ideas for this person that are OUTSIDE their current career path.${promptContext}${excludedContext}${selectedContext}${refinementContext}
 
 PROFILE:
 - Age: ${p.age || 'not specified'}
@@ -98,16 +98,19 @@ PROFILE:
 - About them: ${p.additional_context || 'not specified'}
 
 RULES:
-- Each idea must be tailored to THIS person. The description must reference their actual situation (job, assets, skills mentioned in context, or financial position). Never write a generic description.
-- If they mention a profession or industry in context, prioritize ideas that leverage those skills.
-- If they have investable assets, include at least 1 investing/passive idea that uses those assets.
-- If they have heavy debt relative to income, prioritize high-ROI-per-hour ideas over capital-intensive ones.
-- NO generic ideas (surveys, Uber/DoorDash, Amazon reviews, etc.).
-- monthly_range must be conservative and realistic for the first 6 months — not theoretical maximums.
-- Mix at least: 2 skill-based, 1 passive/investing, 1 digital/scalable.
+- NEVER suggest ideas that are extensions of their day job or profession. People want to escape their career, not repeat it on the side.
+- Think like a Gen Z entrepreneur: digital-first, asset-light, leverage platforms, build audiences, monetize content, rent assets, flip things, automate income.
+- Draw on their FINANCIAL SITUATION (surplus, assets, debt level, goals) to tailor — not their job title.
+- Prioritize modern opportunities: newsletters, digital products, AI tools, niche communities, short-term rentals, reselling, creator monetization, micro-SaaS, etc.
+- If they have investable assets, include at least 1 idea that puts that capital to work passively.
+- If they have high debt, lean toward high-ROI-per-hour ideas with no startup capital required.
+- NO outdated or overplayed ideas (Uber/DoorDash, surveys, Amazon reviews, MLM, drop shipping with no twist).
+- Be creative and specific. No vague descriptions like "start a blog" — say exactly what niche, format, and monetization path.
+- Mix: 1 digital/content, 1 passive/investing, 1 business/product, 1 community/platform, and 2 wild cards that are genuinely unexpected.
+- monthly_range must be realistic for the first 6 months — not theoretical maximums.
 ${excludedIdeas?.length ? `- CRITICAL: Every idea must be completely different from the excluded list above — different industry, different mechanism, different effort type. Do not produce variations or rewordings of those ideas.` : ''}`
         }],
-        temperature: excludedIdeas?.length ? 1.05 : 0.85,
+        temperature: excludedIdeas?.length ? 1.1 : 0.95,
         max_tokens: 1400,
         response_format: { type: 'json_object' }
       })
@@ -168,7 +171,7 @@ ${excludedIdeas?.length ? `- CRITICAL: Every idea must be completely different f
 
       const topicPrompts: Record<string, string> = {
         surplus: `Focus on the best ways to deploy their monthly surplus of $${surplus.toLocaleString()}/mo to build wealth faster. Be specific about accounts, instruments, and allocation given their situation.`,
-        sidehustle: `Focus on realistic side hustles that leverage their specific background and skills. Give a concrete 30-day launch plan for the best fit. Be honest about how long it actually takes to earn.`,
+        sidehustle: `Focus on modern, creative side hustles that are OUTSIDE their career path — people want to try something new, not do their job again on the side. Think digital products, platforms, communities, flipping, content, AI tools. Give a concrete 30-day launch plan for the best fit. Be honest about how long it actually takes to earn.`,
         passive: `Focus on building passive income streams suited to their asset level and risk tolerance. Be upfront that most passive income takes 6–24 months to build — give realistic timelines and capital requirements.`,
         ideas: `Help them explore and develop specific income ideas. Be a strategic thinking partner who gives concrete, actionable advice tailored to their exact situation.`
       }
