@@ -12,9 +12,9 @@ export default async function handler(req: any, res: any) {
     ai: 'artificial intelligence AI investing OpenAI technology'
   }
 
-  const FINANCE_ANCHOR = 'stock OR shares OR earnings OR revenue OR investor OR market OR SEC OR dividend OR IPO OR trading OR portfolio OR fund OR ETF OR financial OR fiscal'
+  const FINANCE_ANCHOR = 'stock OR shares OR earnings OR revenue OR investor OR "stock market" OR SEC OR dividend OR IPO OR trading OR portfolio OR ETF OR financial OR fiscal OR "hedge fund" OR "mutual fund" OR "interest rate" OR inflation OR "earnings per share"'
 
-  // For portfolio queries, AND the company terms with finance terms so WWE-style noise is filtered out
+  // For portfolio queries, AND the company terms with finance terms so entertainment noise is filtered out
   const rawQuery = (customQuery as string) || queries[category as string] || queries.markets
   const finalQuery = customQuery
     ? `(${rawQuery}) AND (${FINANCE_ANCHOR})`
@@ -22,13 +22,23 @@ export default async function handler(req: any, res: any) {
 
   const query = encodeURIComponent(finalQuery)
 
+  // Financial news domains — restricts portfolio/custom queries to reputable finance sources only
+  const FINANCE_DOMAINS = [
+    'reuters.com', 'bloomberg.com', 'wsj.com', 'cnbc.com', 'ft.com',
+    'marketwatch.com', 'barrons.com', 'seekingalpha.com', 'fool.com',
+    'thestreet.com', 'forbes.com', 'businessinsider.com', 'investing.com',
+    'finance.yahoo.com', 'benzinga.com', 'kiplinger.com'
+  ].join(',')
+
   try {
     const today = new Date().toISOString().split('T')[0]
     const fromDate = (fromParam as string) || today
     const toDate = (toParam as string) || today
 
+    const domainsParam = customQuery ? `&domains=${FINANCE_DOMAINS}` : ''
+
     let response = await fetch(
-      `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${fromDate}&to=${toDate}&apiKey=${newsKey}`
+      `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${fromDate}&to=${toDate}${domainsParam}&apiKey=${newsKey}`
     )
     let data = await response.json()
     const EXCLUDED_SOURCES = [
@@ -40,17 +50,24 @@ export default async function handler(req: any, res: any) {
       'The Sun',
     ]
 
-    const FINANCE_KEYWORDS = [
-      'stock', 'share', 'earn', 'revenue', 'invest', 'market', 'sec', 'dividend',
-      'ipo', 'trad', 'portfolio', 'fund', 'etf', 'financial', 'fiscal', 'quarter',
-      'profit', 'loss', 'valuat', 'analyst', 'forecast', 'guidance', 'rally',
-      'selloff', 'bull', 'bear', 'nasdaq', 's&p', 'dow', 'nyse', 'fed', 'rate',
+    // Strong financial terms — at least one must appear in the TITLE for custom/portfolio queries
+    const STRONG_FINANCE_TERMS = [
+      'stock', 'share', 'earn', 'revenue', 'invest', 'dividend', 'ipo', 'etf',
+      'financial', 'fiscal', 'quarter', 'profit', 'loss', 'valuat', 'analyst',
+      'forecast', 'guidance', 'rally', 'selloff', 'nasdaq', 's&p', 'dow', 'nyse',
+      'fed', 'interest rate', 'inflation', 'gdp', 'hedge fund', 'mutual fund',
+      'market cap', 'portfolio', 'trading', 'equit',
     ]
 
     const isFinanceRelevant = (a: any) => {
       if (!customQuery) return true // category queries are already finance-focused
-      const text = ((a.title || '') + ' ' + (a.description || '')).toLowerCase()
-      return FINANCE_KEYWORDS.some(kw => text.includes(kw))
+      const title = (a.title || '').toLowerCase()
+      const body = (a.description || '').toLowerCase()
+      // Title must contain at least one strong finance term
+      const titleMatch = STRONG_FINANCE_TERMS.some(kw => title.includes(kw))
+      // Body needs at least two matches total (catches edge cases where title is ambiguous)
+      const bodyMatches = STRONG_FINANCE_TERMS.filter(kw => body.includes(kw)).length
+      return titleMatch || bodyMatches >= 2
     }
 
     const filterArticles = (list: any[]) => list.filter((a: any) =>
@@ -65,7 +82,7 @@ export default async function handler(req: any, res: any) {
     if (articles.length < 3) {
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
       response = await fetch(
-        `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${weekAgo}&apiKey=${newsKey}`
+        `https://newsapi.org/v2/everything?q=${query}&language=en&sortBy=publishedAt&pageSize=15&page=${page}&from=${weekAgo}${domainsParam}&apiKey=${newsKey}`
       )
       data = await response.json()
       articles = filterArticles(data.articles || [])
