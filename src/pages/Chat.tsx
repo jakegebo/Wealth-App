@@ -8,6 +8,7 @@ import {
   Title, Tooltip, Legend, Filler
 } from 'chart.js'
 import { Bar, Line, Doughnut } from 'react-chartjs-2'
+import { Zap } from 'lucide-react'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Title, Tooltip, Legend, Filler)
 
@@ -164,7 +165,7 @@ function renderCTA(key: number, label: string, body?: string) {
         background: 'var(--accent)', borderRadius: '12px 12px 0 0',
         padding: '10px 16px'
       }}>
-        <span style={{ fontSize: '16px', flexShrink: 0 }}>⚡</span>
+        <Zap size={16} strokeWidth={1.5} color="var(--sand-50)" style={{ flexShrink: 0 }} />
         <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-50)', margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
           {label}
         </p>

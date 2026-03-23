@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { Landmark, TrendingUp, Home as HomeIcon, Banknote, Building2, Car, Bitcoin, Briefcase, AlertTriangle, CreditCard, type LucideIcon } from 'lucide-react'
 import NetWorthChart from '../components/NetWorthChart'
 import { formatAIText } from '../lib/formatAIText'
 
@@ -2720,19 +2721,19 @@ export default function Home() {
           }
         }
 
-        const ASSET_META: Record<string, { icon: string; trend: 'up' | 'down' | 'neutral'; label: string }> = {
-          retirement: { icon: '🏦', trend: 'up', label: 'Retirement' },
-          investment: { icon: '📈', trend: 'up', label: 'Investment' },
-          brokerage: { icon: '📈', trend: 'up', label: 'Brokerage' },
-          real_estate: { icon: '🏠', trend: 'up', label: 'Real Estate' },
-          cash: { icon: '💵', trend: 'neutral', label: 'Cash' },
-          savings: { icon: '🏧', trend: 'neutral', label: 'Savings' },
-          checking: { icon: '🏧', trend: 'neutral', label: 'Checking' },
-          vehicle: { icon: '🚗', trend: 'down', label: 'Vehicle' },
-          auto: { icon: '🚗', trend: 'down', label: 'Auto' },
-          crypto: { icon: '₿', trend: 'up', label: 'Crypto' },
+        const ASSET_META: Record<string, { Icon: LucideIcon; trend: 'up' | 'down' | 'neutral'; label: string }> = {
+          retirement: { Icon: Landmark,   trend: 'up',      label: 'Retirement' },
+          investment: { Icon: TrendingUp, trend: 'up',      label: 'Investment' },
+          brokerage:  { Icon: TrendingUp, trend: 'up',      label: 'Brokerage' },
+          real_estate:{ Icon: HomeIcon,   trend: 'up',      label: 'Real Estate' },
+          cash:       { Icon: Banknote,   trend: 'neutral', label: 'Cash' },
+          savings:    { Icon: Building2,  trend: 'neutral', label: 'Savings' },
+          checking:   { Icon: Building2,  trend: 'neutral', label: 'Checking' },
+          vehicle:    { Icon: Car,        trend: 'down',    label: 'Vehicle' },
+          auto:       { Icon: Car,        trend: 'down',    label: 'Auto' },
+          crypto:     { Icon: Bitcoin,    trend: 'up',      label: 'Crypto' },
         }
-        const getMeta = (cat: string) => ASSET_META[cat?.toLowerCase()] || { icon: '💼', trend: 'neutral' as const, label: cat || 'Asset' }
+        const getMeta = (cat: string) => ASSET_META[cat?.toLowerCase()] || { Icon: Briefcase, trend: 'neutral' as const, label: cat || 'Asset' }
 
         const totalAssets = assets.reduce((s: number, a: any) => s + (a.value || 0), 0)
 
@@ -2800,7 +2801,7 @@ export default function Home() {
                       return (
                         <div key={i}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                            <span style={{ fontSize: '18px', flexShrink: 0 }}>{meta.icon}</span>
+                            <span style={{ flexShrink: 0, display: 'flex', color: 'var(--sand-500)' }}><meta.Icon size={18} strokeWidth={1.5} /></span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{asset.name}</p>
                               <p style={{ fontSize: '10px', color: 'var(--sand-400)', margin: 0 }}>{meta.label} · {pct}% of assets</p>
@@ -2895,7 +2896,7 @@ export default function Home() {
                 return (
                   <div key={i}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                      <span style={{ fontSize: '18px', flexShrink: 0 }}>{isHigh ? '⚠️' : '💳'}</span>
+                      <span style={{ flexShrink: 0, display: 'flex', color: isHigh ? 'var(--danger)' : 'var(--sand-400)' }}>{isHigh ? <AlertTriangle size={18} strokeWidth={1.5} /> : <CreditCard size={18} strokeWidth={1.5} />}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: '13px', color: 'var(--sand-900)', margin: 0, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{debt.name}</p>
                         <p style={{ fontSize: '10px', margin: 0, color: rateColor, fontWeight: isHigh ? '600' : '400' }}>
@@ -2927,7 +2928,7 @@ export default function Home() {
             </div>
             {highRateDebt && (
               <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(192,57,43,0.07)', borderRadius: 'var(--radius-sm)', border: '0.5px solid rgba(192,57,43,0.15)' }}>
-                <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0 }}>⚠ High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
+                <p style={{ fontSize: '12px', color: 'var(--danger)', margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}><AlertTriangle size={12} strokeWidth={2} /> High-rate debt detected. Pay this off before investing further — you're losing more to interest than you'd gain.</p>
               </div>
             )}
           </div>
@@ -3026,32 +3027,46 @@ export default function Home() {
           </div>
         )}
 
-        {/* Where surplus goes */}
-        {(totalDebtPayments > 0 || totalGoalContributions > 0) && (
-          <div className="animate-fade stagger-3" style={{ marginBottom: '12px' }}>
-            <p className="label" style={{ marginBottom: '8px' }}>Where it goes</p>
-            <div className="card" style={{ padding: '4px 0' }}>
-              {totalDebtPayments > 0 && (
-                <div style={{ padding: '12px 18px', borderBottom: totalGoalContributions > 0 ? '0.5px solid var(--sand-200)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Debt payments</span>
-                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{(profile?.debts || []).length} account{(profile?.debts || []).length !== 1 ? 's' : ''}</p>
+        {/* Surplus allocation */}
+        {income > 0 && surplus > 0 && (totalDebtPayments > 0 || totalGoalContributions > 0) && (() => {
+          const committed = totalDebtPayments + totalGoalContributions
+          const unallocated = surplus - committed
+          const goalRows = (profile?.goals || []).filter((g: any) => g.monthly_contribution > 0)
+          return (
+            <div className="animate-fade stagger-3" style={{ marginBottom: '12px' }}>
+              <p className="label" style={{ marginBottom: '8px' }}>How your surplus is allocated</p>
+              <div className="card" style={{ padding: '4px 0' }}>
+                {totalDebtPayments > 0 && (
+                  <div style={{ padding: '12px 18px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Debt payments</span>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{(profile?.debts || []).length} account{(profile?.debts || []).length !== 1 ? 's' : ''}</p>
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>−{fmt(totalDebtPayments)}/mo</span>
                   </div>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>−{fmt(totalDebtPayments)}/mo</span>
-                </div>
-              )}
-              {totalGoalContributions > 0 && (
-                <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>Goal savings</span>
-                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{(profile?.goals || []).filter((g: any) => g.monthly_contribution > 0).length} active goal{(profile?.goals || []).filter((g: any) => g.monthly_contribution > 0).length !== 1 ? 's' : ''}</p>
+                )}
+                {goalRows.map((g: any, i: number) => (
+                  <div key={i} style={{ padding: '12px 18px', borderBottom: (i < goalRows.length - 1 || unallocated !== 0) ? '0.5px solid var(--sand-200)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', color: 'var(--sand-700)' }}>{g.name}</span>
+                      <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>Saving toward {g.target_amount > 0 ? fmt(g.target_amount) : 'goal'}</p>
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>−{fmt(g.monthly_contribution)}/mo</span>
                   </div>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>{fmt(totalGoalContributions)}/mo</span>
+                ))}
+                <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: unallocated > 0 ? 'rgba(122,158,110,0.04)' : unallocated < 0 ? 'rgba(192,57,43,0.04)' : undefined }}>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-800)' }}>Unallocated</span>
+                    <p style={{ fontSize: '11px', color: 'var(--sand-400)', margin: '1px 0 0' }}>{unallocated > 0 ? 'Free to invest or save' : unallocated < 0 ? 'Commitments exceed surplus' : 'Fully allocated'}</p>
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: unallocated > 0 ? 'var(--success)' : unallocated < 0 ? 'var(--danger)' : 'var(--sand-500)' }}>
+                    {unallocated >= 0 ? '+' : ''}{fmt(unallocated)}/mo
+                  </span>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Emergency fund */}
         {(liquid > 0 || efMonths > 0) && (

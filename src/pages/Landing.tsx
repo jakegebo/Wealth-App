@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { MessageCircle, Target, Zap, Lightbulb } from 'lucide-react'
 
 function useCountUp(target: number, duration = 1800, start = false) {
   const [value, setValue] = useState(0)
@@ -263,8 +264,8 @@ export default function Landing() {
             <div style={{
               flexShrink: 0, width: '44px', height: '44px', background: 'var(--accent-light)',
               border: '0.5px solid var(--accent-border)', borderRadius: '14px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
-            }}>💬</div>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><MessageCircle size={20} strokeWidth={1.5} color="var(--accent)" /></div>
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 6px' }}>Ask anything, get real answers</h3>
               <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 12px', lineHeight: '1.55' }}>
@@ -289,8 +290,8 @@ export default function Landing() {
             <div style={{
               flexShrink: 0, width: '44px', height: '44px', background: 'rgba(122,158,110,0.1)',
               border: '0.5px solid rgba(122,158,110,0.2)', borderRadius: '14px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
-            }}>🎯</div>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><Target size={20} strokeWidth={1.5} color="var(--accent)" /></div>
             <div style={{ flex: 1 }}>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 6px' }}>Your whole picture, one glance</h3>
               <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 14px', lineHeight: '1.55' }}>
@@ -323,8 +324,8 @@ export default function Landing() {
             <div style={{
               flexShrink: 0, width: '44px', height: '44px', background: 'rgba(122,158,110,0.1)',
               border: '0.5px solid rgba(122,158,110,0.2)', borderRadius: '14px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
-            }}>⚡</div>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><Zap size={20} strokeWidth={1.5} color="var(--accent)" /></div>
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--sand-900)', margin: '0 0 6px' }}>A real debt payoff plan</h3>
               <p style={{ fontSize: '14px', color: 'var(--sand-600)', margin: '0 0 12px', lineHeight: '1.55' }}>
@@ -335,7 +336,7 @@ export default function Landing() {
                 borderRadius: '10px', padding: '10px 14px',
                 display: 'flex', alignItems: 'center', gap: '10px',
               }}>
-                <span style={{ fontSize: '18px' }}>💡</span>
+                <Lightbulb size={18} strokeWidth={1.5} color="var(--accent)" />
                 <span style={{ fontSize: '13px', color: 'var(--sand-700)', fontWeight: '500' }}>
                   Save <strong style={{ color: 'var(--sand-900)' }}>$4,820</strong> in interest by switching strategies
                 </span>

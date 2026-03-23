@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
 import { detectAccountLimit, getContributionStatus } from '../lib/retirementLimits'
+import { Umbrella } from 'lucide-react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -342,7 +343,7 @@ function StrategyTab({ profile, plan }: { profile: any; plan: RetirementPlan }) 
     { age: currentAge, label: 'Now', pct: 0 },
     { age: p1End, label: 'Accel.', pct: 33 },
     { age: p2End, label: 'Push', pct: 67 },
-    { age: targetAge, label: '🏖️ Retire', pct: 100 },
+    { age: targetAge, label: 'Retire', pct: 100 },
   ]
 
   return (
@@ -781,7 +782,7 @@ export default function Retirement() {
           <div className="animate-fade">
             <div style={{ textAlign: 'center', padding: '20px 0 32px' }}>
               <div style={{ width: '60px', height: '60px', background: 'var(--accent)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                <span style={{ fontSize: '24px' }}>🏖️</span>
+                <Umbrella size={24} strokeWidth={1.5} color="white" />
               </div>
               <h2 style={{ fontSize: '22px', fontWeight: '400', color: 'var(--sand-900)', margin: '0 0 8px', letterSpacing: '-0.3px' }}>Build your retirement plan</h2>
               <p style={{ fontSize: '14px', color: 'var(--sand-500)', margin: 0, lineHeight: '1.5' }}>We'll use your financial profile to create a personalized retirement roadmap with projections and AI strategy.</p>

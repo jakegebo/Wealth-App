@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { Landmark, TrendingUp, Bitcoin, Building2, Home as HomeIcon, Briefcase, Monitor, DollarSign, Search, Plus, MessageCircle, Send, type LucideIcon } from 'lucide-react'
 import { formatAIText } from '../lib/formatAIText'
 import {
   Chart as ChartJS,
@@ -306,7 +307,7 @@ function GrowthSection({
   liveQuotesLoading: boolean
   refreshLiveQuotes: () => Promise<void>
   updateProfile: (updates: Record<string, any>) => Promise<void>
-  onSelectStock: (stock: StockQuote) => void
+  onSelectStock: (symbol: string) => void
 }) {
   const [tab, setTab] = useState<'portfolio' | 'income'>('portfolio')
 
@@ -317,6 +318,38 @@ function GrowthSection({
   const [newPosShares, setNewPosShares] = useState('')
   const [newPosCost, setNewPosCost] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+
+  // Add income stream state
+  const [showAddStream, setShowAddStream] = useState(false)
+  const [streamName, setStreamName] = useState('')
+  const [streamType, setStreamType] = useState('other')
+  const [streamAmount, setStreamAmount] = useState('')
+  const [streamFrequency, setStreamFrequency] = useState<'monthly' | 'annual' | 'weekly'>('monthly')
+  const [streamSaving, setStreamSaving] = useState(false)
+
+  async function saveNewStream() {
+    const amount = parseFloat(streamAmount)
+    if (!streamName.trim() || isNaN(amount) || amount <= 0) return
+    setStreamSaving(true)
+    const existing: any[] = profile?.income_sources || []
+    const newSource = { type: streamType, description: streamName.trim(), amount, frequency: streamFrequency }
+    const monthlyEquiv = streamFrequency === 'annual' ? amount / 12 : streamFrequency === 'weekly' ? amount * 4.33 : amount
+    const currentMonthly = profile?.monthly_income || 0
+    const newMonthly = currentMonthly + monthlyEquiv
+    await updateProfile({
+      profile_data: {
+        ...profile,
+        income_sources: [...existing, newSource],
+        monthly_income: Math.round(newMonthly),
+      }
+    })
+    setStreamName('')
+    setStreamType('other')
+    setStreamAmount('')
+    setStreamFrequency('monthly')
+    setShowAddStream(false)
+    setStreamSaving(false)
+  }
 
   function startEdit(accountName: string) {
     const asset = (profile?.assets || []).find((a: any) => a.name === accountName)
@@ -462,8 +495,8 @@ function GrowthSection({
         const totalGain = hasCostBasis ? totalLiveValue - totalCostBasis : null
         const totalGainPct = hasCostBasis && totalCostBasis > 0 ? (totalGain! / totalCostBasis) * 100 : null
 
-        const ACCOUNT_ICONS: Record<string, string> = {
-          retirement: '🏦', brokerage: '📈', investment: '📈', crypto: '₿', savings: '🏧', real_estate: '🏠', other: '💼'
+        const ACCOUNT_ICONS: Record<string, LucideIcon> = {
+          retirement: Landmark, brokerage: TrendingUp, investment: TrendingUp, crypto: Bitcoin, savings: Building2, real_estate: HomeIcon, other: Briefcase
         }
 
         return (
@@ -511,7 +544,7 @@ function GrowthSection({
             {/* Per-account breakdown */}
             {Object.entries(byAccount).map(([accountName, positions]) => {
               const asset = assets.find((a: any) => a.name === accountName)
-              const icon = ACCOUNT_ICONS[asset?.category || 'other'] || '💼'
+              const AccountIcon = ACCOUNT_ICONS[asset?.category || 'other'] || Briefcase
               let acctLiveValue = 0
               let acctCostBasis = 0
               let acctHasCostBasis = false
@@ -529,7 +562,7 @@ function GrowthSection({
                   {/* Account header */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '18px' }}>{icon}</span>
+                      <span style={{ display: 'flex', color: 'var(--sand-500)' }}><AccountIcon size={18} strokeWidth={1.5} /></span>
                       <div>
                         <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>{accountName}</p>
                         {asset?.account_type && (
@@ -673,7 +706,7 @@ function GrowthSection({
                         const isUp = q ? q.change >= 0 : null
 
                         return (
-                          <div key={pi} onClick={() => { if (q) onSelectStock(q) }} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none', cursor: q ? 'pointer' : 'default' }}>
+                          <div key={pi} onClick={() => onSelectStock(pos.symbol)} style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: pi < positions.length - 1 ? '8px' : 0, borderBottom: pi < positions.length - 1 ? '0.5px solid var(--sand-200)' : 'none', cursor: 'pointer' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>{pos.symbol}</span>
@@ -734,8 +767,8 @@ function GrowthSection({
             const typeLabel: Record<string, string> = {
               salary: 'Salary', freelance: 'Freelance', business: 'Business', investment: 'Investment', rental: 'Rental', other: 'Other'
             }
-            const typeIcon: Record<string, string> = {
-              salary: '💼', freelance: '🖥️', business: '🏢', investment: '📈', rental: '🏠', other: '💰'
+            const typeIcon: Record<string, LucideIcon> = {
+              salary: Briefcase, freelance: Monitor, business: Building2, investment: TrendingUp, rental: HomeIcon, other: DollarSign
             }
             if (monthly === 0 && sources.length === 0) return null
             return (
@@ -747,7 +780,7 @@ function GrowthSection({
                       const monthly = src.frequency === 'annual' ? src.amount / 12 : src.amount
                       return (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: i < sources.length - 1 ? '10px' : 0, borderBottom: i < sources.length - 1 ? '0.5px solid var(--sand-200)' : 'none' }}>
-                          <span style={{ fontSize: '22px', flexShrink: 0 }}>{typeIcon[src.type] || '💰'}</span>
+                          <span style={{ flexShrink: 0, display: 'flex', color: 'var(--sand-500)' }}>{(() => { const Icon = typeIcon[src.type] || DollarSign; return <Icon size={20} strokeWidth={1.5} /> })()}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>
                               {src.description || typeLabel[src.type] || src.type}
@@ -772,7 +805,7 @@ function GrowthSection({
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '22px' }}>💼</span>
+                    <span style={{ display: 'flex', color: 'var(--sand-500)' }}><Briefcase size={20} strokeWidth={1.5} /></span>
                     <div style={{ flex: 1 }}>
                       <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 1px' }}>Primary Income</p>
                       <p style={{ fontSize: '11px', color: 'var(--sand-500)', margin: 0 }}>From your profile</p>
@@ -834,6 +867,122 @@ function GrowthSection({
             </div>
           )}
 
+          {/* Add income stream button */}
+          <button
+            onClick={() => setShowAddStream(true)}
+            style={{
+              width: '100%', padding: '12px', background: 'transparent',
+              border: '1px dashed var(--sand-400)', borderRadius: 'var(--radius-md)',
+              color: 'var(--sand-600)', fontSize: '13px', fontWeight: '500',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+            }}
+          >
+            <Plus size={15} />
+            Add income stream
+          </button>
+
+          {/* Add income stream modal */}
+          {showAddStream && (
+            <div
+              style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200,
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+              }}
+              onClick={e => { if (e.target === e.currentTarget) setShowAddStream(false) }}
+            >
+              <div style={{
+                background: 'var(--bg)', borderRadius: '18px 18px 0 0', padding: '24px 20px 36px',
+                width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '14px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <p style={{ fontSize: '16px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>Add income stream</p>
+                  <button onClick={() => setShowAddStream(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sand-500)', fontSize: '18px', padding: '4px' }}>✕</button>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '6px' }}>Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Freelance design, Rental income"
+                    value={streamName}
+                    onChange={e => setStreamName(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px 12px', background: 'var(--sand-100)',
+                      border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)',
+                      fontSize: '14px', color: 'var(--sand-900)', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '6px' }}>Type</label>
+                  <select
+                    value={streamType}
+                    onChange={e => setStreamType(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px 12px', background: 'var(--sand-100)',
+                      border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)',
+                      fontSize: '14px', color: 'var(--sand-900)', appearance: 'none'
+                    }}
+                  >
+                    <option value="salary">Salary</option>
+                    <option value="freelance">Freelance</option>
+                    <option value="business">Business</option>
+                    <option value="investment">Investment</option>
+                    <option value="rental">Rental</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '6px' }}>Amount</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={streamAmount}
+                      onChange={e => setStreamAmount(e.target.value)}
+                      style={{
+                        width: '100%', padding: '10px 12px', background: 'var(--sand-100)',
+                        border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)',
+                        fontSize: '14px', color: 'var(--sand-900)', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: '600', color: 'var(--sand-500)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '6px' }}>Frequency</label>
+                    <select
+                      value={streamFrequency}
+                      onChange={e => setStreamFrequency(e.target.value as 'monthly' | 'annual' | 'weekly')}
+                      style={{
+                        width: '100%', padding: '10px 12px', background: 'var(--sand-100)',
+                        border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-sm)',
+                        fontSize: '14px', color: 'var(--sand-900)', appearance: 'none'
+                      }}
+                    >
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  onClick={saveNewStream}
+                  disabled={streamSaving || !streamName.trim() || !streamAmount}
+                  style={{
+                    padding: '13px', background: 'var(--sand-900)', border: 'none',
+                    borderRadius: 'var(--radius-md)', color: 'white', fontSize: '15px',
+                    fontWeight: '600', cursor: 'pointer', marginTop: '4px',
+                    opacity: streamSaving || !streamName.trim() || !streamAmount ? 0.5 : 1
+                  }}
+                >
+                  {streamSaving ? 'Saving…' : 'Add stream'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* What to do next */}
           <div style={{ padding: '12px 14px', background: 'var(--sand-100)', borderRadius: 'var(--radius-sm)', borderLeft: '2px solid var(--sand-300)' }}>
             <p style={{ fontSize: '10px', fontWeight: '700', color: 'var(--sand-500)', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Next step</p>
@@ -868,7 +1017,7 @@ function GrowthSection({
 }
 
 function StockDetail({
-  quote, onClose, alertPrice, onSetAlert, sharesOwned, onSetShares
+  quote, onClose, alertPrice, onSetAlert, sharesOwned, onSetShares, profile
 }: {
   quote: StockQuote
   onClose: () => void
@@ -876,6 +1025,7 @@ function StockDetail({
   onSetAlert: (price: number | null) => void
   sharesOwned: number
   onSetShares: (shares: number) => void
+  profile: any
 }) {
   const [period, setPeriod] = useState('1M')
   const [chartData, setChartData] = useState<{ labels: string[]; prices: number[] } | null>(null)
@@ -885,6 +1035,44 @@ function StockDetail({
   const [alertInput, setAlertInput] = useState(alertPrice ? String(alertPrice) : '')
   const [sharesInput, setSharesInput] = useState(sharesOwned > 0 ? String(sharesOwned) : '')
   const [minimizedAI, setMinimizedAI] = useState(false)
+
+  // Stock chat state
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  const sendChatMessage = async () => {
+    const text = chatInput.trim()
+    if (!text || chatLoading) return
+    const userMsg = { role: 'user' as const, content: text }
+    const updated = [...chatMessages, userMsg]
+    setChatMessages(updated)
+    setChatInput('')
+    setChatLoading(true)
+    try {
+      const stockContext = `The user is asking about ${quote.symbol}${quote.name ? ` (${quote.name})` : ''}. Current price: $${quote.price.toFixed(2)}, change today: ${quote.change >= 0 ? '+' : ''}${quote.change.toFixed(2)} (${quote.changePercent}%)${quote.fiftyTwoWeekHigh ? `, 52-week range: $${quote.fiftyTwoWeekLow?.toFixed(2)}–$${quote.fiftyTwoWeekHigh?.toFixed(2)}` : ''}. Answer questions about this specific stock.`
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: updated,
+          profile,
+          topic: stockContext,
+        })
+      })
+      const data = await res.json()
+      const reply = data.message || 'No response.'
+      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }])
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }])
+    }
+    setChatLoading(false)
+  }
 
   useEffect(() => { fetchChart() }, [period])
   useEffect(() => { fetchAnalysis() }, [])
@@ -1133,6 +1321,61 @@ function StockDetail({
               </div>
             )}
           </div>
+
+          {/* Ask follow-up questions */}
+          <div className="card-muted" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px', borderBottom: chatMessages.length > 0 ? '0.5px solid var(--sand-200)' : 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '22px', height: '22px', background: 'var(--sand-300)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <MessageCircle size={12} color="var(--sand-600)" />
+              </div>
+              <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--sand-700)', margin: 0 }}>Ask about {quote.symbol}</p>
+            </div>
+
+            {chatMessages.length > 0 && (
+              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
+                {chatMessages.map((msg, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{
+                      maxWidth: '85%', padding: '9px 12px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                      background: msg.role === 'user' ? 'var(--sand-900)' : 'var(--sand-200)',
+                      fontSize: '13px', lineHeight: '1.5',
+                      color: msg.role === 'user' ? 'var(--sand-50)' : 'var(--sand-800)'
+                    }}>
+                      {msg.role === 'assistant' ? formatAnalysis(msg.content) : msg.content}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div style={{ display: 'flex', gap: '5px', padding: '4px 2px' }}>
+                    {[0, 150, 300].map(d => <div key={d} style={{ width: '6px', height: '6px', background: 'var(--sand-400)', borderRadius: '50%', animation: 'pulse 1.2s infinite', animationDelay: `${d}ms` }} />)}
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+
+            <div style={{ padding: '10px 12px', display: 'flex', gap: '8px', borderTop: chatMessages.length > 0 ? '0.5px solid var(--sand-200)' : 'none' }}>
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage() } }}
+                placeholder={`Ask anything about ${quote.symbol}…`}
+                style={{ flex: 1, fontSize: '13px', padding: '9px 12px', background: 'var(--sand-100)', border: '0.5px solid var(--sand-300)', borderRadius: '20px', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={!chatInput.trim() || chatLoading}
+                style={{
+                  width: '34px', height: '34px', borderRadius: '50%', border: 'none', flexShrink: 0, alignSelf: 'center',
+                  background: chatInput.trim() && !chatLoading ? 'var(--sand-900)' : 'var(--sand-300)',
+                  cursor: chatInput.trim() && !chatLoading ? 'pointer' : 'default',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s'
+                }}
+              >
+                <Send size={14} color={chatInput.trim() && !chatLoading ? 'var(--sand-50)' : 'var(--sand-500)'} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1332,16 +1575,25 @@ export default function Grow() {
     try {
       let newArticles: Article[] = []
       if (category === 'portfolio') {
-        if (watchlist.length === 0) {
+        // Collect actual portfolio holdings first (most relevant), then fill from watchlist
+        const holdingSymbols: string[] = []
+        for (const asset of profile?.assets || []) {
+          for (const pos of asset.positions || []) {
+            if (pos.symbol && !holdingSymbols.includes(pos.symbol)) holdingSymbols.push(pos.symbol)
+          }
+        }
+        const allSymbols = [...new Set([...holdingSymbols, ...watchlist])].slice(0, 8)
+
+        if (allSymbols.length === 0) {
           newArticles = []
         } else {
-          // Build query from company names (better than tickers for news search)
-          // Fall back to ticker symbols if name not available
-          const terms = watchlist.slice(0, 6).map(sym => {
+          // Build terms: use "ticker OR company_name" pairs for each holding so both forms match
+          const terms = allSymbols.map(sym => {
             const stock = stocks.find(s => s.symbol === sym)
             if (stock?.name) {
-              // Strip common suffixes to get a cleaner search term
-              return stock.name.replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC\.?|Holdings?|Group|Co\.?|plc)$/i, '').trim()
+              const cleanName = stock.name.replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC\.?|Holdings?|Group|Co\.?|plc)$/i, '').trim()
+              // Include both ticker and company name for precision
+              return `(${sym} OR "${cleanName}")`
             }
             return sym
           })
@@ -1598,7 +1850,7 @@ Please give me a thorough breakdown:
       {/* Global Search Bar */}
       <div style={{ marginBottom: '16px', position: 'relative' }} onClick={e => e.stopPropagation()}>
         <div style={{ position: 'relative' }}>
-          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: 'var(--sand-400)', pointerEvents: 'none' }}>🔍</span>
+          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--sand-400)', pointerEvents: 'none', display: 'flex' }}><Search size={14} strokeWidth={1.5} /></span>
           <input
             value={globalSearch}
             onChange={e => handleGlobalSearch(e.target.value)}
@@ -1705,7 +1957,7 @@ Please give me a thorough breakdown:
         liveQuotesLoading={liveQuotesLoading}
         refreshLiveQuotes={refreshLiveQuotes}
         updateProfile={updateProfile}
-        onSelectStock={setSelectedStock}
+        onSelectStock={openTickerDetail}
       />
 
       {/* Watchlist */}
@@ -2318,6 +2570,7 @@ Please give me a thorough breakdown:
           onSetAlert={price => savePriceAlert(selectedStock.symbol, price)}
           sharesOwned={shareCounts[selectedStock.symbol] || 0}
           onSetShares={shares => saveShareCount(selectedStock.symbol, shares)}
+          profile={profile}
         />
       )}
     </div>

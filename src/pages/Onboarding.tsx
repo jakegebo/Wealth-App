@@ -1094,7 +1094,7 @@ export default function Onboarding() {
                                     {unclaimed > 0 && (
                                       <div style={{ padding: '7px 10px', background: 'rgba(200,148,58,0.08)', border: '0.5px solid rgba(200,148,58,0.3)', borderRadius: 'var(--radius-sm)' }}>
                                         <p style={{ fontSize: '11px', color: 'var(--warning)', margin: 0, fontWeight: '500' }}>
-                                          ⚠ You're leaving {fmt(unclaimed)}/yr of free match unclaimed. Bump contributions to {asset.employer_match_cap}% to capture it.
+                                          You're leaving {fmt(unclaimed)}/yr of free match unclaimed. Bump contributions to {asset.employer_match_cap}% to capture it.
                                         </p>
                                       </div>
                                     )}

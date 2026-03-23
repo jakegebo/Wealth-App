@@ -1,6 +1,34 @@
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
+// Maps certain goal categories to actual asset values so current_amount
+// stays in sync automatically when the user updates their financials.
+const GOAL_ASSET_SYNC: Record<string, string[]> = {
+  emergency_fund: ['savings'],
+  retirement:     ['retirement'],
+  investment:     ['brokerage', 'investment'],
+  vehicle:        ['vehicle', 'auto'],
+  business:       ['business'],
+}
+
+function syncGoalAmounts(profile: any): any {
+  if (!profile?.goals?.length || !profile?.assets) return profile
+  const assets: any[] = profile.assets
+
+  const sumCategories = (cats: string[]) =>
+    assets
+      .filter(a => cats.includes((a.category || '').toLowerCase()))
+      .reduce((s: number, a: any) => s + (a.value || 0), 0)
+
+  const goals = profile.goals.map((goal: any) => {
+    const cats = GOAL_ASSET_SYNC[goal.category]
+    if (!cats) return goal
+    return { ...goal, current_amount: sumCategories(cats) }
+  })
+
+  return { ...profile, goals }
+}
+
 interface LiveQuote {
   price: number
   change: number
@@ -112,7 +140,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setUserEmail(user.email || '')
     const { data } = await supabase.from('profiles').select('*').eq('user_id', user.id).single()
     if (data) {
-      const pd = data.profile_data || null
+      const pd = syncGoalAmounts(data.profile_data || null)
       setHasProfile(true)
       setProfileData(pd)
       setAnalysis(data.analysis || null)
@@ -147,6 +175,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   }
 
   const updateProfile = async (updates: Record<string, any>) => {
+    // Sync goal amounts from assets before saving
+    if ('profile_data' in updates && updates.profile_data) {
+      updates = { ...updates, profile_data: syncGoalAmounts(updates.profile_data) }
+    }
     // Optimistic local updates
     if ('profile_data' in updates) { setProfileData(updates.profile_data); setHasProfile(true) }
     if ('analysis' in updates) setAnalysis(updates.analysis)

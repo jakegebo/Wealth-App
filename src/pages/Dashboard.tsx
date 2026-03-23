@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { Newspaper, Umbrella, DollarSign, RefreshCw, Settings as SettingsIcon } from 'lucide-react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -222,17 +223,17 @@ export default function Dashboard() {
           </div>
           <div className="dash-nav-actions">
             {[
-              { label: '📰', path: '/news', title: 'News' },
-              { label: '🏖️', path: '/retirement', title: 'Retire' },
-              { label: '💰', path: '/money', title: 'Money' },
+              { Icon: Newspaper, path: '/news', title: 'News' },
+              { Icon: Umbrella, path: '/retirement', title: 'Retire' },
+              { Icon: DollarSign, path: '/money', title: 'Money' },
             ].map(item => (
               <button key={item.path} onClick={() => navigate(item.path)} style={s.ghostBtn} title={item.title}>
-                {item.label} <span style={{ fontSize: '12px' }}>{item.title}</span>
+                <item.Icon size={13} strokeWidth={1.5} /> <span style={{ fontSize: '12px' }}>{item.title}</span>
               </button>
             ))}
             <button onClick={() => navigate('/chats')} style={s.accentBtn}>Ask AI</button>
-            <button onClick={() => runAnalysis(profile)} style={s.ghostBtn} title="Refresh">↻</button>
-            <button onClick={() => navigate('/settings')} style={s.ghostBtn} title="Settings">⚙</button>
+            <button onClick={() => runAnalysis(profile)} style={s.ghostBtn} title="Refresh"><RefreshCw size={13} strokeWidth={1.5} /></button>
+            <button onClick={() => navigate('/settings')} style={s.ghostBtn} title="Settings"><SettingsIcon size={13} strokeWidth={1.5} /></button>
             <button onClick={() => navigate('/onboarding')} style={s.ghostBtn}>Edit</button>
             <button onClick={handleSignOut} style={s.ghostBtn}>Sign out</button>
           </div>
@@ -471,7 +472,7 @@ export default function Dashboard() {
             {isVisible('income') && (
               <button onClick={() => navigate('/money')}
                 style={{ ...s.card, display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ width: '38px', height: '38px', background: 'rgba(251,191,36,0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '18px' }}>💰</div>
+                <div style={{ width: '38px', height: '38px', background: 'rgba(251,191,36,0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><DollarSign size={18} strokeWidth={1.5} color="rgba(200,148,58,0.9)" /></div>
                 <div>
                   <p style={{ ...s.text, fontWeight: '600', fontSize: '13px', margin: 0 }}>Make More Money</p>
                   <p style={{ ...s.muted, fontSize: '11px', margin: 0 }}>Ideas, strategies & AI coaching</p>

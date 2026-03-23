@@ -12,9 +12,15 @@ export default async function handler(req: any, res: any) {
     ai: 'artificial intelligence AI investing OpenAI technology'
   }
 
-  const query = encodeURIComponent(
-    (customQuery as string) || queries[category as string] || queries.markets
-  )
+  const FINANCE_ANCHOR = 'stock OR shares OR earnings OR revenue OR investor OR market OR SEC OR dividend OR IPO OR trading OR portfolio OR fund OR ETF OR financial OR fiscal'
+
+  // For portfolio queries, AND the company terms with finance terms so WWE-style noise is filtered out
+  const rawQuery = (customQuery as string) || queries[category as string] || queries.markets
+  const finalQuery = customQuery
+    ? `(${rawQuery}) AND (${FINANCE_ANCHOR})`
+    : rawQuery
+
+  const query = encodeURIComponent(finalQuery)
 
   try {
     const today = new Date().toISOString().split('T')[0]
@@ -33,9 +39,24 @@ export default async function handler(req: any, res: any) {
       'Daily Mail',
       'The Sun',
     ]
+
+    const FINANCE_KEYWORDS = [
+      'stock', 'share', 'earn', 'revenue', 'invest', 'market', 'sec', 'dividend',
+      'ipo', 'trad', 'portfolio', 'fund', 'etf', 'financial', 'fiscal', 'quarter',
+      'profit', 'loss', 'valuat', 'analyst', 'forecast', 'guidance', 'rally',
+      'selloff', 'bull', 'bear', 'nasdaq', 's&p', 'dow', 'nyse', 'fed', 'rate',
+    ]
+
+    const isFinanceRelevant = (a: any) => {
+      if (!customQuery) return true // category queries are already finance-focused
+      const text = ((a.title || '') + ' ' + (a.description || '')).toLowerCase()
+      return FINANCE_KEYWORDS.some(kw => text.includes(kw))
+    }
+
     const filterArticles = (list: any[]) => list.filter((a: any) =>
       a.title && !a.title.includes('[Removed]') && a.description &&
-      !EXCLUDED_SOURCES.includes(a.source?.name)
+      !EXCLUDED_SOURCES.includes(a.source?.name) &&
+      isFinanceRelevant(a)
     )
 
     let articles = filterArticles(data.articles || [])

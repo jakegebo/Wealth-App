@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
+import { CreditCard, Umbrella, TrendingUp, MessageCircle, Wallet, ClipboardList, FolderOpen, type LucideIcon } from 'lucide-react'
 
 interface Chat {
   id: string
@@ -11,21 +12,21 @@ interface Chat {
   updated_at: string
 }
 
-const TOPIC_ICONS: Record<string, string> = {
-  debt: '💳',
-  retirement: '🏖️',
-  investment: '📈',
-  general: '💬',
-  money: '💰'
+const TOPIC_ICONS: Record<string, LucideIcon> = {
+  debt: CreditCard,
+  retirement: Umbrella,
+  investment: TrendingUp,
+  general: MessageCircle,
+  money: Wallet
 }
 
-const QUICK_TOPICS = [
-  { id: 'general', label: 'Weekly digest', icon: '📋', prompt: 'Give me a concise weekly financial summary. Cover: (1) my overall financial health in 2 sentences, (2) the single most important thing to focus on this week, (3) one specific action I can take today. Be direct and specific to my actual numbers.' },
-  { id: 'debt', label: 'Debt strategy', icon: '💳', prompt: 'Help me create a detailed debt payoff strategy based on my current debts and income.' },
-  { id: 'investment', label: 'Investing', icon: '📈', prompt: 'Based on my financial situation, what should I be investing in and how should I allocate my available savings?' },
-  { id: 'retirement', label: 'Retirement', icon: '🏖️', prompt: 'Analyze my retirement trajectory. Am I on track? What should I do to retire earlier or more comfortably?' },
-  { id: 'general', label: 'General advice', icon: '💬', prompt: 'Give me a summary of my overall financial health and the most important things I should focus on right now.' },
-  { id: 'general', label: 'Portfolio review', icon: '🗂️', prompt: 'Review my investment portfolio and asset allocation. Are my holdings well-diversified? What would you change, add, or remove based on my goals and timeline? Be specific about my actual holdings.' },
+const QUICK_TOPICS: Array<{ id: string; label: string; Icon: LucideIcon; prompt: string }> = [
+  { id: 'general', label: 'Weekly digest', Icon: ClipboardList, prompt: 'Give me a concise weekly financial summary. Cover: (1) my overall financial health in 2 sentences, (2) the single most important thing to focus on this week, (3) one specific action I can take today. Be direct and specific to my actual numbers.' },
+  { id: 'debt', label: 'Debt strategy', Icon: CreditCard, prompt: 'Help me create a detailed debt payoff strategy based on my current debts and income.' },
+  { id: 'investment', label: 'Investing', Icon: TrendingUp, prompt: 'Based on my financial situation, what should I be investing in and how should I allocate my available savings?' },
+  { id: 'retirement', label: 'Retirement', Icon: Umbrella, prompt: 'Analyze my retirement trajectory. Am I on track? What should I do to retire earlier or more comfortably?' },
+  { id: 'general', label: 'General advice', Icon: MessageCircle, prompt: 'Give me a summary of my overall financial health and the most important things I should focus on right now.' },
+  { id: 'general', label: 'Portfolio review', Icon: FolderOpen, prompt: 'Review my investment portfolio and asset allocation. Are my holdings well-diversified? What would you change, add, or remove based on my goals and timeline? Be specific about my actual holdings.' },
 ]
 
 function timeAgo(dateStr: string) {
@@ -95,7 +96,7 @@ export default function Chats() {
             {QUICK_TOPICS.map((topic, idx) => (
               <button key={idx} onClick={() => createChat(topic.id, topic.label, topic.prompt)}
                 style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', padding: '14px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}>
-                <div style={{ fontSize: '20px', marginBottom: '6px' }}>{topic.icon}</div>
+                <div style={{ marginBottom: '6px', color: 'var(--sand-600)', display: 'flex' }}><topic.Icon size={18} strokeWidth={1.5} /></div>
                 <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--sand-900)', margin: 0 }}>{topic.label}</p>
               </button>
             ))}
@@ -111,8 +112,8 @@ export default function Chats() {
                 <div key={chat.id} style={{ background: 'var(--sand-50)', border: '0.5px solid var(--sand-300)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
                   <button onClick={() => navigate(`/chat/${chat.id}`)}
                     style={{ flex: 1, minWidth: 0, padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ width: '36px', height: '36px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '16px' }}>
-                      {TOPIC_ICONS[chat.topic] || '💬'}
+                    <div style={{ width: '36px', height: '36px', background: 'var(--accent-light)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {(() => { const Icon = TOPIC_ICONS[chat.topic] || MessageCircle; return <Icon size={16} strokeWidth={1.5} color="var(--accent)" /> })()}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: '14px', fontWeight: '500', color: 'var(--sand-900)', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chat.title}</p>

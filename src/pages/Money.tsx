@@ -321,7 +321,7 @@ Please give me a thorough breakdown:
                         <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginTop: isSelected ? '0' : '0' }}>
                           <button onClick={e => { e.stopPropagation(); toggleSaved(idea) }}
                             style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: isSaved ? 'rgba(200,148,58,0.1)' : 'var(--sand-200)', border: 'none', cursor: 'pointer', fontSize: '15px' }}>
-                            {isSaved ? '⭐' : '☆'}
+                            {isSaved ? '★' : '☆'}
                           </button>
                           <button onClick={e => { e.stopPropagation(); openIdeaChat(idea) }}
                             style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-light)', border: '0.5px solid var(--accent-border)', color: 'var(--accent)', cursor: 'pointer', fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

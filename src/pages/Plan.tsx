@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
 import { getContributionStatus } from '../lib/retirementLimits'
+import { Shield, CreditCard, TrendingUp, Home, Target, GraduationCap, Car, Briefcase, Heart, Flame, Wallet, Star, Plane, AlertTriangle, Lightbulb, Umbrella, type LucideIcon } from 'lucide-react'
 
 interface Goal {
   name: string
@@ -17,7 +18,6 @@ interface SuggestedGoal {
   id: string
   name: string
   category: string
-  icon: string
   why: string
   how: string
   targetAmount: number
@@ -71,7 +71,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     const monthly = Math.max(100, Math.round(surplus * 0.35))
     const mos = monthly > 0 ? Math.ceil(needed / monthly) : 24
     suggestions.push({
-      id: 'emergency_fund', name: 'Build emergency fund', category: 'emergency_fund', icon: '🛡️',
+      id: 'emergency_fund', name: 'Build emergency fund', category: 'emergency_fund',
       priority: 'high',
       why: `You have ${emergencyMonths.toFixed(1)} months of expenses covered${emergencyMonths < 1 ? ' — essentially nothing' : ''}. One unexpected job loss, car repair, or medical bill would force you into high-interest debt immediately.`,
       how: `Open a high-yield savings account (currently ~4.5% APY at Fidelity/Marcus). Auto-transfer ${fmt(monthly)}/mo. You'll hit 6 months of coverage in ${mos} months.`,
@@ -88,7 +88,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     const mos = totalPmt > 0 ? Math.ceil(top.balance / totalPmt) : 36
     if (!dismissed.includes('debt_payoff')) {
       suggestions.push({
-        id: 'debt_payoff', name: `Pay off ${top.name}`, category: 'debt_payoff', icon: '💳',
+        id: 'debt_payoff', name: `Pay off ${top.name}`, category: 'debt_payoff',
         priority: 'high',
         why: `Your ${top.name} at ${top.interest_rate}% costs you ${fmt(monthlyInterest)}/mo — ${fmt(monthlyInterest * 12)}/yr — just in interest. Paying it off is a guaranteed ${top.interest_rate}% return on your money.`,
         how: `Pay ${fmt(totalPmt)}/mo (min ${fmt(top.minimum_payment || 0)} + ${fmt(extraPmt)} extra). Debt-free in ~${mos} months, saving ${fmt(monthlyInterest * mos * 0.6)} in interest.`,
@@ -107,7 +107,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     if (!hasRetirement && !hasIRA) {
       // No IRA at all — suggest opening one
       suggestions.push({
-        id: 'roth_ira', name: 'Open and fund a Roth IRA', category: 'investment', icon: '📈',
+        id: 'roth_ira', name: 'Open and fund a Roth IRA', category: 'investment',
         priority: 'high',
         why: `You have no retirement account. Money in a Roth IRA grows completely tax-free. ${fmt(500)}/mo invested at 7% for 30 years becomes ${fmt(future)} — all tax-free at withdrawal.`,
         how: `Open at Fidelity (no minimums, no fees). Invest in VTI or a target-date fund. Contribute $583/mo to hit the $7,000/yr IRS limit.`,
@@ -116,7 +116,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     } else if (hasIRA || hasRetirement) {
       // Has IRA but not maxed — suggest maxing it
       suggestions.push({
-        id: 'roth_ira', name: 'Max out your Roth IRA', category: 'investment', icon: '📈',
+        id: 'roth_ira', name: 'Max out your Roth IRA', category: 'investment',
         priority: 'high',
         why: contributed > 0
           ? `You've contributed ${fmt(contributed)} toward the $7,000 IRA limit this year — ${fmt(remaining)} left. Maxing it secures the full tax-free compounding benefit for the year.`
@@ -133,7 +133,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     const monthly = Math.round(Math.min(surplus * 0.25, 700))
     const mos = monthly > 0 ? Math.ceil(downTarget / monthly) : 48
     suggestions.push({
-      id: 'home_purchase', name: 'Save for a home down payment', category: 'home_purchase', icon: '🏡',
+      id: 'home_purchase', name: 'Save for a home down payment', category: 'home_purchase',
       priority: 'medium',
       why: `A 20% down payment eliminates PMI (often $100–200/mo), qualifies you for lower rates, and builds equity from day one instead of paying it to a lender.`,
       how: `Keep this in a high-yield savings account or short-term T-bills (SGOV, ~5% yield). At ${fmt(monthly)}/mo you'd reach ${fmt(downTarget)} in ~${Math.ceil(mos / 12)} years.`,
@@ -149,7 +149,7 @@ function generateGoalSuggestions(profile: any, analysis: any): SuggestedGoal[] {
     const monthly = Math.round(Math.min(surplus * 0.4, 1000))
     const mos = monthly > 0 ? Math.ceil(needed / monthly) : 36
     suggestions.push({
-      id: `milestone_${nextMilestone}`, name: `Reach ${fmt(nextMilestone)} net worth`, category: 'investment', icon: '🎯',
+      id: `milestone_${nextMilestone}`, name: `Reach ${fmt(nextMilestone)} net worth`, category: 'investment',
       priority: 'medium',
       why: `You're ${fmt(needed)} away from the ${fmt(nextMilestone)} milestone. Net worth milestones are a proven benchmark for financial independence — each one opens more options.`,
       how: `Consistently investing ${fmt(monthly)}/mo in a diversified index fund (VTI) puts you there in ~${mos} months. Your existing assets also compound in the meantime.`,
@@ -465,19 +465,19 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
 
   const STRATEGY_INFO = {
     avalanche: {
-      label: 'Avalanche', tagline: 'Saves the most money', emoji: '🧊',
+      label: 'Avalanche', tagline: 'Saves the most money',
       detail: 'Target highest interest rate first. Every extra dollar eliminates the most expensive debt. Roll each freed payment into the next.',
       color: 'var(--accent)', accent: 'rgba(122,158,110,0.1)', border: 'rgba(122,158,110,0.25)',
       focusLabel: 'ATTACK FIRST', focusColor: 'var(--accent)',
     },
     snowball: {
-      label: 'Snowball', tagline: 'Builds fastest momentum', emoji: '⛄',
+      label: 'Snowball', tagline: 'Builds fastest momentum',
       detail: 'Target smallest balance first. Clear debts quickly for psychological wins. Roll each freed payment into the next smallest.',
       color: '#6a8aae', accent: 'rgba(106,138,174,0.1)', border: 'rgba(106,138,174,0.25)',
       focusLabel: 'FIRST WIN', focusColor: '#6a8aae',
     },
     minimum: {
-      label: 'Minimum only', tagline: 'Costs the most', emoji: '⚠️',
+      label: 'Minimum only', tagline: 'Costs the most',
       detail: 'Pay only required minimums. Longest payoff timeline, maximum interest paid to lenders.',
       color: 'var(--danger)', accent: 'rgba(192,57,43,0.06)', border: 'rgba(192,57,43,0.18)',
       focusLabel: '', focusColor: 'var(--danger)',
@@ -505,7 +505,7 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
           {activePlan && !changingPlan ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
               <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--sand-900)' }}>
-                {planInfo.emoji} {planInfo.label} Plan
+                {planInfo.label} Plan
               </span>
               {isRecommendedActive && (
                 <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--success)', background: 'rgba(122,158,110,0.12)', padding: '2px 7px', borderRadius: '20px' }}>
@@ -798,7 +798,7 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
                 const quickWins = sortedDebts.filter(d => (payoffByName[d.name] || 999) <= 12)
                 return quickWins.length > 0 ? (
                   <p style={{ fontSize: '12px', color: '#6a8aae', margin: '10px 0 0', fontWeight: '600' }}>
-                    ⛄ {quickWins.length} debt{quickWins.length > 1 ? 's' : ''} gone within a year: {quickWins.map(d => d.name).join(', ')}
+                    {quickWins.length} debt{quickWins.length > 1 ? 's' : ''} gone within a year: {quickWins.map(d => d.name).join(', ')}
                   </p>
                 ) : null
               })()}
@@ -807,7 +807,7 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
 
           {activePlan === 'minimum' && (
             <div style={{ padding: '14px 16px', background: 'rgba(192,57,43,0.06)', border: '0.5px solid rgba(192,57,43,0.18)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>⚠️ Cost of minimums-only</p>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: '5px' }}><AlertTriangle size={12} strokeWidth={2} /> Cost of minimums-only</p>
               <p style={{ fontSize: '13px', color: 'var(--sand-700)', margin: '0 0 8px', lineHeight: '1.5' }}>
                 You'll pay {fmt(minResult.totalInterest)} in interest over {formatMonths(minResult.months)}. Switching to Avalanche saves {fmt(minResult.totalInterest - avaResult.totalInterest)} and finishes {formatMonths(minResult.months - avaResult.months)} sooner.
               </p>
@@ -909,19 +909,19 @@ function DebtOptimizerCard({ profileDebts, availableToSave, initialPlan, onPlanC
   )
 }
 
-const GOAL_CATEGORIES = [
-  { id: 'emergency_fund', label: 'Emergency Fund',  icon: '🛡️', desc: 'Cover 3–6 months of expenses' },
-  { id: 'retirement',     label: 'Retirement',       icon: '🌅', desc: 'Long-term financial freedom' },
-  { id: 'home_purchase',  label: 'Buy a Home',       icon: '🏠', desc: 'Down payment & closing costs' },
-  { id: 'investment',     label: 'Investing',        icon: '📈', desc: 'Grow wealth outside retirement' },
-  { id: 'education',      label: 'Education',        icon: '🎓', desc: 'College, courses, or skills' },
-  { id: 'vehicle',        label: 'Vehicle',          icon: '🚗', desc: 'Car, truck, or other transport' },
-  { id: 'vacation',       label: 'Travel',           icon: '✈️', desc: 'Trips and adventures' },
-  { id: 'business',       label: 'Business',         icon: '💼', desc: 'Start or grow a business' },
-  { id: 'wedding',        label: 'Wedding',          icon: '💍', desc: 'Your special day' },
-  { id: 'debt_payoff',    label: 'Pay Off Debt',     icon: '🔥', desc: 'Become debt-free faster' },
-  { id: 'savings',        label: 'General Savings',  icon: '🏦', desc: 'Build a savings cushion' },
-  { id: 'other',          label: 'Other',            icon: '⭐', desc: 'Something unique to you' },
+const GOAL_CATEGORIES: Array<{ id: string; label: string; Icon: LucideIcon; desc: string }> = [
+  { id: 'emergency_fund', label: 'Emergency Fund',  Icon: Shield,        desc: 'Cover 3–6 months of expenses' },
+  { id: 'retirement',     label: 'Retirement',       Icon: Umbrella,      desc: 'Long-term financial freedom' },
+  { id: 'home_purchase',  label: 'Buy a Home',       Icon: Home,          desc: 'Down payment & closing costs' },
+  { id: 'investment',     label: 'Investing',        Icon: TrendingUp,    desc: 'Grow wealth outside retirement' },
+  { id: 'education',      label: 'Education',        Icon: GraduationCap, desc: 'College, courses, or skills' },
+  { id: 'vehicle',        label: 'Vehicle',          Icon: Car,           desc: 'Car, truck, or other transport' },
+  { id: 'vacation',       label: 'Travel',           Icon: Plane,         desc: 'Trips and adventures' },
+  { id: 'business',       label: 'Business',         Icon: Briefcase,     desc: 'Start or grow a business' },
+  { id: 'wedding',        label: 'Wedding',          Icon: Heart,         desc: 'Your special day' },
+  { id: 'debt_payoff',    label: 'Pay Off Debt',     Icon: Flame,         desc: 'Become debt-free faster' },
+  { id: 'savings',        label: 'General Savings',  Icon: Wallet,        desc: 'Build a savings cushion' },
+  { id: 'other',          label: 'Other',            Icon: Star,          desc: 'Something unique to you' },
 ]
 
 const DEFAULT_NAMES: Record<string, string> = {
@@ -998,7 +998,7 @@ function AddGoalSheet({ onClose, onSave }: {
             )}
             <div>
               <p style={{ fontSize: '10px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 2px' }}>
-                {step === 'category' ? 'New goal' : `New goal · ${cat?.icon} ${cat?.label}`}
+                {step === 'category' ? 'New goal' : `New goal · ${cat?.label}`}
               </p>
               <h2 style={{ fontSize: '17px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>
                 {step === 'category' ? 'What are you saving for?' : 'Set your target'}
@@ -1033,7 +1033,7 @@ function AddGoalSheet({ onClose, onSave }: {
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.border = '0.5px solid var(--accent)'; (e.currentTarget as HTMLElement).style.background = 'var(--accent-light)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.border = '0.5px solid var(--sand-200)'; (e.currentTarget as HTMLElement).style.background = 'var(--sand-100)' }}
                 >
-                  <span style={{ fontSize: '22px', lineHeight: 1, marginBottom: '2px' }}>{cat.icon}</span>
+                  <span style={{ lineHeight: 1, marginBottom: '2px', color: 'var(--sand-600)', display: 'flex' }}><cat.Icon size={20} strokeWidth={1.5} /></span>
                   <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--sand-900)' }}>{cat.label}</span>
                   <span style={{ fontSize: '11px', color: 'var(--sand-400)', lineHeight: '1.3' }}>{cat.desc}</span>
                 </button>
@@ -1406,7 +1406,7 @@ export default function Plan() {
           {(aiSuggestions ?? suggestions).length > 0 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <p className="label" style={{ margin: 0 }}>💡 Suggested for you</p>
+                <p className="label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '5px' }}><Lightbulb size={12} strokeWidth={1.8} />Suggested for you</p>
                 <button
                   onClick={fetchNewSuggestions}
                   disabled={loadingSuggestions}
@@ -1429,7 +1429,7 @@ export default function Plan() {
                       <div style={{ width: '10px', height: '10px', border: '1.5px solid var(--sand-300)', borderTopColor: 'var(--sand-500)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                       Loading…
                     </>
-                  ) : '↻ New suggestions'}
+                  ) : 'New suggestions'}
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1484,7 +1484,7 @@ export default function Plan() {
             />
           ) : (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <p style={{ fontSize: '36px', margin: '0 0 12px' }}>🎉</p>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(122,158,110,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><TrendingUp size={22} strokeWidth={1.5} color="var(--accent)" /></div>
               <p style={{ fontSize: '15px', fontWeight: '500', color: 'var(--sand-800)', margin: '0 0 6px' }}>No debt on record</p>
               <p style={{ fontSize: '13px', color: 'var(--sand-500)', margin: 0 }}>Add debts in settings to see your payoff plan.</p>
             </div>

@@ -34,25 +34,21 @@ const SECTION_GROUPS = [
   {
     key: 'home',
     tab: 'Home',
-    emoji: '🏠',
     ids: ['health', 'insights', 'focus', 'stats', 'cashflow'],
   },
   {
     key: 'plan',
     tab: 'Plan',
-    emoji: '📋',
     ids: ['goals', 'actions', 'debt'],
   },
   {
     key: 'grow',
     tab: 'Grow',
-    emoji: '📈',
     ids: ['watchlist', 'income'],
   },
   {
     key: 'other',
     tab: 'Previews',
-    emoji: '👀',
     ids: ['news', 'retirement'],
   },
 ]
@@ -217,7 +213,6 @@ export default function Settings() {
                 <div key={group.key}>
                   {/* Group header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '13px' }}>{group.emoji}</span>
                     <p style={{ fontSize: '11px', fontWeight: '700', color: 'var(--sand-500)', margin: 0, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{group.tab}</p>
                     <div style={{ flex: 1, height: '0.5px', background: 'var(--sand-300)' }} />
                   </div>
