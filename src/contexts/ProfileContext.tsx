@@ -22,7 +22,7 @@ function syncGoalAmounts(profile: any): any {
 
   const goals = profile.goals.map((goal: any) => {
     const cats = GOAL_ASSET_SYNC[goal.category]
-    if (!cats) return goal
+    if (!cats || goal.manual_amount) return goal
     return { ...goal, current_amount: sumCategories(cats) }
   })
 

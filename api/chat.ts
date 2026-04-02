@@ -168,7 +168,7 @@ End every response with: <followups>["Personalized follow-up question 1?","Perso
       try {
         const stream = anthropic.messages.stream({
           model: 'claude-sonnet-4-6',
-          max_tokens: 2000,
+          max_tokens: 8000,
           temperature: 0.2,
           system: systemPrompt,
           messages: contextMessages
@@ -189,7 +189,7 @@ End every response with: <followups>["Personalized follow-up question 1?","Perso
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 8000,
       temperature: 0.2,
       system: systemPrompt,
       messages: contextMessages

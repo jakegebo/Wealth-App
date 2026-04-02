@@ -1122,7 +1122,7 @@ export default function Plan() {
   const saveGoalProgress = async (goal: Goal, newAmount: number) => {
     if (!profile || !userId) return
     const updatedGoals = profile.goals?.map((g: any) =>
-      g.name === goal.name ? { ...g, current_amount: newAmount } : g
+      g.name === goal.name ? { ...g, current_amount: newAmount, manual_amount: true } : g
     ) || []
     const updatedProfile = { ...profile, goals: updatedGoals }
     await updateProfile({ profile_data: updatedProfile })
