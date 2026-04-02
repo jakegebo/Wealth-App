@@ -75,7 +75,6 @@ const SNAP_SYMBOLS = ['SPY', 'QQQ', 'BTC-USD', 'GLD']
 const _currencyFmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 
 const NEWS_SECTIONS = [
-  { key: 'portfolio', label: 'Portfolio' },
   { key: 'markets', label: 'Markets' },
   { key: 'economy', label: 'Economy' },
   { key: 'crypto', label: 'Crypto' },
@@ -1392,7 +1391,7 @@ export default function Grow() {
   const [activeGrowTab, setActiveGrowTab] = useState<'holdings' | 'ideas' | 'news'>('holdings')
   const [articles, setArticles] = useState<Article[]>([])
   const [loadingNews, setLoadingNews] = useState(true)
-  const [activeSection, setActiveSection] = useState('portfolio')
+  const [activeSection, setActiveSection] = useState('markets')
   const [stocks, setStocks] = useState<StockQuote[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -2494,19 +2493,6 @@ Please give me a thorough breakdown:
             </button>
           ))}
         </div>
-
-        {/* Portfolio empty states */}
-        {activeSection === 'portfolio' && !loadingNews && watchlist.length === 0 && (
-          <div className="card-muted animate-fade" style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: '0 0 10px' }}>Add stocks to your watchlist to see personalized news</p>
-            <button className="btn-ghost" style={{ fontSize: '12px' }} onClick={() => setShowSearch(true)}>+ Add to watchlist</button>
-          </div>
-        )}
-        {activeSection === 'portfolio' && !loadingNews && watchlist.length > 0 && articles.length === 0 && (
-          <div className="card-muted animate-fade" style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <p style={{ fontSize: '13px', color: 'var(--sand-600)', margin: 0 }}>No news found for your holdings — try adding more tickers</p>
-          </div>
-        )}
 
         {/* Saved empty state */}
         {activeSection === 'saved' && bookmarks.length === 0 && (

@@ -2471,7 +2471,16 @@ export default function Home() {
     )
   }
 
-  if (!analysis) return null
+  if (!analysis) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--sand-100)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '36px', height: '36px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+          <p style={{ color: 'var(--sand-600)', fontSize: '14px' }}>Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   const completeFocusItem = async (action: { title: string; description: string }) => {
     const newItem = { title: action.title, description: action.description, completedAt: new Date().toISOString() }
