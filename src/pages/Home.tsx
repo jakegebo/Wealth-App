@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { streamChat } from '../utils/streamChat'
 import { Landmark, TrendingUp, Home as HomeIcon, Banknote, Building2, Car, Bitcoin, Briefcase, AlertTriangle, CreditCard, type LucideIcon } from 'lucide-react'
 import NetWorthChart from '../components/NetWorthChart'
 import { formatAIText } from '../lib/formatAIText'
@@ -439,13 +440,14 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
     const seed = { role: 'user' as const, content: insight.chatSeed }
     setMessages([seed])
     setLoading(true)
-    fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [seed], profile: profile || {}, topic: 'insights' })
-    })
-      .then(r => r.json())
-      .then(d => setMessages(prev => [...prev, { role: 'assistant', content: d.message || '' }]))
+    let firstChunk = true
+    streamChat(
+      { messages: [seed], profile: profile || {}, topic: 'insights' },
+      (fullText) => {
+        if (firstChunk) { firstChunk = false; setLoading(false) }
+        setMessages([seed, { role: 'assistant', content: fullText }])
+      }
+    )
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -459,14 +461,15 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
     setMessages(next)
     setInput('')
     setLoading(true)
+    let firstChunk = true
     try {
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next, profile: profile || {}, topic: 'insights' })
-      })
-      const d = await r.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: d.message || '' }])
+      await streamChat(
+        { messages: next, profile: profile || {}, topic: 'insights' },
+        (fullText) => {
+          if (firstChunk) { firstChunk = false; setLoading(false) }
+          setMessages([...next, { role: 'assistant', content: fullText }])
+        }
+      )
     } catch {}
     setLoading(false)
   }
@@ -480,7 +483,7 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
 
   return (
     <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 300, display: 'flex', alignItems: 'flex-end', padding: '0' }} onClick={onClose}>
-      <div style={{ background: 'var(--sand-50)', borderRadius: '20px 20px 0 0', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: 'var(--sand-50)', borderRadius: '20px 20px 0 0', width: '100%', minHeight: '60vh', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         {/* Handle + header */}
         <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
           <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px', margin: '0 auto 16px' }} />
@@ -1262,16 +1265,30 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
     const apiMessages = chatMessages.length === 0 && aiAnalysis
       ? [{ role: 'assistant' as const, content: stripMeta(aiAnalysis) }, userMsg]
       : newMessages
+    let firstChunk = true
     try {
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, profile, topic: 'cashflow' })
-      })
-      const d = await r.json()
-      const raw = d.message || ''
+      const raw = await streamChat(
+        { messages: apiMessages, profile, topic: 'cashflow' },
+        (fullText) => {
+          if (firstChunk) {
+            firstChunk = false
+            setChatLoading(false)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: fullText }])
+          } else {
+            setChatMessages(prev => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: fullText }
+              return updated
+            })
+          }
+        }
+      )
       setChips(parseFollowUps(raw))
-      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+      setChatMessages(prev => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { role: 'assistant', content: stripMeta(raw) }
+        return updated
+      })
     } catch {}
     setChatLoading(false)
   }
@@ -1280,7 +1297,7 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
 
   return (
     <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
         <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
@@ -1579,16 +1596,30 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
       ? [{ role: 'assistant' as const, content: stripMeta(analysis) }, userMsg]
       : newMessages
 
+    let firstChunk = true
     try {
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, profile, topic: type })
-      })
-      const d = await r.json()
-      const raw = d.message || ''
+      const raw = await streamChat(
+        { messages: apiMessages, profile, topic: type },
+        (fullText) => {
+          if (firstChunk) {
+            firstChunk = false
+            setChatLoading(false)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: fullText }])
+          } else {
+            setChatMessages(prev => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: fullText }
+              return updated
+            })
+          }
+        }
+      )
       setChips(parseFollowUps(raw))
-      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+      setChatMessages(prev => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { role: 'assistant', content: stripMeta(raw) }
+        return updated
+      })
     } catch {}
     setChatLoading(false)
   }
@@ -1602,7 +1633,7 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
 
   return (
     <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
         <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
@@ -1997,16 +2028,30 @@ function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
       ? [{ role: 'assistant' as const, content: stripMeta(analysis) }, userMsg]
       : newMessages
 
+    let firstChunk = true
     try {
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, profile, topic: 'general' })
-      })
-      const d = await r.json()
-      const raw = d.message || ''
+      const raw = await streamChat(
+        { messages: apiMessages, profile, topic: 'general' },
+        (fullText) => {
+          if (firstChunk) {
+            firstChunk = false
+            setChatLoading(false)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: fullText }])
+          } else {
+            setChatMessages(prev => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: fullText }
+              return updated
+            })
+          }
+        }
+      )
       setChips(parseFollowUps(raw))
-      setChatMessages(prev => [...prev, { role: 'assistant', content: stripMeta(raw) }])
+      setChatMessages(prev => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { role: 'assistant', content: stripMeta(raw) }
+        return updated
+      })
     } catch {}
     setChatLoading(false)
   }
@@ -2015,7 +2060,7 @@ function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
 
   return (
     <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
         <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
@@ -2345,13 +2390,11 @@ export default function Home() {
       savings: `Exact dollar allocation for $${availableToSave.toLocaleString()}/mo surplus (income $${(profile?.monthly_income||0).toLocaleString()}, expenses $${(profile?.monthly_expenses||0).toLocaleString()}). Assets: ${profile?.assets?.map((a: any) => `${a.name}:$${(a.value||0).toLocaleString()}`).join(', ') || 'none'}.`
     }
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompts[type] }], profile: profile || {}, topic: 'general' })
-      })
-      const data = await res.json()
-      setMiniDash({ type, analysis: data.message || 'No response received.', loading: false })
+      await streamChat(
+        { messages: [{ role: 'user', content: prompts[type] }], profile: profile || {}, topic: 'general' },
+        (fullText) => setMiniDash({ type, analysis: fullText, loading: true })
+      )
+      setMiniDash(prev => prev ? { ...prev, loading: false } : prev)
     } catch {
       setMiniDash({ type, analysis: 'Unable to load analysis. Check your connection and try again.', loading: false })
     }
@@ -2365,13 +2408,11 @@ export default function Home() {
     const debtsStr = profile?.debts?.map((d: any) => `${d.name}: $${d.balance} @ ${d.interest_rate}%`).join(', ') || 'none'
     const prompt = `Cash flow: income $${profile?.monthly_income||0}/mo, expenses $${profile?.monthly_expenses||0}/mo, surplus $${avail} (${savingsRate}%). Goals: ${goalsStr}. Debts: ${debtsStr}. Give: top 2 cash flow drivers using my numbers, highest-leverage action this month with exact dollar amount, which goals are on/off track, realistic surplus target and how to reach it.`
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'cashflow' })
-      })
-      const data = await res.json()
-      setCashFlowSheet({ analysis: data.message || 'No response received.', loading: false })
+      await streamChat(
+        { messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'cashflow' },
+        (fullText) => setCashFlowSheet({ analysis: fullText, loading: true })
+      )
+      setCashFlowSheet(prev => prev ? { ...prev, loading: false } : prev)
     } catch {
       setCashFlowSheet({ analysis: 'Unable to load analysis. Check your connection and try again.', loading: false })
     }
@@ -2388,13 +2429,11 @@ export default function Home() {
     const prompt = `Priority: "${action.title}" (${action.impact} impact, ${action.timeframe}). ${action.description} Surplus $${avail.toLocaleString()}/mo. Goals: ${goals}. Debts: ${debts}.${priorWins} Give: why this is my best move now using my actual numbers, step-by-step execution plan this week with exact amounts, how it advances my goals, progress at 30/60/90 days with real numbers.`
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'general' })
-      })
-      const data = await res.json()
-      setFocusPlan({ analysis: data.message || 'No response received.', loading: false })
+      await streamChat(
+        { messages: [{ role: 'user', content: prompt }], profile: profile || {}, topic: 'general' },
+        (fullText) => setFocusPlan({ analysis: fullText, loading: true })
+      )
+      setFocusPlan(prev => prev ? { ...prev, loading: false } : prev)
     } catch {
       setFocusPlan({ analysis: 'Unable to load plan. Check your connection and try again.', loading: false })
     }

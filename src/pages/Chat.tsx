@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
+import { streamChat } from '../utils/streamChat'
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement,
@@ -331,18 +332,25 @@ export default function Chat() {
     setFollowUpQuestions([])
     setLoading(true)
 
+    let firstChunk = true
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages,
-          profile: profileData || profile || {},
-          topic: 'general'
-        })
-      })
-      const data = await res.json()
-      let rawContent = data.message || 'Something went wrong. Please try again.'
+      let rawContent = await streamChat(
+        { messages: newMessages, profile: profileData || profile || {}, topic: 'general' },
+        (fullText) => {
+          if (firstChunk) {
+            // Hide typing dots and show the streaming message
+            firstChunk = false
+            setLoading(false)
+            setMessages([...newMessages, { role: 'assistant', content: fullText }])
+          } else {
+            setMessages(prev => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: fullText }
+              return updated
+            })
+          }
+        }
+      )
 
       // Parse and strip follow-up questions from the response
       const followupMatch = rawContent.match(/<followups>([\s\S]*?)<\/followups>/)

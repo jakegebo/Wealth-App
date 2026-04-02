@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../contexts/ThemeContext'
 import { useProfile } from '../contexts/ProfileContext'
+import { streamChat } from '../utils/streamChat'
 import { Landmark, TrendingUp, Bitcoin, Building2, Home as HomeIcon, Briefcase, Monitor, DollarSign, Search, Plus, MessageCircle, Send, type LucideIcon } from 'lucide-react'
 import { formatAIText } from '../lib/formatAIText'
 import {
@@ -1053,20 +1054,25 @@ function StockDetail({
     setChatMessages(updated)
     setChatInput('')
     setChatLoading(true)
+    let firstChunk = true
     try {
       const stockContext = `The user is asking about ${quote.symbol}${quote.name ? ` (${quote.name})` : ''}. Current price: $${quote.price.toFixed(2)}, change today: ${quote.change >= 0 ? '+' : ''}${quote.change.toFixed(2)} (${quote.changePercent}%)${quote.fiftyTwoWeekHigh ? `, 52-week range: $${quote.fiftyTwoWeekLow?.toFixed(2)}–$${quote.fiftyTwoWeekHigh?.toFixed(2)}` : ''}. Answer questions about this specific stock.`
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: updated,
-          profile,
-          topic: stockContext,
-        })
-      })
-      const data = await res.json()
-      const reply = data.message || 'No response.'
-      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }])
+      await streamChat(
+        { messages: updated, profile, topic: stockContext },
+        (fullText) => {
+          if (firstChunk) {
+            firstChunk = false
+            setChatLoading(false)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: fullText }])
+          } else {
+            setChatMessages(prev => {
+              const upd = [...prev]
+              upd[upd.length - 1] = { role: 'assistant', content: fullText }
+              return upd
+            })
+          }
+        }
+      )
     } catch {
       setChatMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Try again.' }])
     }

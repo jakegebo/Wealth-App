@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useProfile } from '../contexts/ProfileContext'
 import { detectAccountLimit, getContributionStatus } from '../lib/retirementLimits'
+import { streamChat } from '../utils/streamChat'
 import { Umbrella } from 'lucide-react'
 import {
   Chart as ChartJS,
@@ -626,14 +627,24 @@ export default function Retirement() {
     setChatInput('')
     setChatLoading(true)
 
+    let firstChunk = true
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, profile, topic: 'retirement' })
-      })
-      const data = await res.json()
-      setChatMessages(prev => [...prev, { role: 'assistant', content: data.message || '' }])
+      await streamChat(
+        { messages: newMessages, profile, topic: 'retirement' },
+        (fullText) => {
+          if (firstChunk) {
+            firstChunk = false
+            setChatLoading(false)
+            setChatMessages(prev => [...prev, { role: 'assistant', content: fullText }])
+          } else {
+            setChatMessages(prev => {
+              const updated = [...prev]
+              updated[updated.length - 1] = { role: 'assistant', content: fullText }
+              return updated
+            })
+          }
+        }
+      )
     } catch { }
 
     setChatLoading(false)

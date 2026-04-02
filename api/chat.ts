@@ -159,6 +159,34 @@ End every response with: <followups>["Personalized follow-up question 1?","Perso
       return { role: m.role, content }
     })
 
+    // Streaming mode — send SSE chunks for real-time display
+    if (req.body.stream) {
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+
+      try {
+        const stream = anthropic.messages.stream({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2000,
+          temperature: 0.2,
+          system: systemPrompt,
+          messages: contextMessages
+        })
+
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            res.write(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`)
+          }
+        }
+        res.write('data: [DONE]\n\n')
+      } catch (streamErr: any) {
+        res.write(`data: ${JSON.stringify({ error: streamErr?.message || 'Stream error' })}\n\n`)
+      }
+      res.end()
+      return
+    }
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
