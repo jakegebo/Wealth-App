@@ -20,6 +20,81 @@ function renderInline(text: string, accentColor = 'var(--sand-900)'): React.Reac
   )
 }
 
+function isTableRow(line: string) {
+  return line.trim().startsWith('|')
+}
+
+function isSeparatorRow(line: string) {
+  return /^\|[\s\-|:]+\|$/.test(line.trim())
+}
+
+function parseTable(tableLines: string[]): { headers: string[]; rows: string[][] } {
+  const parseRow = (line: string) =>
+    line.trim().slice(1, -1).split('|').map(cell => cell.trim())
+  const nonSep = tableLines.filter(l => !isSeparatorRow(l))
+  const [headerLine, ...dataLines] = nonSep
+  return {
+    headers: parseRow(headerLine ?? ''),
+    rows: dataLines.map(parseRow),
+  }
+}
+
+function renderTable(tableLines: string[], key: number): React.ReactNode {
+  const { headers, rows } = parseTable(tableLines)
+  return (
+    <div key={key} style={{ overflowX: 'auto', margin: '14px 0 6px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+        <thead>
+          <tr>
+            {headers.map((h, i) => (
+              <th
+                key={i}
+                style={{
+                  padding: '8px 12px',
+                  background: 'var(--accent)',
+                  color: 'var(--sand-50)',
+                  fontWeight: '600',
+                  textAlign: 'left',
+                  fontSize: '11px',
+                  letterSpacing: '0.04em',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr
+              key={ri}
+              style={{
+                background: ri % 2 === 0 ? 'var(--sand-100, #f5f0e8)' : 'var(--sand-50, #faf7f2)',
+              }}
+            >
+              {row.map((cell, ci) => (
+                <td
+                  key={ci}
+                  style={{
+                    padding: '7px 12px',
+                    color: 'var(--sand-800)',
+                    borderBottom: '1px solid var(--sand-200, #e8e0d0)',
+                    lineHeight: '1.5',
+                    fontSize: '12px',
+                  }}
+                >
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /**
  * Renders AI-generated markdown-lite text into styled React elements.
  * Handles:
@@ -28,6 +103,7 @@ function renderInline(text: string, accentColor = 'var(--sand-900)'): React.Reac
  *   - Lines that are ALL CAPS (or ALL CAPS + colon) → section header
  *   - Lines starting with "- " → bullet
  *   - Lines starting with "1. " → numbered item
+ *   - Consecutive lines starting with | → styled table
  *   - Empty lines → spacer
  *   - Everything else → paragraph with inline bold parsing
  */
@@ -67,39 +143,64 @@ export function formatAIText(
     </div>
   )
 
-  return lines.map((line, i) => {
-    const trimmed = line.trim()
+  // Group lines into segments: table blocks or individual lines
+  type Segment =
+    | { type: 'table'; lines: string[]; key: number }
+    | { type: 'line'; line: string; key: number }
+
+  const segments: Segment[] = []
+  let i = 0
+  while (i < lines.length) {
+    if (isTableRow(lines[i])) {
+      const tableLines: string[] = []
+      while (i < lines.length && isTableRow(lines[i])) {
+        tableLines.push(lines[i])
+        i++
+      }
+      segments.push({ type: 'table', lines: tableLines, key: i })
+    } else {
+      segments.push({ type: 'line', line: lines[i], key: i })
+      i++
+    }
+  }
+
+  return segments.map(seg => {
+    if (seg.type === 'table') {
+      return renderTable(seg.lines, seg.key)
+    }
+
+    const trimmed = seg.line.trim()
 
     // Empty line → spacer
     if (!trimmed) {
-      return <div key={i} style={{ height: '8px' }} />
+      return <div key={seg.key} style={{ height: '8px' }} />
     }
 
     // ### / ## / # heading → section header (strip hashes and asterisks)
     const headingMatch = trimmed.match(/^#{1,6}\s+(.+)$/)
     if (headingMatch) {
       const content = headingMatch[1].replace(/\*{1,3}/g, '').trim()
-      return renderSectionHeader(content, i)
+      return renderSectionHeader(content, seg.key)
     }
 
     // Entire line wrapped in **...** → section header
     if (/^\*\*[^*]+\*\*$/.test(trimmed)) {
       const content = trimmed.slice(2, -2)
-      return renderSectionHeader(content, i)
+      return renderSectionHeader(content, seg.key)
     }
 
     // ALL CAPS lines (possibly ending with colon) → section divider
     const isAllCaps = /^[A-Z0-9 :$%().,/\-–]{10,}$/.test(trimmed) && /[A-Z]{3,}/.test(trimmed)
     const isLongAllCaps = isAllCaps && (trimmed.endsWith(':') || trimmed.length >= 20)
     if (isLongAllCaps) {
-      return renderSectionHeader(trimmed.replace(/:$/, ''), i)
+      return renderSectionHeader(trimmed.replace(/:$/, ''), seg.key)
     }
 
     // Numbered list item
     const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/)
     if (numMatch) {
       return (
-        <div key={i} style={{ display: 'flex', gap: '10px', marginTop: '6px', alignItems: 'flex-start' }}>
+        <div key={seg.key} style={{ display: 'flex', gap: '10px', marginTop: '6px', alignItems: 'flex-start' }}>
           <div style={{
             width: '20px',
             height: '20px',
@@ -123,7 +224,7 @@ export function formatAIText(
     // Bullet list item
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       return (
-        <div key={i} style={{ display: 'flex', gap: '8px', marginTop: '5px', alignItems: 'flex-start' }}>
+        <div key={seg.key} style={{ display: 'flex', gap: '8px', marginTop: '5px', alignItems: 'flex-start' }}>
           <span style={{
             color: 'var(--accent)',
             fontWeight: '700',
@@ -140,7 +241,7 @@ export function formatAIText(
 
     // Regular paragraph — parse inline bold
     return (
-      <p key={i} style={{ fontSize: baseFontSize, lineHeight: '1.65', margin: '3px 0', color: textColor }}>
+      <p key={seg.key} style={{ fontSize: baseFontSize, lineHeight: '1.65', margin: '3px 0', color: textColor }}>
         {renderInline(trimmed)}
       </p>
     )
