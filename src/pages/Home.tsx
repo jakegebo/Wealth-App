@@ -482,8 +482,8 @@ function InsightChatModal({ insight, profile, onClose }: { insight: Insight; pro
   const dot = typeColors[insight.type].dot
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 300, display: 'flex', alignItems: 'flex-end', padding: '0' }} onClick={onClose}>
-      <div style={{ background: 'var(--sand-50)', borderRadius: '20px 20px 0 0', width: '100%', minHeight: '60vh', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.4)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={onClose}>
+      <div style={{ background: 'var(--sand-50)', borderRadius: '20px', width: '100%', maxWidth: '680px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Handle + header */}
         <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
           <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px', margin: '0 auto 16px' }} />
@@ -1296,16 +1296,11 @@ function CashFlowSheet({ financials, aiAnalysis, loading, onClose, profile }: {
   const formatText = (text: string) => formatAIText(stripMeta(text), { baseFontSize: '14px' })
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-
-        {/* Handle */}
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
-        </div>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{ padding: '12px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ padding: '20px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Cash Flow Details</h2>
           <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
         </div>
@@ -1632,16 +1627,11 @@ function MiniDashboardSheet({ type, analysis, loading, onClose, profile, netWort
   }
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-
-        {/* Handle */}
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
-        </div>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{ padding: '12px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ padding: '20px 24px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: colors[type] }}>{titles[type]}</h2>
           <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
         </div>
@@ -1916,16 +1906,11 @@ function AddAssetSheet({ onClose, onSave }: {
   }
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-
-        {/* Handle */}
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
-        </div>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{ padding: '12px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '20px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, color: 'var(--sand-900)' }}>Add Asset</h2>
           <button onClick={onClose} style={{ background: 'var(--sand-200)', border: 'none', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', fontSize: '14px', color: 'var(--sand-700)' }}>×</button>
         </div>
@@ -2059,16 +2044,11 @@ function FocusPlanSheet({ action, analysis, loading, profile, onClose }: {
   const formatText = (text: string) => formatAIText(stripMeta(text))
 
   return (
-    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '680px', minHeight: '75vh', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-
-        {/* Handle */}
-        <div style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-          <div style={{ width: '36px', height: '4px', background: 'var(--sand-300)', borderRadius: '2px' }} />
-        </div>
+    <div className="sheet-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(26,18,8,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={onClose}>
+      <div className="animate-slide" style={{ background: 'var(--sand-50)', borderRadius: '24px', width: '100%', maxWidth: '680px', maxHeight: '88vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div style={{ padding: '12px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', flexShrink: 0 }}>
+        <div style={{ padding: '20px 20px 14px', borderBottom: '0.5px solid var(--sand-200)', flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, marginRight: '12px' }}>
               <p style={{ fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', margin: '0 0 4px' }}>This week's focus</p>

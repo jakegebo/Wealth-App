@@ -886,13 +886,13 @@ function GrowthSection({
             <div
               style={{
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 200,
-                display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
               }}
               onClick={e => { if (e.target === e.currentTarget) setShowAddStream(false) }}
             >
               <div style={{
-                background: 'var(--bg)', borderRadius: '18px 18px 0 0', padding: '24px 20px 36px',
-                width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '14px'
+                background: 'var(--bg)', borderRadius: '18px', padding: '24px 20px',
+                width: '100%', maxWidth: '480px', maxHeight: '88vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <p style={{ fontSize: '16px', fontWeight: '600', color: 'var(--sand-900)', margin: 0 }}>Add income stream</p>
